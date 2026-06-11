@@ -258,6 +258,17 @@ try {
   if (-not $installScriptText.Contains("/win32icon:`$trayIconSource")) {
     throw "install-windows.ps1 fallback tray build does not embed the FileInNOut icon"
   }
+  foreach ($requiredGreenDesignToken in @("CreateGreenFolderIcon", "Color.FromArgb(244, 250, 246)", "Color.FromArgb(22, 163, 74)", "Color.FromArgb(52, 211, 153)", "Color.FromArgb(240, 253, 244)")) {
+    if (-not $traySourceText.Contains($requiredGreenDesignToken)) {
+      throw "FileInNOutDesktopTray.cs is missing the green desktop design token: $requiredGreenDesignToken"
+    }
+  }
+  $readmeText = Get-Content -Raw -Path (Join-Path $tempRoot "README.md")
+  foreach ($requiredGreenReadmeToken in @("green folder icon", "clean green FileInNOut login screen")) {
+    if (-not $readmeText.Contains($requiredGreenReadmeToken)) {
+      throw "README.md does not describe the green desktop design: $requiredGreenReadmeToken"
+    }
+  }
   foreach ($requiredInstallHubToken in @("Sync-FileInNOutDriveHubLinks", "Get-FileInNOutSyncFolderProfiles", "Test-FileInNOutSharedRemotePath", "syncFolders")) {
     if (-not $installScriptText.Contains($requiredInstallHubToken)) {
       throw "install-windows.ps1 does not rebuild multi-folder drive hub links during install: $requiredInstallHubToken"

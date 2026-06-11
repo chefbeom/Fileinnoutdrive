@@ -2,7 +2,7 @@
 
 This is the launchable desktop sync client for FileInNOut. It syncs configured
 cloud folders with normal Windows folders and runs from the Windows notification
-tray with a blue folder icon.
+tray with a green folder icon.
 
 ## Install on Windows
 
@@ -12,7 +12,7 @@ powershell -ExecutionPolicy Bypass -File .\desktop-client\install-windows.ps1
 
 The web setup executable opens a small installer with a progress bar and a
 desktop-shortcut choice. After installation, `FileInNOut Desktop` runs in the
-Windows tray. Double-click the blue folder tray icon to open settings and
+Windows tray. Double-click the green folder tray icon to open settings and
 management.
 
 The installer copies the client to:
@@ -142,7 +142,7 @@ installed apps list. Pass `-NoRegisterApp` to skip that registration.
 
 ## Tray app
 
-After installation, look for the blue FileInNOut folder icon in the Windows
+After installation, look for the green FileInNOut folder icon in the Windows
 notification tray.
 
 - Double-click the icon to open FileInNOut Desktop settings.
@@ -159,7 +159,7 @@ notification tray.
   not raise a toast every 20 seconds.
 
 The settings window hides the raw server URL from normal users. It opens with a
-soft blue FileInNOut login screen when signed out, then shows saved user info,
+clean green FileInNOut login screen when signed out, then shows saved user info,
 drive capacity, configured sync folders, sync direction, sharing controls,
 current status, diagnostics, recent sync activity, and combined local/cloud
 search across configured sync folders and shared cloud folders. The sync

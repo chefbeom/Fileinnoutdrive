@@ -54,10 +54,10 @@ function New-FileInNOutIcon {
   try {
     $graphics.Clear([System.Drawing.Color]::Transparent)
     $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $tab = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(29, 111, 219))
-    $body = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(37, 132, 245))
-    $shine = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(92, 174, 255))
-    $border = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(18, 78, 166)), 1
+    $tab = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(21, 128, 61))
+    $body = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(22, 163, 74))
+    $shine = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(110, 231, 183))
+    $border = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(22, 101, 52)), 1
     try {
       $graphics.FillRectangle($tab, 5, 7, 11, 6)
       $graphics.FillRectangle($body, 3, 11, 26, 17)

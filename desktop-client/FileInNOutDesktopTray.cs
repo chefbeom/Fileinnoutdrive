@@ -2823,10 +2823,10 @@ namespace FileInNOutDesktop
                 {
                 }
             }
-            return CreateBlueFolderIcon();
+            return CreateGreenFolderIcon();
         }
 
-        private Icon CreateBlueFolderIcon()
+        private Icon CreateGreenFolderIcon()
         {
             Bitmap bitmap = new Bitmap(32, 32);
             using (Graphics g = Graphics.FromImage(bitmap))
@@ -2836,7 +2836,7 @@ namespace FileInNOutDesktop
                 using (SolidBrush tab = new SolidBrush(AppColors.PrimaryDark))
                 using (SolidBrush body = new SolidBrush(AppColors.Primary))
                 using (SolidBrush shine = new SolidBrush(AppColors.Sky))
-                using (Pen border = new Pen(Color.FromArgb(18, 78, 166), 1))
+                using (Pen border = new Pen(Color.FromArgb(21, 128, 61), 1))
                 {
                     g.FillRectangle(tab, 5, 7, 11, 6);
                     g.FillRectangle(body, 3, 11, 26, 17);
@@ -4770,7 +4770,7 @@ namespace FileInNOutDesktop
 
             RoundedPanel card = new RoundedPanel();
             card.BackColor = Color.White;
-            card.Radius = 16;
+            card.Radius = 8;
             card.Width = 430;
             card.Height = 320;
             card.Anchor = AnchorStyles.None;
@@ -4936,7 +4936,7 @@ namespace FileInNOutDesktop
             RoundedPanel card = new RoundedPanel();
             card.Dock = DockStyle.Fill;
             card.Margin = new Padding(0, 0, 0, 14);
-            card.Radius = 16;
+            card.Radius = 8;
             card.BackColor = Color.White;
             card.Padding = new Padding(20, 16, 20, 16);
 
@@ -4993,7 +4993,7 @@ namespace FileInNOutDesktop
             RoundedPanel card = new RoundedPanel();
             card.Dock = DockStyle.Fill;
             card.Margin = new Padding(0, 0, 0, 14);
-            card.Radius = 16;
+            card.Radius = 8;
             card.BackColor = Color.White;
             card.Padding = new Padding(20, 14, 20, 14);
 
@@ -5074,7 +5074,7 @@ namespace FileInNOutDesktop
             RoundedPanel card = new RoundedPanel();
             card.Dock = DockStyle.Fill;
             card.Margin = new Padding(0, 0, 0, 14);
-            card.Radius = 16;
+            card.Radius = 8;
             card.BackColor = Color.White;
             card.Padding = new Padding(20, 16, 20, 16);
 
@@ -5334,7 +5334,7 @@ namespace FileInNOutDesktop
             RoundedPanel statusCard = new RoundedPanel();
             statusCard.Dock = DockStyle.Fill;
             statusCard.Margin = new Padding(0, 0, 7, 0);
-            statusCard.Radius = 16;
+            statusCard.Radius = 8;
             statusCard.BackColor = Color.White;
             statusCard.Padding = new Padding(18, 14, 18, 18);
 
@@ -5376,7 +5376,7 @@ namespace FileInNOutDesktop
             RoundedPanel filesCard = new RoundedPanel();
             filesCard.Dock = DockStyle.Fill;
             filesCard.Margin = new Padding(7, 0, 0, 0);
-            filesCard.Radius = 16;
+            filesCard.Radius = 8;
             filesCard.BackColor = Color.White;
             filesCard.Padding = new Padding(18, 14, 18, 18);
 
@@ -6078,6 +6078,8 @@ namespace FileInNOutDesktop
             TextBox text = new TextBox();
             text.BorderStyle = BorderStyle.FixedSingle;
             text.Font = new Font("Malgun Gothic", 10F, FontStyle.Regular);
+            text.BackColor = Color.White;
+            text.ForeColor = AppColors.Text;
             return text;
         }
 
@@ -6116,13 +6118,13 @@ namespace FileInNOutDesktop
 
     internal static class AppColors
     {
-        public static readonly Color Background = Color.FromArgb(242, 248, 255);
-        public static readonly Color Primary = Color.FromArgb(37, 99, 235);
-        public static readonly Color PrimaryDark = Color.FromArgb(29, 78, 216);
-        public static readonly Color Sky = Color.FromArgb(56, 189, 248);
+        public static readonly Color Background = Color.FromArgb(244, 250, 246);
+        public static readonly Color Primary = Color.FromArgb(22, 163, 74);
+        public static readonly Color PrimaryDark = Color.FromArgb(21, 128, 61);
+        public static readonly Color Sky = Color.FromArgb(52, 211, 153);
         public static readonly Color Text = Color.FromArgb(15, 23, 42);
-        public static readonly Color Muted = Color.FromArgb(100, 116, 139);
-        public static readonly Color Border = Color.FromArgb(207, 232, 255);
+        public static readonly Color Muted = Color.FromArgb(87, 102, 97);
+        public static readonly Color Border = Color.FromArgb(205, 232, 213);
     }
 
     internal sealed class BufferedPanel : Panel
@@ -6136,7 +6138,7 @@ namespace FileInNOutDesktop
 
     internal sealed class RoundedPanel : Panel
     {
-        public int Radius = 14;
+        public int Radius = 8;
 
         public RoundedPanel()
         {
@@ -6218,12 +6220,12 @@ namespace FileInNOutDesktop
             }
             else
             {
-                fill = pressed ? Color.FromArgb(219, 234, 254) : Color.FromArgb(239, 246, 255);
+                fill = pressed ? Color.FromArgb(209, 250, 229) : Color.FromArgb(240, 253, 244);
                 border = AppColors.Border;
                 text = AppColors.PrimaryDark;
             }
 
-            using (GraphicsPath path = RoundedRect(new Rectangle(0, 0, Width - 1, Height - 1), 10))
+            using (GraphicsPath path = RoundedRect(new Rectangle(0, 0, Width - 1, Height - 1), 8))
             using (SolidBrush brush = new SolidBrush(fill))
             using (Pen pen = new Pen(border))
             using (SolidBrush textBrush = new SolidBrush(text))
@@ -6269,7 +6271,7 @@ namespace FileInNOutDesktop
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             Rectangle bounds = new Rectangle(0, 0, Width - 1, Height - 1);
             using (GraphicsPath background = RoundedRect(bounds, 8))
-            using (SolidBrush backgroundBrush = new SolidBrush(Color.FromArgb(226, 242, 255)))
+            using (SolidBrush backgroundBrush = new SolidBrush(Color.FromArgb(220, 252, 231)))
             {
                 e.Graphics.FillPath(backgroundBrush, background);
             }
