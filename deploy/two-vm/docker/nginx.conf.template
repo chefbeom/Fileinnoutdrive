@@ -1,0 +1,124 @@
+server {
+    listen 80;
+    server_name _;
+    client_max_body_size 2g;
+
+    location = /index.html {
+        root /usr/share/nginx/html;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+        try_files $uri =404;
+    }
+
+    location = /sw.js {
+        root /usr/share/nginx/html;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+        try_files $uri =404;
+    }
+
+    location ^~ /assets/ {
+        root /usr/share/nginx/html;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
+
+    location = /downloads/FileInNOutDesktop.zip {
+        alias /usr/share/nginx/html/downloads/FileInNOutDesktop.zip;
+        types { }
+        default_type application/zip;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+        add_header Content-Disposition "attachment; filename=\"FileInNOutDesktop.zip\"" always;
+    }
+
+    location ~ ^/downloads/(?<download_file>FileInNOutDesktop-[A-Za-z0-9._-]+\.zip)$ {
+        root /usr/share/nginx/html;
+        types { }
+        default_type application/zip;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+        add_header Content-Disposition "attachment; filename=\"$download_file\"" always;
+        try_files $uri =404;
+    }
+
+    location = /downloads/FileInNOutDesktopSetup.exe {
+        alias /usr/share/nginx/html/downloads/FileInNOutDesktop.zip;
+        types { }
+        default_type application/zip;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+        add_header Content-Disposition "attachment; filename=\"FileInNOutDesktop.zip\"" always;
+    }
+
+    location /downloads/ {
+        root /usr/share/nginx/html;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+        try_files $uri =404;
+    }
+
+    location / {
+        root /usr/share/nginx/html;
+        index index.html;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /wss {
+        proxy_pass http://__REALTIME_UPSTREAM__;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    location /api/ws-stomp {
+        proxy_pass http://__REALTIME_UPSTREAM__;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    location /api/sse {
+        proxy_pass http://__REALTIME_UPSTREAM__;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    location /api {
+        proxy_pass http://__BACKEND_UPSTREAM__;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+}

@@ -1,0 +1,18 @@
+.git
+.idea
+
+# Local dependency and build outputs should never be sent to Docker builds.
+**/node_modules
+**/dist
+**/build
+**/.gradle
+**/__pycache__
+**/*.pyc
+
+# Local deployment/runtime artifacts.
+*.log
+deploy/two-vm/.env.vm151
+deploy/two-vm/.env.vm152
+deploy/two-vm/*.tar
+deploy/two-vm/*.tar.gz
+desktop-client/dist

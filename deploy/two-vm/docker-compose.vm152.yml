@@ -1,0 +1,79 @@
+services:
+  redis:
+    image: redis:7.4-alpine
+    container_name: ${FILEINNOUT_CONTAINER_PREFIX:-fileinnout}-redis
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    ports:
+      - "${VM152_REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  mariadb:
+    image: mariadb:11.4
+    container_name: ${FILEINNOUT_CONTAINER_PREFIX:-fileinnout}-mariadb
+    environment:
+      MARIADB_DATABASE: web
+      MARIADB_ROOT_PASSWORD: ${DB_PASS}
+    ports:
+      - "${VM152_DB_HOST_PORT:-3306}:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uroot -p$${MARIADB_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  minio:
+    image: minio/minio:latest
+    container_name: ${FILEINNOUT_CONTAINER_PREFIX:-fileinnout}-minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_NAME}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET}
+    command: server /data --console-address ":9001"
+    ports:
+      - "${VM152_MINIO_HOST_PORT:-9000}:9000"
+      - "${VM152_MINIO_CONSOLE_HOST_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+
+  websocket-server:
+    build:
+      context: ../..
+      dockerfile: deploy/two-vm/docker/websocket.Dockerfile
+    image: fileinnout/websocket:two-vm
+    container_name: ${FILEINNOUT_CONTAINER_PREFIX:-fileinnout}-websocket
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - ${VM152_SERVICE_ENV_FILE:-./.env.vm152}
+    ports:
+      - "${VM152_WEBSOCKET_HOST_PORT:-1234}:1234"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:1234/readyz >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+networks:
+  default:
+    name: ${VM152_NETWORK_NAME:-fileinnout-vm152}
+
+volumes:
+  redis_data:
+  mariadb_data:
+  minio_data:

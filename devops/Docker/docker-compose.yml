@@ -1,0 +1,179 @@
+services:
+  # 1. Redis 서버
+  redis:
+    image: redis:latest
+    container_name: waffle-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - waffle-net
+    restart: always
+
+  # 2. MariaDB 서버
+  db:
+    image: mariadb:latest
+    container_name: waffle-db
+    restart: always
+    environment:
+      - MARIADB_DATABASE=web
+      - MARIADB_ROOT_PASSWORD=${DB_PASS}
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./db:/var/lib/mysql
+    networks:
+      - waffle-net
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uroot -p$${MARIADB_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # 3. MinIO 서버
+  minio:
+    image: minio/minio
+    container_name: waffle-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_NAME}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - waffle-net
+    restart: always
+
+  # 4. 백엔드 + 프론트엔드 서버 (WaffleBear Main App)
+  backend-app:
+    build:
+      context: ../../../Users/Playdata/Downloads/CI-CD
+      dockerfile: backend.dockerfile
+    image: lumisia/backend:${COMPOSE_IMAGE_TAG:-latest}
+    ports:
+      - "8080:8080"
+    environment:
+      # [데이터베이스 설정]
+      - DB_SERVER=${DB_SERVER}
+      - DB_URL=jdbc:mariadb://db:3306/web
+      - DB_ID=${DB_ID}
+      - DB_PASS=${DB_PASS}
+
+      # [레디스 설정]
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+
+      # [보안 및 인증]
+      - JWT_KEY=${JWT_KEY}
+      - JWT_EXPIRE=${JWT_EXPIRE}
+      - PORTONE_SECRET=${PORTONE_SECRET}
+
+      # [관리자 설정]
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_NAME=${ADMIN_NAME}
+      - ADMIN_ROLE=${ADMIN_ROLE}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - ADMIN_ADDITIONAL_USERS=${ADMIN_ADDITIONAL_USERS:-}
+
+      # [애플리케이션 URL]
+      - APP_FRONTEND_URL=${APP_FRONTEND_URL}
+      - APP_BACKEND_URL=${APP_BACKEND_URL}
+      - APP_ADMIN_ONLY=${APP_ADMIN_ONLY:-true}
+
+      # [OAuth2 설정]
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - NAVER_CLIENT_ID=${NAVER_CLIENT_ID}
+      - NAVER_CLIENT_SECRET=${NAVER_CLIENT_SECRET}
+      - CLIENT_ID=${CLIENT_ID}
+      - CLIENT_SECRET=${CLIENT_SECRET}
+
+      # [메일 서버]
+      - MAIL_PORT=${MAIL_PORT}
+      - MAIL_ID=${MAIL_ID}
+      - MAIL_PASS=${MAIL_PASS}
+
+      # [MinIO 및 S3 저장소]
+      - STORAGE_PROVIDER=${STORAGE_PROVIDER}
+      - MINIO_API=http://minio:9000
+      - MINIO_PUBLIC_API=${MINIO_PUBLIC_API:-http://localhost:9000}
+      - MINIO_NAME=${MINIO_NAME}
+      - MINIO_SECRET=${MINIO_SECRET}
+      - MINIO_CLOUD_BUCKET=${MINIO_CLOUD_BUCKET}
+      - MINIO_WORKSPACE_BUCKET=${MINIO_WORKSPACE_BUCKET}
+      - MINIO_REGION=${MINIO_REGION}
+      - S3AMAZON_API=${S3AMAZON_API}
+      - S3AMAZON_PUBLIC_API=${S3AMAZON_PUBLIC_API:-https://s3.ap-northeast-2.amazonaws.com}
+      - S3AMAZON_NAME=${S3AMAZON_NAME}
+      - S3AMAZON_SECRET=${S3AMAZON_SECRET}
+      - S3AMAZON_CLOUD_BUCKET=${S3AMAZON_CLOUD_BUCKET}
+      - S3AMAZON_WORKSPACE_BUCKET=${S3AMAZON_WORKSPACE_BUCKET}
+      - S3AMAZON_REGION=${S3AMAZON_REGION}
+
+    restart: always
+    depends_on:
+      redis:
+        condition: service_started
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    networks:
+      - waffle-net
+
+  # 5. 독립 WebSocket 서버 (협업 편집 전용)
+  websocket-server:
+    build:
+      context: ../../../Users/Playdata/Downloads/CI-CD
+      dockerfile: websocket.dockerfile
+    image: lumisia/websocket-server:${COMPOSE_IMAGE_TAG:-latest}
+    environment:
+      - PORT=1234
+      - HOST=0.0.0.0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - BACKEND_HOST=backend-app
+      - BACKEND_PORT=8080
+    ports:
+      - "1234:1234"
+    depends_on:
+      redis:
+        condition: service_started
+      backend-app:
+        condition: service_started
+    networks:
+      - waffle-net
+    restart: always
+    deploy:
+      replicas: 1  # 서버 중복 실행 및 포트 충돌 방지를 위해 1로 설정함
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+  # 6. 프론트엔드 (Nginx 관문)
+  frontend:
+    build:
+      context: ../../../Users/Playdata/Downloads/CI-CD
+      dockerfile: frontend.dockerfile
+    image: lumisia/frontend:${COMPOSE_IMAGE_TAG:-latest}
+    container_name: waffle-frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      backend-app:
+        condition: service_started
+      websocket-server:
+        condition: service_started
+    networks:
+      - waffle-net
+
+networks:
+  waffle-net:
+    driver: bridge
+
+volumes:
+  minio_data:

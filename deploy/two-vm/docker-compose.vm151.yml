@@ -1,0 +1,42 @@
+services:
+  backend-app:
+    build:
+      context: ../..
+      dockerfile: deploy/two-vm/docker/backend.Dockerfile
+    image: fileinnout/backend:two-vm
+    container_name: ${FILEINNOUT_CONTAINER_PREFIX:-fileinnout}-backend
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - ${VM151_SERVICE_ENV_FILE:-./.env.vm151}
+    ports:
+      - "${VM151_BACKEND_HOST_PORT:-8080}:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/test/version >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 15
+      start_period: 90s
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: deploy/two-vm/docker/frontend.Dockerfile
+      args:
+        BACKEND_UPSTREAM: backend-app:8080
+        REALTIME_UPSTREAM: ${REALTIME_UPSTREAM:-192.168.35.152:1234}
+    image: fileinnout/frontend:two-vm
+    container_name: ${FILEINNOUT_CONTAINER_PREFIX:-fileinnout}-frontend
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${VM151_FRONTEND_HOST_PORT:-80}:80"
+    depends_on:
+      backend-app:
+        condition: service_started
+    restart: unless-stopped
+
+networks:
+  default:
+    name: ${VM151_NETWORK_NAME:-fileinnout-vm151}

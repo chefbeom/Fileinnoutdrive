@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Values.redis.service.name }}
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: wafflebear
+spec:
+  minAvailable: {{ ternary 2 1 (gt (int .Values.redis.replicaCount) 1) }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+      app.kubernetes.io/part-of: wafflebear

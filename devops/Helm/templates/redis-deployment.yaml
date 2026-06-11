@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.redis.service.name }}
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: wafflebear
+spec:
+  serviceName: {{ .Values.redis.headlessService.name }}
+  replicas: {{ .Values.redis.replicaCount }}
+  revisionHistoryLimit: 5
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+      app.kubernetes.io/part-of: wafflebear
+  template:
+    metadata:
+      annotations:
+        checksum/redis-scripts: {{ include (print $.Template.BasePath "/redis-scripts-configmap.yaml") . | sha256sum }}
+      labels:
+        app.kubernetes.io/name: redis
+        app.kubernetes.io/part-of: wafflebear
+    spec:
+{{ include "wafflebear.workerScheduling" (dict "app.kubernetes.io/name" "redis" "app.kubernetes.io/part-of" "wafflebear") | nindent 6 }}
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: redis
+          image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
+          imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - /etc/redis/scripts/redis-entrypoint.sh
+          env:
+            - name: REDIS_PORT
+              value: "{{ .Values.redis.service.port }}"
+            - name: REDIS_HEADLESS_SERVICE
+              value: "{{ .Values.redis.headlessService.name }}"
+            - name: REDIS_FALLBACK_MASTER
+              value: "{{ printf "%s-0.%s.%s.svc.cluster.local" .Values.redis.service.name .Values.redis.headlessService.name .Release.Namespace }}"
+            - name: REDIS_SENTINEL_MASTER
+              value: "{{ if .Values.redis.sentinel.enabled }}{{ .Values.redis.sentinel.masterName }}{{ else }}{{ "" }}{{ end }}"
+            - name: REDIS_SENTINEL_NODES
+              value: "{{ if .Values.redis.sentinel.enabled }}{{ .Values.redis.sentinel.name }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.redis.sentinel.port }}{{ else }}{{ "" }}{{ end }}"
+            - name: REDIS_MAXMEMORY
+              value: "{{ .Values.redis.config.maxmemory }}"
+            - name: REDIS_MAXMEMORY_POLICY
+              value: "{{ .Values.redis.config.maxmemoryPolicy }}"
+          ports:
+            - containerPort: {{ .Values.redis.service.port }}
+              name: redis
+          volumeMounts:
+            - name: redis-scripts
+              mountPath: /etc/redis/scripts
+            - name: redis-data
+              mountPath: /data
+          startupProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - redis-cli -p {{ .Values.redis.service.port }} ping
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - redis-cli -p {{ .Values.redis.service.port }} ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - redis-cli -p {{ .Values.redis.service.port }} ping
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 5
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - redis-cli -p {{ .Values.redis.service.port }} shutdown save || true
+          resources:
+{{ toYaml .Values.redis.resources | indent 12 }}
+      volumes:
+        - name: redis-scripts
+          configMap:
+            name: {{ include "wafflebear.fullname" . }}-redis-scripts
+            defaultMode: 0755
+{{- if not .Values.redis.persistence.enabled }}
+        - name: redis-data
+          emptyDir: {}
+{{- end }}
+{{- if .Values.redis.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: {{ .Values.redis.persistence.storageClassName }}
+        resources:
+          requests:
+            storage: {{ .Values.redis.persistence.size }}
+{{- end }}

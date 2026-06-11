@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.redis.service.name }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: wafflebear
+    statefulset.kubernetes.io/pod-name: {{ .Values.redis.service.name }}-0
+  ports:
+    - name: redis
+      protocol: TCP
+      port: {{ .Values.redis.service.port }}
+      targetPort: {{ .Values.redis.service.port }}

@@ -1,0 +1,74 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "wafflebear.fullname" . }}-mariadb-bootstrap
+  labels:
+    app.kubernetes.io/name: mariadb-bootstrap
+    app.kubernetes.io/part-of: wafflebear
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 4
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mariadb-bootstrap
+        app.kubernetes.io/part-of: wafflebear
+    spec:
+{{ include "wafflebear.workerScheduling" (dict "app.kubernetes.io/name" "mariadb-bootstrap" "app.kubernetes.io/part-of" "wafflebear") | nindent 6 }}
+      restartPolicy: OnFailure
+      containers:
+        - name: mariadb-bootstrap
+          image: "{{ .Values.mariadb.image.repository }}:{{ .Values.mariadb.image.tag }}"
+          imagePullPolicy: {{ .Values.mariadb.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "wafflebear.fullname" . }}-backend-env
+          env:
+            - name: MARIADB_DATABASE
+              value: web
+            - name: MARIADB_BOOTSTRAP_TIMEOUT_SECONDS
+              value: "300"
+            - name: MARIADB_BOOTSTRAP_SLEEP_SECONDS
+              value: "3"
+          command:
+            - sh
+            - -ec
+            - |
+              timeout_seconds="${MARIADB_BOOTSTRAP_TIMEOUT_SECONDS:-300}"
+              sleep_seconds="${MARIADB_BOOTSTRAP_SLEEP_SECONDS:-3}"
+              elapsed=0
+
+              if [ -z "${DB_ID:-}" ] || [ -z "${DB_PASS:-}" ]; then
+                echo "DB_ID and DB_PASS are required" >&2
+                exit 1
+              fi
+
+              until mariadb-admin ping -h mariadb -uroot -p"$DB_PASS" --silent >/dev/null 2>&1; do
+                if [ "$elapsed" -ge "$timeout_seconds" ]; then
+                  echo "timed out waiting for mariadb" >&2
+                  exit 1
+                fi
+                echo "waiting for mariadb"
+                sleep "$sleep_seconds"
+                elapsed=$((elapsed + sleep_seconds))
+              done
+
+              escape_sql() {
+                printf "%s" "$1" | sed "s/'/''/g"
+              }
+
+              db_user="$(escape_sql "$DB_ID")"
+              db_pass="$(escape_sql "$DB_PASS")"
+              db_name="${MARIADB_DATABASE:-web}"
+
+              mariadb -h mariadb -uroot -p"$DB_PASS" -e "CREATE DATABASE IF NOT EXISTS \`$db_name\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+              mariadb -h mariadb -uroot -p"$DB_PASS" -e "CREATE USER IF NOT EXISTS '$db_user'@'%' IDENTIFIED BY '$db_pass';"
+              mariadb -h mariadb -uroot -p"$DB_PASS" -e "ALTER USER '$db_user'@'%' IDENTIFIED BY '$db_pass';"
+              mariadb -h mariadb -uroot -p"$DB_PASS" -e "GRANT ALL PRIVILEGES ON \`$db_name\`.* TO '$db_user'@'%';"
+              mariadb -h mariadb -uroot -p"$DB_PASS" -e "FLUSH PRIVILEGES;"
+          resources:
+{{ toYaml .Values.mariadb.bootstrap.resources | indent 12 }}

@@ -1,0 +1,39 @@
+# Default ignored files
+/shelf/
+/.idea/
+/.idea/workspace.xml
+# Ignored default folder with query files
+/queries/
+# Datasource local storage ignored files
+/dataSources/
+/dataSources.local.xml
+# Editor-based HTTP Client requests
+/httpRequests/
+
+# Local runtime artifacts
+node_modules/
+dist/
+build/
+.gradle/
+.env
+.env.*
+!.env.example
+*.log
+__pycache__/
+*.pyc
+*.exe
+*.zip
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+id_rsa*
+
+# Two-VM deployment runtime files
+deploy/two-vm/.env.vm151*
+deploy/two-vm/.env.vm152*
+deploy/two-vm/*.tar
+deploy/two-vm/*.tar.gz
+desktop-client/dist/
+frontend/public/downloads/

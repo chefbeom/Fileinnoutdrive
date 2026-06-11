@@ -1,0 +1,71 @@
+name: Lumisia CD (Deploy to Server)
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_IMAGE_TAG: v${{ github.run_number }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build Compose Images
+        run: |
+          docker compose -f docker-compose.yml build backend-app websocket-server frontend
+
+      - name: Push Compose Images
+        run: |
+          docker compose -f docker-compose.yml push backend-app websocket-server frontend
+
+      - name: Tag and Push Latest Images
+        run: |
+          docker tag lumisia/backend:${{ env.COMPOSE_IMAGE_TAG }} lumisia/backend:latest
+          docker tag lumisia/websocket-server:${{ env.COMPOSE_IMAGE_TAG }} lumisia/websocket-server:latest
+          docker tag lumisia/frontend:${{ env.COMPOSE_IMAGE_TAG }} lumisia/frontend:latest
+          docker push lumisia/backend:latest
+          docker push lumisia/websocket-server:latest
+          docker push lumisia/frontend:latest
+
+      - name: Setup Helm
+        if: ${{ secrets.KUBE_CONFIG != '' && secrets.HELM_VALUES_PRIVATE != '' }}
+        uses: azure/setup-helm@v4
+
+      - name: Setup kubectl
+        if: ${{ secrets.KUBE_CONFIG != '' && secrets.HELM_VALUES_PRIVATE != '' }}
+        uses: azure/setup-kubectl@v4
+
+      - name: Deploy Helm Release
+        if: ${{ secrets.KUBE_CONFIG != '' && secrets.HELM_VALUES_PRIVATE != '' }}
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+          HELM_VALUES_PRIVATE: ${{ secrets.HELM_VALUES_PRIVATE }}
+          HELM_RELEASE_NAME: ${{ vars.HELM_RELEASE_NAME }}
+          K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE }}
+        run: |
+          RELEASE_NAME="${HELM_RELEASE_NAME:-wafflebear}"
+          NAMESPACE="${K8S_NAMESPACE:-default}"
+
+          mkdir -p "$HOME/.kube"
+          printf '%s' "$KUBE_CONFIG" > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+
+          printf '%s' "$HELM_VALUES_PRIVATE" > helm/values.private.ci.yaml
+
+          helm upgrade --install "$RELEASE_NAME" ./helm \
+            --namespace "$NAMESPACE" \
+            --create-namespace \
+            -f helm/values.yaml \
+            -f helm/values.private.ci.yaml \
+            --set-string backend.image.tag="${COMPOSE_IMAGE_TAG}" \
+            --set-string frontend.image.tag="${COMPOSE_IMAGE_TAG}" \
+            --set-string websocket.image.tag="${COMPOSE_IMAGE_TAG}"
