@@ -391,9 +391,24 @@ try {
       throw "install-windows.ps1 context copy-link action is incomplete: $requiredCopyLinkContextToken"
     }
   }
-  foreach ($requiredShareContextToken in @('ActionKey "share"', 'share-target --target', 'context-share.txt', 'context-share-result.txt')) {
+  foreach ($requiredShareContextToken in @('ActionKey "share"', 'share-target --target', 'context-share.txt', 'context-share-result.txt', 'Set-Clipboard -Value $address', 'share address:')) {
     if (-not $installScriptText.Contains($requiredShareContextToken)) {
       throw "install-windows.ps1 context share action is incomplete: $requiredShareContextToken"
+    }
+  }
+  foreach ($requiredSharedAddressToken in @("SHARE_URL_SCHEME", "build_share_address", "parse_share_address", "connect_shared_folder_from_address", "open-address", "share-address")) {
+    if (-not $desktopClientText.Contains($requiredSharedAddressToken)) {
+      throw "fileinnout_desktop.py is missing shared-folder address support: $requiredSharedAddressToken"
+    }
+  }
+  foreach ($requiredSharedAddressInstallToken in @("Register-FileInNOutUrlProtocol", "HKCU:\Software\Classes\fileinnout", "open-address --address")) {
+    if (-not $installScriptText.Contains($requiredSharedAddressInstallToken)) {
+      throw "install-windows.ps1 is missing FileInNOut URL protocol support: $requiredSharedAddressInstallToken"
+    }
+  }
+  foreach ($requiredTraySharedAddressToken in @("OpenSharedAddress", "sharedAddressText", "open-address --address", "\uC8FC\uC18C \uC5F4\uAE30")) {
+    if (-not $traySourceText.Contains($requiredTraySharedAddressToken)) {
+      throw "FileInNOutDesktopTray.cs is missing shared address UI support: $requiredTraySharedAddressToken"
     }
   }
   foreach ($requiredAddSyncFolderContextToken in @('ActionKey "add-sync-folder"', 'add-sync-folder --target', 'context-add-sync-folder.txt')) {

@@ -1411,6 +1411,51 @@ namespace FileInNOutDesktop
             UpdateSettingsForm(false);
         }
 
+        public void OpenSharedAddress(string address)
+        {
+            if (UseKoreanLabels())
+            {
+                OpenSharedAddressKorean(address);
+                return;
+            }
+            if (String.IsNullOrWhiteSpace(address))
+            {
+                throw new InvalidOperationException("Enter a shared folder address.");
+            }
+
+            CommandResult result = RunCommand("open-address --address " + Quote(address.Trim()));
+            if (result.ExitCode != 0)
+            {
+                throw new InvalidOperationException(result.Output);
+            }
+            lastStatus = "Shared folder connected";
+            lastOutput = result.Output;
+            EnsureDriveHubMapping(LoadDesktopConfig());
+            RefreshWatchers();
+            ShowNotification("Shared folder connected", TrimForBalloon(result.Output), ToolTipIcon.Info);
+            UpdateSettingsForm(true);
+        }
+
+        private void OpenSharedAddressKorean(string address)
+        {
+            if (String.IsNullOrWhiteSpace(address))
+            {
+                throw new InvalidOperationException("\uACF5\uC720 \uC8FC\uC18C\uB97C \uC785\uB825\uD558\uC138\uC694.");
+            }
+
+            CommandResult result = RunCommand("open-address --address " + Quote(address.Trim()));
+            if (result.ExitCode != 0)
+            {
+                throw new InvalidOperationException(result.Output);
+            }
+            lastStatus = "\uACF5\uC720 \uD3F4\uB354 \uC5F0\uACB0 \uC644\uB8CC";
+            lastOutput = result.Output;
+            EnsureDriveHubMapping(LoadDesktopConfig());
+            RefreshWatchers();
+            ShowNotification("\uACF5\uC720 \uD3F4\uB354 \uC5F0\uACB0 \uC644\uB8CC", TrimForBalloon(result.Output), ToolTipIcon.Info);
+            UpdateSettingsForm(true);
+        }
+
         public void Login(string email, string password)
         {
             if (UseKoreanLabels())
@@ -4589,6 +4634,7 @@ namespace FileInNOutDesktop
         private TextBox localFolderText;
         private TextBox cloudFolderText;
         private TextBox shareEmailText;
+        private TextBox sharedAddressText;
         private TextBox searchText;
         private ComboBox directionCombo;
         private ComboBox permissionCombo;
@@ -4954,10 +5000,11 @@ namespace FileInNOutDesktop
             TableLayoutPanel layout = new TableLayoutPanel();
             layout.Dock = DockStyle.Fill;
             layout.ColumnCount = 2;
-            layout.RowCount = 2;
+            layout.RowCount = 3;
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             card.Controls.Add(layout);
 
@@ -4970,6 +5017,18 @@ namespace FileInNOutDesktop
             hint.TextAlign = ContentAlignment.MiddleRight;
             layout.Controls.Add(hint, 1, 0);
 
+            sharedAddressText = CreateTextBox();
+            sharedAddressText.Dock = DockStyle.Fill;
+            sharedAddressText.Margin = new Padding(0, 2, 8, 6);
+            layout.Controls.Add(sharedAddressText, 0, 1);
+
+            RoundedButton openAddressButton = new RoundedButton();
+            openAddressButton.Text = "\uC8FC\uC18C \uC5F4\uAE30";
+            openAddressButton.Dock = DockStyle.Fill;
+            openAddressButton.Margin = new Padding(12, 2, 0, 6);
+            openAddressButton.Click += delegate { OpenSharedAddress(); };
+            layout.Controls.Add(openAddressButton, 1, 1);
+
             pendingShareList = new ListView();
             pendingShareList.View = View.Details;
             pendingShareList.FullRowSelect = true;
@@ -4979,7 +5038,7 @@ namespace FileInNOutDesktop
             pendingShareList.Columns.Add("공유 폴더/파일", 340);
             pendingShareList.Columns.Add("보낸 사람", 230);
             pendingShareList.Columns.Add("권한", 120);
-            layout.Controls.Add(pendingShareList, 0, 1);
+            layout.Controls.Add(pendingShareList, 0, 2);
 
             TableLayoutPanel actions = new TableLayoutPanel();
             actions.Dock = DockStyle.Fill;
@@ -4989,7 +5048,7 @@ namespace FileInNOutDesktop
             actions.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
             actions.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
             actions.Margin = new Padding(12, 0, 0, 0);
-            layout.Controls.Add(actions, 1, 1);
+            layout.Controls.Add(actions, 1, 2);
 
             RoundedButton acceptButton = new RoundedButton();
             acceptButton.Text = "수락";
@@ -5773,6 +5832,29 @@ namespace FileInNOutDesktop
             }
         }
 
+        private void OpenSharedAddress()
+        {
+            if (TrayController.UseKoreanLabelsForUi())
+            {
+                OpenSharedAddressKoreanUi();
+                return;
+            }
+            try
+            {
+                controller.OpenSharedAddress(sharedAddressText == null ? "" : sharedAddressText.Text.Trim());
+                if (sharedAddressText != null)
+                {
+                    sharedAddressText.Text = "";
+                }
+                RefreshPendingShares();
+                RefreshLiveData();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Open shared address failed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
         private PendingShareItem SelectedPendingShare()
         {
             if (pendingShareList == null || pendingShareList.SelectedItems.Count == 0)
@@ -5890,6 +5972,24 @@ namespace FileInNOutDesktop
             catch (Exception ex)
             {
                 MessageBox.Show(ex.Message, "\uACF5\uC720 \uC2E4\uD328", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private void OpenSharedAddressKoreanUi()
+        {
+            try
+            {
+                controller.OpenSharedAddress(sharedAddressText == null ? "" : sharedAddressText.Text.Trim());
+                if (sharedAddressText != null)
+                {
+                    sharedAddressText.Text = "";
+                }
+                RefreshPendingShares();
+                RefreshLiveData();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "\uACF5\uC720 \uC8FC\uC18C \uC5F4\uAE30 \uC2E4\uD328", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 

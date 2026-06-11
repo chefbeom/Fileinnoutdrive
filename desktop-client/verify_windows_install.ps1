@@ -47,6 +47,8 @@ $explorerPropertyBagPath = Join-Path $explorerClsidPath "Instance\InitPropertyBa
 $explorerDesktopNamespacePath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Desktop\NameSpace\$explorerNamespaceGuid"
 $explorerMyComputerNamespacePath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\$explorerNamespaceGuid"
 $hideDesktopIconPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel"
+$urlProtocolPath = "HKCU:\Software\Classes\fileinnout"
+$urlProtocolCommandPath = Join-Path $urlProtocolPath "shell\open\command"
 $contextMenuPaths = @(
   "HKCU:\Software\Classes\Directory\shell\FileInNOut",
   "HKCU:\Software\Classes\Directory\Background\shell\FileInNOut",
@@ -278,6 +280,19 @@ try {
   if ($registration.InstallLocation -ne (Resolve-Path -LiteralPath $installDir).Path) {
     throw "Unexpected registry InstallLocation: $($registration.InstallLocation)"
   }
+  if (-not (Test-Path -LiteralPath $urlProtocolPath)) {
+    throw "FileInNOut URL protocol registry key is missing: $urlProtocolPath"
+  }
+  if ($null -eq (Get-Item -LiteralPath $urlProtocolPath).GetValue("URL Protocol", $null)) {
+    throw "FileInNOut URL protocol registry key is missing URL Protocol value"
+  }
+  if (-not (Test-Path -LiteralPath $urlProtocolCommandPath)) {
+    throw "FileInNOut URL protocol command is missing: $urlProtocolCommandPath"
+  }
+  $urlProtocolCommand = (Get-Item -LiteralPath $urlProtocolCommandPath).GetValue("")
+  if (-not ([string]$urlProtocolCommand).Contains("open-address --address")) {
+    throw "FileInNOut URL protocol does not open shared addresses: $urlProtocolCommand"
+  }
   if (-not ([string]$registration.UninstallString).Contains("uninstall-windows.ps1")) {
     throw "Registry UninstallString does not point at uninstall-windows.ps1"
   }
@@ -469,6 +484,12 @@ try {
   if (-not $contextScript.Contains("context-add-sync-folder.txt")) {
     throw "Explorer add-sync-folder context action does not persist setup output for troubleshooting"
   }
+  if (-not $contextScript.Contains("Set-Clipboard -Value `$address")) {
+    throw "Explorer share context action does not copy the shared folder address to the clipboard"
+  }
+  if (-not $contextScript.Contains("share address:")) {
+    throw "Explorer share context action does not parse the generated share address"
+  }
 
   if (-not (Test-Path -LiteralPath $configPath)) {
     throw "Global config was not created: $configPath"
@@ -632,6 +653,9 @@ try {
       throw "Uninstall did not remove Explorer context menu registry key: $path"
     }
   }
+  if (Test-Path -LiteralPath $urlProtocolPath) {
+    throw "Uninstall did not remove FileInNOut URL protocol registry key: $urlProtocolPath"
+  }
 
   if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
     throw "Uninstall did not remove scheduled task: $taskName"
@@ -686,6 +710,9 @@ try {
     if (Test-Path -LiteralPath $path) {
       Remove-Item -LiteralPath $path -Recurse -Force
     }
+  }
+  if (Test-Path -LiteralPath $urlProtocolPath) {
+    Remove-Item -LiteralPath $urlProtocolPath -Recurse -Force
   }
   if (Get-SubstTarget $driveLetter) {
     & subst "${driveLetter}:" /D 2>$null

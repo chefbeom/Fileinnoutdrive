@@ -110,6 +110,8 @@ def run(args: argparse.Namespace) -> None:
     recipient_root = work_dir / "recipient"
     owner_root.mkdir(parents=True, exist_ok=True)
     recipient_root.mkdir(parents=True, exist_ok=True)
+    original_config_path = desktop.GLOBAL_CONFIG_PATH
+    original_legacy_config_path = desktop.LEGACY_GLOBAL_CONFIG_PATH
 
     stamp = time.strftime("%Y%m%d%H%M%S")
     folder_name = f"desktop-e2e-{stamp}"
@@ -132,11 +134,32 @@ def run(args: argparse.Namespace) -> None:
         if folder_id is None:
             raise desktop.DesktopError("created owner folder has no remote id")
         owner_api.share([folder_id], args.recipient_email, "WRITE")
-        accept_share(recipient_api, folder_id, folder_name)
-        print(f"PASS owner push/share/recipient accept - folder={folder_name}")
+        shared_prefix = f"Shared/{desktop.safe_segment(args.owner_email)}/{folder_name}"
+        shared_address = desktop.build_share_address({"email": args.owner_email}, folder_name)
+        desktop.GLOBAL_CONFIG_PATH = work_dir / "recipient-address-appdata" / "config.json"
+        desktop.LEGACY_GLOBAL_CONFIG_PATH = work_dir / "recipient-address-legacy" / "config.json"
+        address_config = {
+            "server": args.server.rstrip("/"),
+            "email": args.recipient_email,
+            "syncFolders": [],
+        }
+        connect_result = desktop.connect_shared_folder_from_address(
+            recipient_api,
+            address_config,
+            shared_address,
+            sync_now=True,
+        )
+        if not connect_result["accepted"]:
+            raise desktop.DesktopError("shared address did not auto-accept the pending share")
+        if connect_result["remotePath"] != shared_prefix:
+            raise desktop.DesktopError(f"shared address resolved to unexpected path: {connect_result['remotePath']}")
+        connected_owner_file = Path(connect_result["localPath"]) / "owner.txt"
+        require_file_text(connected_owner_file, owner_text)
+        desktop.GLOBAL_CONFIG_PATH = original_config_path
+        desktop.LEGACY_GLOBAL_CONFIG_PATH = original_legacy_config_path
+        print(f"PASS owner share/recipient address connect - address={shared_address}")
 
         pull_stats = desktop.pull(recipient_api, recipient_root, include_shared=True)
-        shared_prefix = f"Shared/{desktop.safe_segment(args.owner_email)}/{folder_name}"
         recipient_owner_file = recipient_root / Path(shared_prefix) / "owner.txt"
         require_file_text(recipient_owner_file, owner_text)
         print(f"PASS recipient pull shared folder - pulled={pull_stats.pulled}")
@@ -273,6 +296,8 @@ def run(args: argparse.Namespace) -> None:
 
         print(f"DONE live desktop sync verification - work_dir={work_dir}")
     finally:
+        desktop.GLOBAL_CONFIG_PATH = original_config_path
+        desktop.LEGACY_GLOBAL_CONFIG_PATH = original_legacy_config_path
         if temp_context and not args.keep_work_dir:
             temp_context.cleanup()
 

@@ -266,6 +266,22 @@ For a newly created local folder, `--push-first` uploads it before sharing:
 Repeat `--email` or use comma-separated addresses to share with multiple
 recipients in one command.
 
+Share commands print a `fileinnout://shared/<owner-email>/<folder>` address.
+Explorer `FileInNOut > Share...` copies that shared-folder address to the
+clipboard after a successful share. After installation, a recipient can paste
+that address into Windows Run, File Explorer, the desktop settings window's
+shared-address field, or the command below:
+
+```powershell
+%LOCALAPPDATA%\FileInNOutDesktop\fileinnout-desktop.cmd open-address --address "fileinnout://shared/owner%40example.com/TeamFolder"
+```
+
+The desktop client accepts the pending share when needed, creates or refreshes
+the shared-folder sync profile, syncs it, links it into the FileInNOut drive
+under `Shared\<owner-email>\...`, and opens the folder in Explorer. Use
+`--no-accept` to require manual acceptance first or `--no-sync` to create the
+folder link without an immediate sync.
+
 Windows Explorer also gets a `FileInNOut > Share...` context menu during
 installation. Right-click a configured sync file or folder, enter recipient
 emails, choose a permission (`READ`, `DOWNLOAD`, `UPLOAD`, or `WRITE`), and the

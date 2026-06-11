@@ -42,6 +42,8 @@ CHUNK_SIZE_BYTES = 80 * 1024 * 1024
 GET_RETRY_ATTEMPTS = 3
 PARTITION_SIZE_BYTES = 100 * 1024 * 1024
 SHARED_ROOT_NAME = "Shared"
+SHARE_URL_SCHEME = "fileinnout"
+SHARE_URL_HOSTS = {"shared", "share", "folder"}
 MY_DRIVE_HUB_NAME = "\ub0b4 \ub4dc\ub77c\uc774\ube0c"
 SHARED_DRIVE_HUB_NAME = "\uacf5\uc720 \ubb38\uc11c\ud568"
 ROOT_FILE_SYNC_FOLDER_NAME = "\ub8e8\ud2b8 \ud30c\uc77c"
@@ -3583,6 +3585,98 @@ def desktop_web_url_for_cloud_path(config: dict[str, Any], cloud_rel: Path | str
     return f"{base_url}{route_path}{suffix}"
 
 
+def build_share_address(config: dict[str, Any], cloud_rel: Path | str) -> str:
+    rel = normalize_rel(cloud_rel)
+    if not rel:
+        raise DesktopError("share path is empty")
+    if not is_shared_rel(rel):
+        owner = safe_segment(str(config.get("email") or config.get("ownerEmail") or "").strip())
+        if not owner:
+            raise DesktopError("login email is missing; log in again before creating a share address")
+        rel = normalize_rel(Path(SHARED_ROOT_NAME) / owner / Path(rel))
+
+    parts = rel.split("/")
+    if len(parts) < 3 or parts[0] != SHARED_ROOT_NAME:
+        raise DesktopError(f"share address must point to a shared folder path: {rel}")
+
+    encoded = "/".join(urllib.parse.quote(part, safe="") for part in parts[1:])
+    return f"{SHARE_URL_SCHEME}://shared/{encoded}"
+
+
+def parse_share_address(address: Any) -> str:
+    raw = str(address or "").strip().strip('"')
+    if not raw:
+        raise DesktopError("share address is empty")
+
+    if raw.startswith("\\\\"):
+        raw = raw.lstrip("\\").replace("\\", "/")
+    normalized_plain = normalize_rel(raw)
+    if normalized_plain.startswith(f"{SHARED_ROOT_NAME}/") and len(normalized_plain.split("/")) >= 3:
+        return normalized_plain
+
+    parsed = urllib.parse.urlparse(raw)
+    if parsed.scheme.lower() != SHARE_URL_SCHEME:
+        if len(normalized_plain.split("/")) >= 2:
+            return normalize_rel(Path(SHARED_ROOT_NAME) / Path(normalized_plain))
+        raise DesktopError(f"unsupported share address: {raw}")
+
+    query = urllib.parse.parse_qs(parsed.query)
+    query_path = (query.get("path") or query.get("sharedPath") or query.get("desktopPath") or [""])[0]
+    if query_path:
+        rel = normalize_rel(urllib.parse.unquote(query_path))
+        if not rel.startswith(f"{SHARED_ROOT_NAME}/"):
+            rel = normalize_rel(Path(SHARED_ROOT_NAME) / Path(rel))
+        if len(rel.split("/")) >= 3:
+            return rel
+
+    host = urllib.parse.unquote(parsed.netloc or "").strip("/")
+    path_parts = [
+        urllib.parse.unquote(part)
+        for part in parsed.path.replace("\\", "/").split("/")
+        if part
+    ]
+    host_key = host.casefold()
+    if host_key in SHARE_URL_HOSTS:
+        parts = path_parts
+    else:
+        parts = [host, *path_parts] if host else path_parts
+
+    if parts and parts[0].casefold() == SHARED_ROOT_NAME.casefold():
+        parts = parts[1:]
+    if len(parts) < 2:
+        raise DesktopError(f"share address must include owner and folder path: {raw}")
+    return normalize_rel(Path(SHARED_ROOT_NAME).joinpath(*parts))
+
+
+def profile_for_remote_path(config: dict[str, Any], remote_path: str) -> dict[str, Any] | None:
+    normalized = normalize_rel(remote_path)
+    for profile in configured_sync_folders(config):
+        if normalize_rel(profile.get("remotePath") or "") == normalized:
+            return profile
+    return None
+
+
+def drive_hub_link_for_remote_path(config: dict[str, Any], remote_path: str) -> Path | None:
+    normalized = normalize_rel(remote_path)
+    for link_path, profile in drive_hub_profile_links(config):
+        if normalize_rel(profile.get("remotePath") or "") == normalized:
+            return link_path
+    return None
+
+
+def open_path_in_file_explorer(path: Path) -> None:
+    if os.name == "nt":
+        try:
+            subprocess.Popen(["explorer.exe", str(path)])
+            return
+        except OSError:
+            pass
+    try:
+        webbrowser.open(path.resolve(strict=False).as_uri())
+    except (OSError, ValueError):
+        webbrowser.open(str(path))
+
+
 def tsv_field(value: Any) -> str:
     return str(value or "").replace("\t", " ").replace("\r", " ").replace("\n", " ").strip()
 
@@ -3889,6 +3983,7 @@ def normalize_recipient_emails(raw_emails: Any) -> list[str]:
 
 
 def cmd_share(args: argparse.Namespace) -> None:
+    config = load_global_config()
     api = make_api(args)
     root = resolve_sync_root(args)
     rel = normalize_rel(args.path)
@@ -3920,6 +4015,7 @@ def cmd_share(args: argparse.Namespace) -> None:
     for email in emails:
         api.share([item_id], email, args.permission)
         print(f"shared {rel} with {email} as {args.permission}")
+    print(f"share address: {build_share_address(config, rel)}")
 
 
 def cmd_share_target(args: argparse.Namespace) -> None:
@@ -3968,9 +4064,11 @@ def cmd_share_target(args: argparse.Namespace) -> None:
     for email in emails:
         api.share([item_id], email, args.permission)
         print(f"shared {cloud_rel} with {email} as {args.permission}")
+    print(f"share address: {build_share_address(config, cloud_rel)}")
 
 
 def cmd_share_scope(args: argparse.Namespace) -> None:
+    config = load_global_config()
     api = make_api(args)
     remote_path = normalize_rel(args.remote_path)
     if not remote_path:
@@ -3998,6 +4096,149 @@ def cmd_share_scope(args: argparse.Namespace) -> None:
     for email in normalize_recipient_emails(args.email):
         api.share([item_id], email, args.permission)
         print(f"shared {remote_path} with {email} as {args.permission}")
+    print(f"share address: {build_share_address(config, remote_path)}")
+
+
+def find_shared_item_by_rel(paths: dict[str, dict[str, Any]], shared_rel: str) -> tuple[str, dict[str, Any]] | None:
+    normalized = normalize_rel(shared_rel)
+    item = paths.get(normalized)
+    if item is not None:
+        return normalized, item
+
+    parts = normalized.split("/")
+    if len(parts) < 3 or parts[0] != SHARED_ROOT_NAME:
+        return None
+    owner_key = parts[1].casefold()
+    requested_tail = "/".join(parts[2:]).casefold()
+    matches: list[tuple[str, dict[str, Any]]] = []
+    for rel, candidate in paths.items():
+        candidate_parts = normalize_rel(rel).split("/")
+        if len(candidate_parts) < 3 or candidate_parts[0] != SHARED_ROOT_NAME:
+            continue
+        if candidate_parts[1].casefold() != owner_key:
+            continue
+        candidate_tail = "/".join(candidate_parts[2:]).casefold()
+        if candidate_tail == requested_tail or candidate_tail.endswith("/" + requested_tail):
+            matches.append((rel, candidate))
+    return matches[0] if len(matches) == 1 else None
+
+
+def connect_shared_folder_from_address(
+    api: FileInNOutApi,
+    config: dict[str, Any],
+    address: str,
+    *,
+    accept_pending: bool = True,
+    sync_now: bool = True,
+    lock_stale_seconds: int = 86400,
+) -> dict[str, Any]:
+    shared_rel = parse_share_address(address)
+    if not is_shared_rel(shared_rel):
+        raise DesktopError(f"share address did not resolve to a shared path: {shared_rel}")
+
+    remote = build_remote_tree(api, include_shared=True)
+    resolved = find_shared_item_by_rel(remote, shared_rel)
+    accepted_now = False
+
+    if resolved is not None:
+        resolved_rel, item = resolved
+        if not (item.get("_sharedWithMe") or item.get("sharedWithMe")):
+            raise DesktopError(f"share is not available to this account: {resolved_rel}")
+        if not is_accepted_shared_item(item):
+            raise DesktopError(f"share is not accepted yet: {resolved_rel}")
+    else:
+        pending = build_pending_share_tree(api)
+        pending_resolved = find_shared_item_by_rel(pending, shared_rel)
+        if pending_resolved is None:
+            raise DesktopError(f"shared folder not found or not authorized for this account: {shared_rel}")
+        if not accept_pending:
+            raise DesktopError(f"share is waiting for acceptance: {pending_resolved[0]}")
+        resolved_rel, item = pending_resolved
+        item_id = file_id(item)
+        if item_id is None:
+            raise DesktopError(f"pending share has no id: {resolved_rel}")
+        api.accept_shared_file(item_id)
+        accepted_now = True
+        refreshed = find_shared_item_by_rel(build_remote_tree(api, include_shared=True), resolved_rel)
+        if refreshed is not None:
+            resolved_rel, item = refreshed
+        else:
+            item = dict(item)
+            item["status"] = "ACCEPTED"
+
+    if node_type(item) != "FOLDER":
+        raise DesktopError(f"share address must point to a folder: {resolved_rel}")
+
+    changed = ensure_shared_sync_profile(config, resolved_rel, item)
+    if changed:
+        save_global_config(config)
+    prepare_local_drive_config(config)
+
+    profile = profile_for_remote_path(config, resolved_rel)
+    if profile is None:
+        raise DesktopError(f"could not configure shared folder profile: {resolved_rel}")
+    local_root = Path(str(profile.get("localPath") or "")).expanduser().resolve(strict=False)
+    local_root.mkdir(parents=True, exist_ok=True)
+
+    push_stats = SyncStats()
+    pull_stats = SyncStats()
+    if sync_now:
+        push_stats, pull_stats = sync_profile(api, profile, lock_stale_seconds)
+        prepare_local_drive_config(config)
+
+    drive_link = drive_hub_link_for_remote_path(config, resolved_rel)
+    open_target = drive_link if drive_link and drive_link.exists() else local_root
+    return {
+        "remotePath": resolved_rel,
+        "localPath": str(local_root),
+        "drivePath": str(drive_link) if drive_link else "",
+        "openPath": str(open_target),
+        "accepted": accepted_now,
+        "push": push_stats,
+        "pull": pull_stats,
+    }
+
+
+def cmd_share_address(args: argparse.Namespace) -> None:
+    config = load_global_config()
+    if getattr(args, "target", ""):
+        prepare_local_drive_config(config, ensure_mapping=False)
+        resolved = desktop_target_cloud_path(config, args.target)
+        if resolved is None:
+            raise DesktopError(f"target is not inside a configured FileInNOut sync folder: {args.target}")
+        _, cloud_rel, _ = resolved
+        if not cloud_rel:
+            raise DesktopError("select a configured FileInNOut folder or file")
+        print(build_share_address(config, cloud_rel))
+        return
+
+    print(build_share_address(config, args.path))
+
+
+def cmd_open_address(args: argparse.Namespace) -> None:
+    address = str(getattr(args, "address", "") or getattr(args, "address_arg", "") or "").strip()
+    config = load_global_config()
+    api = make_api(args)
+    result = connect_shared_folder_from_address(
+        api,
+        config,
+        address,
+        accept_pending=not getattr(args, "no_accept", False),
+        sync_now=not getattr(args, "no_sync", False),
+        lock_stale_seconds=getattr(args, "lock_stale_seconds", 86400),
+    )
+    print(f"shared folder: {result['remotePath']}")
+    if result["accepted"]:
+        print("accepted: true")
+    print(f"local folder: {result['localPath']}")
+    if result["drivePath"]:
+        print(f"drive folder: {result['drivePath']}")
+    if not getattr(args, "no_sync", False):
+        print_stats("push", result["push"])
+        print_stats("pull", result["pull"])
+    print(f"open folder: {result['openPath']}")
+    if not getattr(args, "print_only", False):
+        open_path_in_file_explorer(Path(result["openPath"]))
 
 
 def build_pending_share_tree(api: FileInNOutApi) -> dict[str, dict[str, Any]]:
@@ -4629,6 +4870,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Remove an existing sync lock after this many seconds when --push-first is used. Default: 86400.",
     )
     share_scope_parser.set_defaults(func=cmd_share_scope)
+
+    share_address_parser = subparsers.add_parser("share-address", help="Print a FileInNOut shared-folder address")
+    share_address_group = share_address_parser.add_mutually_exclusive_group(required=True)
+    share_address_group.add_argument("--path", help="Owned cloud path to turn into a fileinnout:// shared-folder address")
+    share_address_group.add_argument("--target", help="Local Explorer target inside a configured sync folder")
+    share_address_parser.set_defaults(func=cmd_share_address)
+
+    open_address_parser = subparsers.add_parser("open-address", help="Connect and open a shared folder by fileinnout:// address")
+    open_address_parser.add_argument("address_arg", nargs="?", help="Shared folder address")
+    open_address_parser.add_argument("--address", default="", help="Shared folder address")
+    open_address_parser.add_argument("--no-accept", action="store_true", help="Do not auto-accept a pending share")
+    open_address_parser.add_argument("--no-sync", action="store_true", help="Create the folder mapping without immediately syncing")
+    open_address_parser.add_argument("--print-only", action="store_true", help="Print the resolved folder without opening Explorer")
+    open_address_parser.add_argument(
+        "--lock-stale-seconds",
+        type=int,
+        default=86400,
+        help="Remove an existing sync lock after this many seconds. Default: 86400.",
+    )
+    open_address_parser.set_defaults(func=cmd_open_address)
 
     pending_parser = subparsers.add_parser("pending-shares", help="List pending shares waiting for acceptance")
     pending_parser.set_defaults(func=cmd_pending_shares)

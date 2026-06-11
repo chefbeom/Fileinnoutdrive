@@ -403,7 +403,8 @@ $contextMenuPaths = @(
   "HKCU:\Software\Classes\Directory\shell\FileInNOut",
   "HKCU:\Software\Classes\Directory\Background\shell\FileInNOut",
   "HKCU:\Software\Classes\Drive\shell\FileInNOut",
-  "HKCU:\Software\Classes\*\shell\FileInNOut"
+  "HKCU:\Software\Classes\*\shell\FileInNOut",
+  "HKCU:\Software\Classes\fileinnout"
 )
 
 if (-not $SyncDir -and (Test-Path -LiteralPath $configPath)) {

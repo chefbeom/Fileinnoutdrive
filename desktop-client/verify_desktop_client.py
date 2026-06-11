@@ -205,6 +205,12 @@ def main() -> int:
     assert client.is_writable_shared_item({"permission": "WRITE"})
     assert not client.is_writable_shared_item({"permission": "READ"})
     assert client.extract_refresh_token({"Set-Cookie": "refresh=abc123; Path=/; HttpOnly"}) == "abc123"
+    assert client.build_share_address({"email": "owner@example.com"}, "Team") == "fileinnout://shared/owner%40example.com/Team"
+    assert client.build_share_address({}, "Shared/owner@example.com/Team") == "fileinnout://shared/owner%40example.com/Team"
+    assert client.parse_share_address("fileinnout://shared/owner%40example.com/Team") == "Shared/owner@example.com/Team"
+    assert client.parse_share_address("fileinnout://owner%40example.com/Team") == "Shared/owner@example.com/Team"
+    assert client.parse_share_address("Shared/owner@example.com/Team") == "Shared/owner@example.com/Team"
+    assert client.parse_share_address("fileinnout://shared?path=Shared%2Fowner%40example.com%2FTeam") == "Shared/owner@example.com/Team"
 
     retry_api = client.FileInNOutApi("http://server")
     retry_attempts = {"count": 0}
@@ -288,6 +294,8 @@ def main() -> int:
     original_make_api = client.make_api
     original_config_path = client.GLOBAL_CONFIG_PATH
     original_legacy_config_path = client.LEGACY_GLOBAL_CONFIG_PATH
+    original_prepare_local_drive_config = client.prepare_local_drive_config
+    original_sync_profile = client.sync_profile
     try:
         with tempfile.TemporaryDirectory() as tmp:
             config_root = Path(tmp) / "appdata"
@@ -950,10 +958,58 @@ def main() -> int:
             disabled_profiles = [profile for profile in profiles if profile["remotePath"] == "Shared/owner@example.com/AcceptedTeam"]
             assert len(disabled_profiles) == 1
             assert disabled_profiles[0]["enabled"] is False
+
+            connect_api = FakeSharedApi(
+                shared_items=[],
+                pending_items=[
+                    {
+                        "idx": 181,
+                        "fileOriginName": "AddressTeam",
+                        "nodeType": "FOLDER",
+                        "parentId": None,
+                        "ownerEmail": "owner@example.com",
+                        "permission": "WRITE",
+                        "status": "PENDING",
+                        "writable": True,
+                    }
+                ],
+            )
+            sync_calls: list[tuple[str, int]] = []
+
+            def fake_sync_profile(api_arg, profile: dict, lock_stale_seconds: int) -> tuple[client.SyncStats, client.SyncStats]:
+                assert api_arg is connect_api
+                sync_calls.append((profile["remotePath"], lock_stale_seconds))
+                return client.SyncStats(pushed=1), client.SyncStats(pulled=2)
+
+            client.prepare_local_drive_config = lambda config_arg, ensure_mapping=True: False  # type: ignore[assignment]
+            client.sync_profile = fake_sync_profile  # type: ignore[assignment]
+            connect_config = {"syncFolders": []}
+            result = client.connect_shared_folder_from_address(
+                connect_api,
+                connect_config,
+                "fileinnout://shared/owner%40example.com/AddressTeam",
+                sync_now=True,
+                lock_stale_seconds=17,
+            )
+            assert connect_api.accepted_pending == [181]
+            assert result["accepted"] is True
+            assert result["remotePath"] == "Shared/owner@example.com/AddressTeam"
+            assert result["push"].pushed == 1
+            assert result["pull"].pulled == 2
+            assert sync_calls == [("Shared/owner@example.com/AddressTeam", 17)]
+            connected_profiles = [
+                profile for profile in client.configured_sync_folders(connect_config)
+                if profile["remotePath"] == "Shared/owner@example.com/AddressTeam"
+            ]
+            assert len(connected_profiles) == 1
+            assert connected_profiles[0]["name"] == "AddressTeam (owner@example.com)"
+            assert connected_profiles[0]["direction"] == "two-way"
     finally:
         client.make_api = original_make_api
         client.GLOBAL_CONFIG_PATH = original_config_path
         client.LEGACY_GLOBAL_CONFIG_PATH = original_legacy_config_path
+        client.prepare_local_drive_config = original_prepare_local_drive_config
+        client.sync_profile = original_sync_profile
 
     class FakeHttpResponse:
         def __init__(self, status: int, headers: dict, payload: bytes) -> None:

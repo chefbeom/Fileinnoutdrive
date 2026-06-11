@@ -325,7 +325,7 @@ if /I "%ACTION%"=="share" (
     exit /b 1
   )
   set "FILEINNOUT_SHARE_RESULT=!SHARE_RESULT!"
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.Windows.Forms; $decode={param($value) [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($value))}; $title=& $decode 'RmlsZUluTk91dCDqs7XsnKA='; $default=& $decode '6rO17JygIOyZhOujjA=='; $path=$env:FILEINNOUT_SHARE_RESULT; $text=$default; if($path -and (Test-Path -LiteralPath $path)){ $text=Get-Content -Raw -Path $path }; if($text.Length -gt 3500){ $text=$text.Substring(0,3500) + [Environment]::NewLine + '...' }; [System.Windows.Forms.MessageBox]::Show($text, $title, [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null"
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.Windows.Forms; $decode={param($value) [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($value))}; $title=& $decode 'RmlsZUluTk91dCDqs7XsnKA='; $default=& $decode '6rO17JygIOyZhOujjA=='; $copied=& $decode '6rO17JygIOyjvOyGjOqwgCDtgbTrpr3rs7Trk5zsl5Ag67O17IKs65CY7JeI7Iq164uI64ukLg=='; $path=$env:FILEINNOUT_SHARE_RESULT; $text=$default; $address=''; if($path -and (Test-Path -LiteralPath $path)){ $raw=Get-Content -Raw -Path $path; if($raw){ $text=$raw }; foreach($line in ($raw -split '\r?\n')){ if($line -match '^share address:\s*(.+)$'){ $address=$Matches[1].Trim() } } }; if($address){ Set-Clipboard -Value $address; $text=$text + [Environment]::NewLine + [Environment]::NewLine + $copied + [Environment]::NewLine + $address }; if($text.Length -gt 3500){ $text=$text.Substring(0,3500) + [Environment]::NewLine + '...' }; [System.Windows.Forms.MessageBox]::Show($text, $title, [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null"
   exit /b 0
 )
 
@@ -656,6 +656,32 @@ function Register-FileInNOutContextMenus {
   Register-FileInNOutContextMenuRoot -RootPath "HKCU:\Software\Classes\Directory\Background\shell\FileInNOut" -TargetPlaceholder "%V" -IconPath $IconPath
   Register-FileInNOutContextMenuRoot -RootPath "HKCU:\Software\Classes\Drive\shell\FileInNOut" -TargetPlaceholder "%1" -IconPath $IconPath
   Register-FileInNOutContextMenuRoot -RootPath "HKCU:\Software\Classes\*\shell\FileInNOut" -TargetPlaceholder "%1" -IconPath $IconPath
+}
+
+function Register-FileInNOutUrlProtocol {
+  param(
+    [string]$CmdPath,
+    [string]$IconPath = ""
+  )
+
+  if ([string]::IsNullOrWhiteSpace($CmdPath)) {
+    return
+  }
+
+  $protocolPath = "HKCU:\Software\Classes\fileinnout"
+  $defaultIconPath = Join-Path $protocolPath "DefaultIcon"
+  $commandPath = Join-Path $protocolPath "shell\open\command"
+  $iconValue = if ($IconPath -and (Test-Path -LiteralPath $IconPath)) { "$IconPath,0" } else { "$CmdPath,0" }
+
+  New-FileInNOutRegistryKey -Path $protocolPath
+  Set-RegistryDefaultValue -Path $protocolPath -Value "URL:FileInNOut shared folder"
+  Set-FileInNOutRegistryValue -Path $protocolPath -Name "URL Protocol" -Value ""
+
+  New-FileInNOutRegistryKey -Path $defaultIconPath
+  Set-RegistryDefaultValue -Path $defaultIconPath -Value $iconValue
+
+  New-FileInNOutRegistryKey -Path $commandPath
+  Set-RegistryDefaultValue -Path $commandPath -Value "`"$CmdPath`" open-address --address `"%1`""
 }
 
 function Get-FileInNOutSubstTarget {
@@ -1240,6 +1266,7 @@ New-FileInNOutDriveJunction -RootPath $myDriveHubDir -LinkName $driveLinkName -T
 Register-FileInNOutExplorerNamespace -Guid $ExplorerNamespaceGuid -TargetPath $driveRootDir -IconPath $shortcutIcon
 Register-FileInNOutShellSyncRoot -Guid $ExplorerNamespaceGuid -TargetPath $driveRootDir -IconPath $shortcutIcon -AccountId $(if ($Email) { $Email } else { "default" })
 Register-FileInNOutContextMenus -IconPath $shortcutIcon
+Register-FileInNOutUrlProtocol -CmdPath $cmdPath -IconPath $shortcutIcon
 $mountedDriveLetter = Mount-FileInNOutDrive -Letter $DriveLetter -TargetPath $driveRootDir
 if ($mountedDriveLetter) {
   Register-FileInNOutDriveAppearance -Letter $mountedDriveLetter -IconPath $shortcutIcon
