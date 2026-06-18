@@ -57,6 +57,19 @@ The two-VM deployment defaults to admin-only mode:
 - optional extra admins: set `FILEINNOUT_ADMIN_ADDITIONAL_USERS` or
   `ADMIN_ADDITIONAL_USERS` as `email|name|password;email2|password2`
 
+To enable Google, Kakao, and Naver social login, set `APP_ADMIN_ONLY=false`
+and provide real OAuth client values before deployment:
+
+- `FILEINNOUT_GOOGLE_CLIENT_ID`, `FILEINNOUT_GOOGLE_CLIENT_SECRET`
+- `FILEINNOUT_NAVER_CLIENT_ID`, `FILEINNOUT_NAVER_CLIENT_SECRET`
+- `FILEINNOUT_KAKAO_CLIENT_ID`, `FILEINNOUT_KAKAO_CLIENT_SECRET`
+
+Register these redirect URIs in each provider console:
+
+- `http://<vm151>/api/login/oauth2/code/google`
+- `http://<vm151>/api/login/oauth2/code/kakao`
+- `http://<vm151>/api/login/oauth2/code/naver`
+
 To verify live shared folders in admin-only mode during deployment, set the
 same extra admin as both a bootstrapped user and verification recipient:
 

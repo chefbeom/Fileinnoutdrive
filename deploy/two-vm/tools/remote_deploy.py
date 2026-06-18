@@ -85,6 +85,8 @@ def build_env_files(default_secret: str, vm151_host: str, vm152_host: str) -> tu
         "GOOGLE_CLIENT_SECRET": os.environ.get("FILEINNOUT_GOOGLE_CLIENT_SECRET", "dummy-google-client-secret"),
         "NAVER_CLIENT_ID": os.environ.get("FILEINNOUT_NAVER_CLIENT_ID", "dummy-naver-client-id"),
         "NAVER_CLIENT_SECRET": os.environ.get("FILEINNOUT_NAVER_CLIENT_SECRET", "dummy-naver-client-secret"),
+        "KAKAO_CLIENT_ID": os.environ.get("FILEINNOUT_KAKAO_CLIENT_ID", "dummy-kakao-client-id"),
+        "KAKAO_CLIENT_SECRET": os.environ.get("FILEINNOUT_KAKAO_CLIENT_SECRET", "dummy-kakao-client-secret"),
         "CLIENT_ID": os.environ.get("FILEINNOUT_KAKAO_CLIENT_ID", "dummy-kakao-client-id"),
         "CLIENT_SECRET": os.environ.get("FILEINNOUT_KAKAO_CLIENT_SECRET", "dummy-kakao-client-secret"),
         "MAIL_PORT": os.environ.get("FILEINNOUT_MAIL_PORT", "587"),
