@@ -9,6 +9,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test:workspace-readonly": "node scripts/verify-workspace-readonly-xss.mjs",
+    "test:workspace-collab-ui": "node scripts/verify-workspace-collab-ui.mjs",
+    "test:chat-room-ui": "node scripts/verify-chat-room-ui.mjs",
     "preview": "vite preview",
     "format": "prettier --write --experimental-cli src"
   },
