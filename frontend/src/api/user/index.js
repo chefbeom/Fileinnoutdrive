@@ -17,4 +17,9 @@ export const logout = async () => {
   return res
 }
 
-export default { signup, login, logout }
+export const getOAuthProviders = async () => {
+  const res = await api.get('/auth/oauth2/providers')
+  return res
+}
+
+export default { signup, login, logout, getOAuthProviders }

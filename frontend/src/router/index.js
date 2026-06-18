@@ -152,25 +152,36 @@ const router = createRouter({
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
   
-  // 1. 초기화: 로컬 스토리지 데이터 복구
-  if (!authStore.token) {
-    authStore.checkLogin()
+  // Restore OAuth callback tokens before protected-route checks.
+  const tokenFromUrl = to.query.accessToken || to.query.token
+  const accessTokenFromUrl = Array.isArray(tokenFromUrl) ? tokenFromUrl[0] : tokenFromUrl
+  if (accessTokenFromUrl) {
+    authStore.login(accessTokenFromUrl)
+    const cleanQuery = { ...to.query }
+    delete cleanQuery.accessToken
+    delete cleanQuery.token
+    return next({
+      path: to.path,
+      query: cleanQuery,
+      hash: to.hash,
+      replace: true,
+    })
   }
 
-  // 2. URL 파라미터에 accessToken이 있는지 확인 (소셜 로그인용)
-  // to.query는 라우터가 분석한 URL 쿼리 파라미터입니다.
-  const hasTokenInUrl = to.query.accessToken || to.query.token
-  const isAuthenticated = !!authStore.token
+  // Protected routes try refresh-token based session restore before redirecting.
+  const needsSession = Boolean(to.meta.requiresAuth || to.meta.requiresAdmin)
+  const isAuthenticated = needsSession
+    ? await authStore.ensureSession()
+    : (authStore.token ? true : authStore.checkLogin())
   const adminEmail = String(authStore.user?.email || '').toLowerCase()
   const adminRole = String(authStore.user?.role || '').toUpperCase()
   const isAdministrator =
     adminRole.includes('ADMIN') ||
     adminEmail === 'administrator@administrator.adm'
 
-  // 3. 네비게이션 가드 로직
+  // Navigation guard.
   if (to.meta.requiresAuth) {
-    // 인증이 필요한데 토큰이 없고, URL에도 토큰이 없다면 튕김
-    if (!isAuthenticated && !hasTokenInUrl) {
+    if (!isAuthenticated) {
       return next({ name: 'login' })
     }
   }

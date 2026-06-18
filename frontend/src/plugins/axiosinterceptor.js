@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { reissueAccessToken } from '@/api/authSession.js'
 import { useAuthStore } from '@/stores/useAuthStore.js'
 import { API_BASE_URL } from '@/utils/backendUrl.js'
 
@@ -46,12 +47,7 @@ api.interceptors.response.use(
       originalRequest._retry = true
 
       try {
-        const res = await axios.post('/auth/reissue', {}, {
-          baseURL: API_BASE_URL,
-          withCredentials: true,
-        })
-
-        const newAccessToken = res.headers['authorization']?.replace('Bearer ', '')
+        const { accessToken: newAccessToken } = await reissueAccessToken()
 
         if (newAccessToken) {
           authStore.setToken(newAccessToken)
@@ -59,7 +55,7 @@ api.interceptors.response.use(
           return api(originalRequest)
         }
       } catch (refreshError) {
-        authStore.logout()
+        await authStore.logout({ unsubscribe: false })
         window.location.href = '/login'
         return Promise.reject(refreshError)
       }

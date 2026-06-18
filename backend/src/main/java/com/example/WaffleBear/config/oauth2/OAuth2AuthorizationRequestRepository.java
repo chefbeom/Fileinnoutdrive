@@ -6,6 +6,7 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.apache.commons.lang3.SerializationUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.client.web.AuthorizationRequestRepository;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.stereotype.Component;
@@ -16,49 +17,71 @@ import java.time.Duration;
 
 @Component
 public class OAuth2AuthorizationRequestRepository implements AuthorizationRequestRepository<OAuth2AuthorizationRequest> {
+    private static final String OAUTH2_REQUEST_COOKIE_NAME = "OAUTH2_REQUEST";
+    private static final int OAUTH2_REQUEST_COOKIE_MAX_AGE_SECONDS = (int) Duration.ofMinutes(5).toSeconds();
+
+    @Value("${app.secure-cookie:false}")
+    private boolean secureCookie;
 
     @Override
     public OAuth2AuthorizationRequest loadAuthorizationRequest(HttpServletRequest request) {
-        for (Cookie cookie : request.getCookies()) {
-            if (cookie.getName().equals("OAUTH2_REQUEST")) {
-                OAuth2AuthorizationRequest oAuth2AuthorizationRequest =
-                        (OAuth2AuthorizationRequest) SerializationUtils.deserialize(cookie.getValue().getBytes());
-                return oAuth2AuthorizationRequest;
-            }
+        Cookie cookie = findCookie(request, OAUTH2_REQUEST_COOKIE_NAME);
+        if (cookie == null) {
+            return null;
         }
-        return null;
+
+        try {
+            return (OAuth2AuthorizationRequest) SerializationUtils.deserialize(
+                    Aes256.decrypt(cookie.getValue().getBytes(StandardCharsets.UTF_8))
+            );
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     @Override
     public void saveAuthorizationRequest(OAuth2AuthorizationRequest authorizationRequest, HttpServletRequest request, HttpServletResponse response) {
-        Cookie cookie = new Cookie("OAUTH2_REQUEST",
+        if (authorizationRequest == null) {
+            clearAuthorizationRequestCookie(response);
+            return;
+        }
+
+        Cookie cookie = new Cookie(OAUTH2_REQUEST_COOKIE_NAME,
                 Aes256.encrypt(SerializationUtils.serialize(authorizationRequest)));
         cookie.setPath("/");
         cookie.setHttpOnly(true);
-        cookie.setSecure(true);
-        cookie.setMaxAge(((int) Duration.ofSeconds(300L).toSeconds()));
+        cookie.setSecure(secureCookie);
+        cookie.setMaxAge(OAUTH2_REQUEST_COOKIE_MAX_AGE_SECONDS);
         response.addCookie(cookie);
     }
 
     @Override
     public OAuth2AuthorizationRequest removeAuthorizationRequest(HttpServletRequest request, HttpServletResponse response) {
-        for (Cookie cookie : request.getCookies()) {
-            if (cookie.getName().equals("OAUTH2_REQUEST")) {
-                OAuth2AuthorizationRequest oAuth2AuthorizationRequest =
-                        (OAuth2AuthorizationRequest) SerializationUtils.deserialize(
-                                Aes256.decrypt(cookie.getValue().getBytes(StandardCharsets.UTF_8))
-                        );
+        OAuth2AuthorizationRequest authorizationRequest = loadAuthorizationRequest(request);
+        clearAuthorizationRequestCookie(response);
+        return authorizationRequest;
+    }
 
-                cookie.setValue("");
-                cookie.setPath("/");
-                cookie.setHttpOnly(true);
-                cookie.setSecure(true);
-                cookie.setMaxAge(((int) Duration.ofSeconds(0L).toSeconds()));
-                response.addCookie(cookie);
+    private Cookie findCookie(HttpServletRequest request, String name) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            return null;
+        }
 
-                return oAuth2AuthorizationRequest;
+        for (Cookie cookie : cookies) {
+            if (name.equals(cookie.getName())) {
+                return cookie;
             }
         }
         return null;
+    }
+
+    private void clearAuthorizationRequestCookie(HttpServletResponse response) {
+        Cookie cookie = new Cookie(OAUTH2_REQUEST_COOKIE_NAME, "");
+        cookie.setPath("/");
+        cookie.setHttpOnly(true);
+        cookie.setSecure(secureCookie);
+        cookie.setMaxAge(0);
+        response.addCookie(cookie);
     }
 }

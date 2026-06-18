@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
 
@@ -24,7 +25,7 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
     @Value("${app.frontend-url}")
     private String frontendUrl;
 
-    @Value("${app.secure-cookie}")
+    @Value("${app.secure-cookie:false}")
     private boolean secureCookie;
 
     @Override
@@ -47,7 +48,14 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
         refreshCookie.setSecure(secureCookie);
         response.addCookie(refreshCookie);
 
-        String redirectUrl = frontendUrl + "/main?accessToken=" + tokens.accessToken();
+        clearAuthenticationAttributes(request);
+
+        String redirectUrl = UriComponentsBuilder
+                .fromUriString(frontendUrl)
+                .path("/main/home")
+                .queryParam("accessToken", tokens.accessToken())
+                .build()
+                .toUriString();
         getRedirectStrategy().sendRedirect(request, response, redirectUrl);
     }
 }

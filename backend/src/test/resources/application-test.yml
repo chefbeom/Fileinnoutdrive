@@ -64,6 +64,7 @@ spring:
           google:
             client-id: test-google-client
             client-secret: test-google-secret
+            redirect-uri: ${app.backend-url}/login/oauth2/code/google
             scope:
               - email
               - profile
@@ -73,8 +74,8 @@ spring:
             redirect-uri: ${app.backend-url}/login/oauth2/code/naver
             scope:
               - name
-              - profile
               - email
+              - profile_image
             authorization-grant-type: authorization_code
           kakao:
             client-id: test-kakao-client

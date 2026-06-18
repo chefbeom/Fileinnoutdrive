@@ -1,8 +1,9 @@
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { login } from '@/api/user/index.js'
+import { getOAuthProviders, login } from '@/api/user/index.js'
 import { useAuthStore } from '@/stores/useAuthStore.js'
+import { apiPath } from '@/utils/backendUrl.js'
 
 const ADMIN_EMAIL = 'admin@fileinnout.local'
 
@@ -10,14 +11,50 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 const isLoading = ref(false)
+const socialLoadingProvider = ref('')
 const loginErrorMessage = ref('')
+const socialProviders = ref([])
 
 const loginForm = reactive({
   email: ADMIN_EMAIL,
   password: '',
 })
 
-const isFormValid = computed(() => loginForm.password.length > 0)
+const providerCatalog = [
+  { id: 'google', label: 'Google', mark: 'G', className: 'provider-google' },
+  { id: 'kakao', label: 'Kakao', mark: 'K', className: 'provider-kakao' },
+  { id: 'naver', label: 'Naver', mark: 'N', className: 'provider-naver' },
+]
+
+const isFormValid = computed(() => loginForm.password.trim().length > 0)
+const hasSocialProviders = computed(() => socialProviders.value.length > 0)
+
+const loadOAuthProviders = async () => {
+  try {
+    const res = await getOAuthProviders()
+    const providers = Array.isArray(res.data?.providers) ? res.data.providers : []
+    const providerById = new Map(providers.map((provider) => [provider.id, provider]))
+
+    socialProviders.value = providerCatalog
+      .map((provider) => {
+        const status = providerById.get(provider.id)
+        return {
+          ...provider,
+          enabled: Boolean(status?.enabled),
+          authorizationUrl: status?.authorizationUrl || `/oauth2/authorization/${provider.id}`,
+        }
+      })
+      .filter((provider) => provider.enabled)
+  } catch (error) {
+    socialProviders.value = []
+  }
+}
+
+const handleSocialLogin = (provider) => {
+  if (socialLoadingProvider.value || !provider?.enabled) return
+  socialLoadingProvider.value = provider.id
+  window.location.assign(apiPath(provider.authorizationUrl))
+}
 
 const handleLogin = async () => {
   if (!isFormValid.value || isLoading.value) return
@@ -31,122 +68,307 @@ const handleLogin = async () => {
     const accessToken = authHeader?.replace('Bearer ', '') || res.data?.accessToken
 
     if (!accessToken) {
-      loginErrorMessage.value = '관리자 로그인 정보를 확인해 주세요.'
+      loginErrorMessage.value = 'The login response did not include a token.'
       return
     }
 
     authStore.login(accessToken)
     router.push({ name: 'main' })
   } catch (error) {
-    loginErrorMessage.value = '관리자 계정만 로그인할 수 있습니다.'
+    loginErrorMessage.value = 'Check the administrator account credentials.'
   } finally {
     isLoading.value = false
   }
 }
+
+onMounted(() => {
+  loadOAuthProviders()
+})
 </script>
 
 <template>
-  <div class="min-h-screen bg-[#f8fafc] flex items-center justify-center p-6 relative overflow-hidden">
-    <div class="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-100 rounded-full blur-[120px] opacity-60" />
-    <div class="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-50 rounded-full blur-[120px] opacity-60" />
-
-    <div
-      class="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 w-full max-w-[480px] p-8 md:p-12 z-10"
-    >
-      <div class="text-center mb-10">
-        <router-link to="/" class="inline-flex flex-col items-center cursor-pointer group">
-          <div
-            class="inline-flex items-center justify-center w-14 h-14 bg-indigo-600 rounded-2xl shadow-lg shadow-indigo-200 mb-6 group-hover:bg-indigo-700 transition"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2.5"
-                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-              />
-            </svg>
-          </div>
-          <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight group-hover:text-indigo-700 transition">
-            FileInNOut
-          </h1>
+  <div class="login-page">
+    <section class="login-shell" aria-labelledby="login-title">
+      <div class="brand-panel">
+        <router-link to="/" class="brand-link" aria-label="FileInNOut home">
+          <span class="brand-icon">F</span>
+          <span class="brand-name">FileInNOut</span>
         </router-link>
-        <p class="text-gray-500 mt-2 font-medium">관리자 계정으로 로그인하세요</p>
+        <div>
+          <h1 id="login-title">Login</h1>
+          <p>Continue managing your files and workspaces.</p>
+        </div>
       </div>
 
-      <form @submit.prevent="handleLogin" class="space-y-5" novalidate>
-        <div class="space-y-1.5">
-          <label class="flex items-center text-sm font-bold text-gray-700 ml-1">관리자 이메일</label>
-          <input
-            v-model="loginForm.email"
-            type="email"
-            readonly
-            class="w-full bg-gray-100 border-2 border-gray-200 rounded-xl px-4 py-3.5 text-sm text-gray-600 outline-none"
-          />
+      <div class="login-card">
+        <div v-if="hasSocialProviders" class="social-section">
+          <button
+            v-for="provider in socialProviders"
+            :key="provider.id"
+            type="button"
+            class="social-button"
+            :class="provider.className"
+            :disabled="!!socialLoadingProvider"
+            @click="handleSocialLogin(provider)"
+          >
+            <span class="provider-mark">{{ provider.mark }}</span>
+            <span>
+              {{ socialLoadingProvider === provider.id ? 'Connecting...' : `Continue with ${provider.label}` }}
+            </span>
+          </button>
         </div>
 
-        <div class="space-y-1.5">
-          <label class="flex items-center text-sm font-bold text-gray-700 ml-1">비밀번호</label>
-          <input
-            v-model="loginForm.password"
-            type="password"
-            placeholder="관리자 비밀번호"
-            autocomplete="current-password"
-            class="w-full bg-gray-50 border-2 border-gray-200 rounded-xl px-4 py-3.5 text-sm transition-all outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/20"
-          />
+        <div v-if="hasSocialProviders" class="section-divider">
+          <span>Admin login</span>
         </div>
 
-        <div
-          v-if="loginErrorMessage"
-          class="p-4 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-3 animate-fade-in"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-rose-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
-            <path
-              fill-rule="evenodd"
-              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-              clip-rule="evenodd"
+        <form @submit.prevent="handleLogin" class="admin-form" novalidate>
+          <label>
+            <span>Admin email</span>
+            <input v-model="loginForm.email" type="email" readonly />
+          </label>
+
+          <label>
+            <span>Password</span>
+            <input
+              v-model="loginForm.password"
+              type="password"
+              placeholder="Administrator password"
+              autocomplete="current-password"
             />
-          </svg>
-          <p class="text-rose-600 text-xs font-bold leading-tight">{{ loginErrorMessage }}</p>
-        </div>
+          </label>
 
-        <button
-          :disabled="!isFormValid || isLoading"
-          class="w-full relative bg-indigo-600 disabled:bg-gray-200 disabled:cursor-not-allowed text-white font-bold py-4 rounded-xl transition-all transform hover:translate-y-[-1px] active:translate-y-[0] shadow-lg shadow-indigo-100 mt-4"
-        >
-          <span v-if="!isLoading">로그인</span>
-          <div v-else class="flex items-center justify-center">
-            <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-              <path
-                class="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              />
-            </svg>
-          </div>
-        </button>
-      </form>
-    </div>
+          <p v-if="loginErrorMessage" class="error-message">{{ loginErrorMessage }}</p>
+
+          <button type="submit" class="admin-button" :disabled="!isFormValid || isLoading">
+            {{ isLoading ? 'Signing in...' : 'Sign in' }}
+          </button>
+        </form>
+      </div>
+    </section>
   </div>
 </template>
 
 <style scoped>
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px 20px;
+  background: #f6f7f9;
+  color: #111827;
 }
 
-.animate-fade-in {
-  animation: fade-in 0.3s ease-out forwards;
+.login-shell {
+  width: min(920px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(320px, 420px);
+  gap: 32px;
+  align-items: center;
+}
+
+.brand-panel {
+  display: grid;
+  gap: 28px;
+}
+
+.brand-link {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 12px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.brand-icon {
+  width: 44px;
+  height: 44px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 800;
+}
+
+.brand-name {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+h1 {
+  margin: 0;
+  font-size: 44px;
+  line-height: 1.1;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+p {
+  margin: 12px 0 0;
+  color: #5b6472;
+  font-size: 16px;
+}
+
+.login-card {
+  display: grid;
+  gap: 24px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 28px;
+  background: #fff;
+  box-shadow: 0 18px 48px rgba(17, 24, 39, 0.08);
+}
+
+.social-section,
+.admin-form {
+  display: grid;
+  gap: 12px;
+}
+
+.social-button,
+.admin-button {
+  min-height: 48px;
+  border: 1px solid #d7dce3;
+  border-radius: 8px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-weight: 800;
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.social-button:hover:not(:disabled),
+.admin-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(17, 24, 39, 0.1);
+}
+
+.social-button:disabled,
+.admin-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.provider-mark {
+  width: 26px;
+  height: 26px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.provider-google {
+  background: #fff;
+  color: #1f2937;
+}
+
+.provider-google .provider-mark {
+  background: #eef2ff;
+  color: #2563eb;
+}
+
+.provider-kakao {
+  border-color: #f4d000;
+  background: #fee500;
+  color: #191600;
+}
+
+.provider-kakao .provider-mark {
+  background: rgba(25, 22, 0, 0.12);
+}
+
+.provider-naver {
+  border-color: #03c75a;
+  background: #03c75a;
+  color: #fff;
+}
+
+.provider-naver .provider-mark {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.section-divider {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 12px;
+  align-items: center;
+  color: #7b8494;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.section-divider::before,
+.section-divider::after {
+  content: '';
+  height: 1px;
+  background: #e5e7eb;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 input {
-  -webkit-tap-highlight-color: transparent;
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid #d7dce3;
+  border-radius: 8px;
+  padding: 0 14px;
+  background: #fff;
+  color: #111827;
+  outline: none;
+}
+
+input:read-only {
+  background: #f3f4f6;
+  color: #5b6472;
+}
+
+input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+}
+
+.error-message {
+  margin: 0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff1f2;
+  color: #be123c;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-button {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+}
+
+@media (max-width: 760px) {
+  .login-shell {
+    grid-template-columns: 1fr;
+  }
+
+  h1 {
+    font-size: 34px;
+  }
+
+  .brand-panel {
+    gap: 18px;
+  }
 }
 </style>
