@@ -280,6 +280,14 @@ public class ChatRoomService {
         return participantsRepository.existsByChatRoomsIdxAndUsersIdx(roomId, userIdx);
     }
 
+    @Transactional(readOnly = true)
+    public List<ChatParticipantsDto.Response> listParticipants(Long roomIdx, Long userIdx) {
+        validateRoomMembership(roomIdx, userIdx);
+        return participantsRepository.findAllByChatRoomsIdx(roomIdx).stream()
+                .map(participant -> ChatParticipantsDto.Response.from(participant, userIdx))
+                .toList();
+    }
+
     @Transactional // 트랜잭션을 통해 Dirty Checking으로 저장합니다.
     public void updateRoomTitle(Long roomIdx, String newTitle, Long userIdx) {
         ChatParticipants participant = participantsRepository.findByChatRoomsIdxAndUsersIdx(roomIdx, userIdx)

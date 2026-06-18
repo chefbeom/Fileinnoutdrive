@@ -98,6 +98,7 @@ const chatRooms = ref([])
 const fetchError = ref(false)
 const isChatInviteModalOpen = ref(false)
 const chatInviteMode = ref('invite')
+const chatRoomRefreshKey = ref(0)
 
 const currentUser = computed(() => ({ 
   name: authStore.user?.userName || 'Guest',
@@ -154,11 +155,21 @@ const handleChatInviteCompleted = async ({ mode, roomId } = {}) => {
     const createdRoom = chatRooms.value.find((room) => room.id === roomId)
     if (createdRoom) {
       handleSelectRoom(createdRoom)
+      chatRoomRefreshKey.value += 1
     }
   }
 
   if (mode === 'invite') {
+    const refreshedRoom = selectedRoom.value?.id
+      ? chatRooms.value.find((room) => room.id === selectedRoom.value.id)
+      : null
+
+    if (refreshedRoom) {
+      selectedRoom.value = { ...selectedRoom.value, ...refreshedRoom }
+    }
+
     isMenuOpen.value = false
+    chatRoomRefreshKey.value += 1
   }
 }
 
@@ -485,7 +496,9 @@ onUnmounted(() => {
         v-else 
         :room="selectedRoom" 
         :currentUser="currentUser" 
+        :participants-refresh-key="chatRoomRefreshKey"
         @back="handleBack" 
+        @open-invite="handleInviteFromHeader"
         @room-preview-update="handleRoomPreviewUpdate"
       />
     </div>

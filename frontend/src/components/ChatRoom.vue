@@ -6,7 +6,14 @@ import SockJS from 'sockjs-client'
 import Stomp from 'stompjs'
 import { apiPath } from '@/utils/backendUrl.js'
 
-const props = defineProps({ room: Object, currentUser: Object })
+const props = defineProps({
+  room: Object,
+  currentUser: Object,
+  participantsRefreshKey: {
+    type: Number,
+    default: 0
+  }
+})
 const emit = defineEmits(['back', 'open-invite', 'room-preview-update'])
 const authStore = useAuthStore()
 
@@ -28,9 +35,17 @@ const messageMenuPos = ref({ x: 0, y: 0 })
 const selectedMessage = ref(null)
 const imagePreviewUrl = ref('')
 const imagePreviewName = ref('')
+const participants = ref([])
+const participantsLoading = ref(false)
+const participantsError = ref('')
+const isParticipantsPanelOpen = ref(false)
 
 const myProfileImageUrl = computed(() => authStore.user?.profileImageUrl || null)
 const myName = computed(() => authStore.user?.userName || authStore.user?.name || 'Guest')
+const currentUserIdx = computed(() => authStore.user?.idx ?? props.currentUser?.idx ?? props.currentUser?.id ?? null)
+const participantCountLabel = computed(() => (
+  participants.value.length || props.room?.userCount || props.room?.participantCount || 0
+))
 const DELETED_MESSAGE_TEXT = '삭제된 메시지입니다.'
 
 const isDeletedMessagePayload = (payload = {}) => (
@@ -165,6 +180,7 @@ const handleWindowKeydown = (event) => {
   if (event.key !== 'Escape') return
   closeMessageMenu()
   closeImagePreview()
+  closeParticipantsPanel()
 }
 
 const formatTime = (isoString) => {
@@ -175,6 +191,158 @@ const formatTime = (isoString) => {
     minute: 'numeric',
     hour12: true
   }).format(date)
+}
+
+const formatDateTime = (isoString) => {
+  if (!isoString) return ''
+  const date = new Date(isoString)
+  if (Number.isNaN(date.getTime())) return ''
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: true
+  }).format(date)
+}
+
+const getMessageDateKey = (isoString) => {
+  if (!isoString) return ''
+  const date = new Date(isoString)
+  if (Number.isNaN(date.getTime())) return ''
+
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0')
+  ].join('-')
+}
+
+const formatMessageDate = (isoString) => {
+  if (!isoString) return ''
+  const date = new Date(isoString)
+  if (Number.isNaN(date.getTime())) return ''
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'short'
+  }).format(date)
+}
+
+const shouldShowDateDivider = (index) => {
+  const currentMessage = chatMessages.value[index]
+  if (!currentMessage) return false
+  if (index === 0) return true
+
+  const previousMessage = chatMessages.value[index - 1]
+  return getMessageDateKey(currentMessage.time) !== getMessageDateKey(previousMessage?.time)
+}
+
+const normalizeParticipant = (participant = {}) => {
+  const userIdx = participant.userIdx
+
+  return {
+    id: participant.id,
+    userIdx,
+    nickname: participant.nickname || participant.email || '사용자',
+    email: participant.email || '',
+    customRoomName: participant.customRoomName || '',
+    joinedAt: participant.joinedAt || null,
+    lastReadMessageId: Number(participant.lastReadMessageId || 0),
+    isFavorite: Boolean(participant.isFavorite ?? participant.favorite),
+    isMe: Boolean(participant.isMe ?? participant.me ?? Number(userIdx) === Number(currentUserIdx.value))
+  }
+}
+
+const participantInitial = (participant = {}) => (
+  String(participant.nickname || participant.email || '?').charAt(0).toUpperCase()
+)
+
+const getLatestLoadedMessageId = () => (
+  chatMessages.value.reduce((latest, message) => {
+    const messageId = Number(message.id)
+    return Number.isFinite(messageId) ? Math.max(latest, messageId) : latest
+  }, 0)
+)
+
+const updateParticipantReadState = (userIdx, lastReadMessageId = null) => {
+  const normalizedUserIdx = Number(userIdx)
+  const nextReadId = Number(lastReadMessageId ?? getLatestLoadedMessageId())
+
+  if (!Number.isFinite(normalizedUserIdx) || !Number.isFinite(nextReadId) || nextReadId <= 0) return
+
+  const participant = participants.value.find((item) => Number(item.userIdx) === normalizedUserIdx)
+  if (!participant) return
+
+  participant.lastReadMessageId = Math.max(Number(participant.lastReadMessageId || 0), nextReadId)
+}
+
+const getReadersForMessage = (message = {}) => {
+  const messageId = Number(message.id)
+  if (!message.isMe || !Number.isFinite(messageId)) return []
+
+  return participants.value.filter((participant) => (
+    !participant.isMe && Number(participant.lastReadMessageId || 0) >= messageId
+  ))
+}
+
+const formatReadPeople = (message = {}) => {
+  const readers = getReadersForMessage(message)
+  if (!readers.length) return ''
+  if (readers.length <= 2) return `${readers.map((reader) => reader.nickname).join(', ')} 읽음`
+  return `${readers[0].nickname} 외 ${readers.length - 1}명 읽음`
+}
+
+const messageReadPeopleTitle = (message = {}) => (
+  getReadersForMessage(message).map((reader) => reader.nickname).join(', ')
+)
+
+const getMessageUnreadCount = (message = {}) => {
+  if (!message.isMe) return 0
+
+  const messageId = Number(message.id)
+  if (!Number.isFinite(messageId) || !participants.value.length) {
+    return Number(message.messageUnreadCount || 0)
+  }
+
+  return participants.value.filter((participant) => (
+    !participant.isMe && Number(participant.lastReadMessageId || 0) < messageId
+  )).length
+}
+
+const participantReadLabel = (participant = {}) => {
+  const lastReadMessageId = Number(participant.lastReadMessageId || 0)
+  return lastReadMessageId > 0 ? `#${lastReadMessageId}까지 읽음` : '읽음 없음'
+}
+
+const fetchParticipants = async () => {
+  if (!props.room?.id) return
+
+  participantsLoading.value = true
+  participantsError.value = ''
+
+  try {
+    const response = await api.get(`/chatRoom/${props.room.id}/participants`)
+    const result = response.data?.result ?? []
+    participants.value = Array.isArray(result) ? result.map(normalizeParticipant) : []
+  } catch (error) {
+    console.error('참여자 목록 로드 실패:', error)
+    participantsError.value = '참여자 정보를 불러오지 못했습니다.'
+  } finally {
+    participantsLoading.value = false
+  }
+}
+
+const openParticipantsPanel = async () => {
+  isParticipantsPanelOpen.value = true
+  await fetchParticipants()
+}
+
+const closeParticipantsPanel = () => {
+  isParticipantsPanelOpen.value = false
 }
 
 const sortMessages = () => {
@@ -208,7 +376,7 @@ const fetchHistory = async (isFirst = false) => {
 
     if (response.data.success && response.data.result.messageList) {
       const newMsgs = response.data.result.messageList.map((msg) =>
-        toChatMessage(msg, { isMe: msg.senderIdx === authStore.user.idx })
+        toChatMessage(msg, { isMe: Number(msg.senderIdx) === Number(currentUserIdx.value) })
       )
 
       if (newMsgs.length < size) isLastPage.value = true
@@ -219,6 +387,7 @@ const fetchHistory = async (isFirst = false) => {
       await nextTick()
       if (isFirst) {
         scrollToBottom()
+        fetchParticipants()
       } else if (container) {
         container.scrollTop = container.scrollHeight - beforeHeight
       }
@@ -275,11 +444,7 @@ const initChat = () => {
 
         // 읽음 업데이트
         if (data.type === 'READ_UPDATE') {
-          chatMessages.value.forEach(msg => {
-            if (!msg.isPending && msg.messageUnreadCount > 0) {
-              msg.messageUnreadCount -= 1
-            }
-          })
+          updateParticipantReadState(data.userIdx, data.lastReadMessageId)
           return
         }
 
@@ -289,7 +454,7 @@ const initChat = () => {
         }
 
         // 내가 보낸 메시지 → 임시 메시지 교체
-        if (data.senderIdx === authStore.user.idx) {
+        if (Number(data.senderIdx) === Number(currentUserIdx.value)) {
           const tempIdx = chatMessages.value.findLastIndex(m => m.isPending && m.isMe)
           if (tempIdx !== -1) {
             chatMessages.value[tempIdx] = toChatMessage(data, { isMe: true })
@@ -478,6 +643,7 @@ const scrollToBottom = () => {
 const markAsRead = async () => {
   try {
     await api.post(`/chat/${props.room.id}/read`)
+    updateParticipantReadState(currentUserIdx.value, getLatestLoadedMessageId())
   } catch (e) {
     console.error('읽음 처리 실패:', e)
   }
@@ -527,6 +693,8 @@ onUnmounted(() => {
 
 watch(() => props.room.id, async (newRoomId, oldRoomId) => {
   closeMessageMenu()
+  closeParticipantsPanel()
+  participants.value = []
   if (oldRoomId && oldRoomId !== newRoomId) {
     await leaveRoomPresence(oldRoomId)
   }
@@ -536,10 +704,35 @@ watch(() => props.room.id, async (newRoomId, oldRoomId) => {
   initObserver()
   initChat()
 })
+
+watch(() => props.participantsRefreshKey, () => {
+  if (!props.room?.id) return
+  fetchParticipants()
+})
 </script>
 
 <template>
   <div class="flex flex-col h-full overflow-hidden relative">
+    <div class="flex items-center justify-between gap-2 border-b border-gray-100 px-4 py-2">
+      <button
+        type="button"
+        class="inline-flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-semibold text-[var(--text-muted)] hover:bg-[var(--bg-input)] hover:text-[var(--text-main)]"
+        @click="openParticipantsPanel"
+      >
+        <i class="fa-solid fa-users text-[11px]"></i>
+        <span>{{ participantCountLabel }}명</span>
+      </button>
+
+      <button
+        type="button"
+        class="inline-flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-semibold text-[#4169E1] hover:bg-blue-50"
+        @click="$emit('open-invite')"
+      >
+        <i class="fa-solid fa-user-plus text-[11px]"></i>
+        <span>초대</span>
+      </button>
+    </div>
+
     <div ref="scrollContainer" class="flex-1 overflow-y-auto p-5 space-y-4">
       <div id="chat-top-sensor" style="height: 1px; margin-bottom: -1px;"></div>
 
@@ -550,7 +743,12 @@ watch(() => props.room.id, async (newRoomId, oldRoomId) => {
       </div>
 
       <!-- v-for 바깥 div는 단순 래퍼 -->
-      <div v-for="msg in chatMessages" :key="msg.id">
+      <div v-for="(msg, index) in chatMessages" :key="msg.id">
+        <div v-if="shouldShowDateDivider(index)" class="flex justify-center py-2">
+          <span class="rounded-full bg-gray-100 px-3 py-1 text-[10px] font-semibold text-gray-500">
+            {{ formatMessageDate(msg.time) }}
+          </span>
+        </div>
 
         <!-- 시스템 메시지 -->
         <div v-if="msg.isSystem" class="flex justify-center my-1 w-full">
@@ -617,13 +815,20 @@ watch(() => props.room.id, async (newRoomId, oldRoomId) => {
 
               <div :class="['flex flex-col gap-0.5', msg.isMe ? 'items-end' : 'items-start']">
                 <span
-                  v-if="msg.messageUnreadCount > 0"
+                  v-if="getMessageUnreadCount(msg) > 0"
                   class="text-[9px] text-blue-400 font-bold whitespace-nowrap"
                 >
-                  {{ msg.messageUnreadCount }}
+                  {{ getMessageUnreadCount(msg) }}
                 </span>
                 <span class="text-[9px] text-gray-400 whitespace-nowrap">
                   {{ formatTime(msg.time) }}
+                </span>
+                <span
+                  v-if="formatReadPeople(msg)"
+                  class="max-w-[120px] truncate text-[9px] text-gray-400"
+                  :title="messageReadPeopleTitle(msg)"
+                >
+                  {{ formatReadPeople(msg) }}
                 </span>
               </div>
             </div>
@@ -632,6 +837,89 @@ watch(() => props.room.id, async (newRoomId, oldRoomId) => {
 
       </div>
     </div>
+
+    <div
+      v-if="isParticipantsPanelOpen"
+      class="absolute inset-0 z-[70] bg-black/10 md:hidden"
+      @click="closeParticipantsPanel"
+    ></div>
+
+    <aside
+      v-if="isParticipantsPanelOpen"
+      class="absolute inset-y-0 right-0 z-[80] flex w-full max-w-[320px] flex-col border-l border-gray-100 bg-white shadow-2xl"
+    >
+      <div class="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+        <div>
+          <p class="text-sm font-bold text-[var(--text-main)]">참여자</p>
+          <p class="text-[10px] text-[var(--text-muted)]">{{ participants.length }}명</p>
+        </div>
+        <div class="flex items-center gap-1">
+          <button
+            type="button"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+            @click="fetchParticipants"
+          >
+            <i class="fa-solid fa-rotate-right text-[11px]"></i>
+          </button>
+          <button
+            type="button"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+            @click="closeParticipantsPanel"
+          >
+            <i class="fa-solid fa-xmark text-sm"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-4">
+        <div v-if="participantsLoading" class="flex justify-center py-10 text-xs text-gray-400">
+          <i class="fa-solid fa-circle-notch fa-spin mr-2"></i> 불러오는 중...
+        </div>
+
+        <div v-else-if="participantsError" class="rounded-lg bg-red-50 p-3 text-xs text-red-500">
+          <p>{{ participantsError }}</p>
+          <button type="button" class="mt-2 font-bold" @click="fetchParticipants">다시 시도</button>
+        </div>
+
+        <div v-else-if="!participants.length" class="py-10 text-center text-xs text-gray-400">
+          참여자가 없습니다.
+        </div>
+
+        <div v-else class="space-y-2">
+          <div
+            v-for="participant in participants"
+            :key="participant.id || participant.userIdx"
+            class="flex items-center gap-3 rounded-lg border border-gray-100 px-3 py-2"
+          >
+            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500 text-xs font-bold text-white">
+              {{ participantInitial(participant) }}
+            </div>
+
+            <div class="min-w-0 flex-1">
+              <div class="flex min-w-0 items-center gap-1.5">
+                <p class="truncate text-xs font-bold text-[var(--text-main)]">{{ participant.nickname }}</p>
+                <span
+                  v-if="participant.isMe"
+                  class="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold text-[#4169E1]"
+                >
+                  나
+                </span>
+              </div>
+              <p v-if="participant.email" class="truncate text-[10px] text-[var(--text-muted)]">
+                {{ participant.email }}
+              </p>
+              <p class="text-[9px] text-gray-400">
+                {{ formatDateTime(participant.joinedAt) }} 참여
+              </p>
+            </div>
+
+            <span class="shrink-0 text-[9px] font-semibold text-gray-400">
+              {{ participantReadLabel(participant) }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </aside>
 
     <div
       v-if="messageMenuVisible"

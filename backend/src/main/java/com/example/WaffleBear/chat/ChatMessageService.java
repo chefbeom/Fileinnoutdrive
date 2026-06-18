@@ -164,7 +164,11 @@ public class ChatMessageService {
 
                     stompPublisher.send(
                             "/sub/chat/room/" + roomIdx,
-                            Map.of("type", "READ_UPDATE", "userIdx", userIdx)
+                            Map.of(
+                                    "type", "READ_UPDATE",
+                                    "userIdx", userIdx,
+                                    "lastReadMessageId", msg.getIdx()
+                            )
                     );
                 });
         chatRoomService.evictChatListCachesByRoom(roomIdx);

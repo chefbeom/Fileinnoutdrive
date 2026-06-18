@@ -16,7 +16,6 @@ import java.util.List;
 @RequestMapping("/chatRoom")
 public class ChatRoomController {
     private final ChatRoomService chatRoomService;
-    private final ParticipantsRepository participantsRepository;
 
     @PostMapping("/create")
     public ResponseEntity<Long> createRoom(
@@ -48,6 +47,14 @@ public class ChatRoomController {
         ChatRoomsDto.PageRes dto = chatRoomService.list(page, size, user.getIdx());
         return ResponseEntity.ok(BaseResponse.success(dto));
     }
+
+    @GetMapping("/{roomIdx}/participants")
+    public ResponseEntity<?> participants(
+            @PathVariable Long roomIdx,
+            @AuthenticationPrincipal AuthUserDetails user) {
+        return ResponseEntity.ok(BaseResponse.success(chatRoomService.listParticipants(roomIdx, user.getIdx())));
+    }
+
     // 나가기
     @DeleteMapping("/{roomIdx}/exit")
     public ResponseEntity exit(@PathVariable Long roomIdx,
