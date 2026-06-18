@@ -1058,6 +1058,91 @@ namespace FileInNOutDesktop
             }
         }
 
+        private static string AccountKey(string email)
+        {
+            return (email ?? "").Trim().ToLowerInvariant();
+        }
+
+        private static void ApplyAccountProfile(Dictionary<string, object> values, DesktopConfig config)
+        {
+            string key = AccountKey(config.Email);
+            if (String.IsNullOrWhiteSpace(key))
+            {
+                return;
+            }
+
+            Dictionary<string, object> accounts = ReadDictionary(values, "accounts");
+            Dictionary<string, object> profile = ReadDictionary(accounts, key);
+            if (profile.Count == 0)
+            {
+                return;
+            }
+
+            string value = ReadString(profile, "token");
+            if (!String.IsNullOrWhiteSpace(value))
+            {
+                config.Token = value;
+            }
+            value = ReadString(profile, "refreshToken");
+            if (!String.IsNullOrWhiteSpace(value))
+            {
+                config.RefreshToken = value;
+            }
+            value = ReadString(profile, "syncDir");
+            if (!String.IsNullOrWhiteSpace(value))
+            {
+                config.SyncDir = value;
+            }
+            value = ReadString(profile, "driveLetter");
+            if (!String.IsNullOrWhiteSpace(value))
+            {
+                config.DriveLetter = NormalizeDriveLetter(value);
+            }
+
+            object foldersValue;
+            if (profile.TryGetValue("syncFolders", out foldersValue))
+            {
+                config.SyncFolders.Clear();
+                LoadSyncFolders(foldersValue, config.SyncFolders);
+            }
+        }
+
+        private static void SaveAccountProfile(Dictionary<string, object> values, DesktopConfig config, List<Dictionary<string, object>> folders)
+        {
+            string key = AccountKey(config.Email);
+            if (String.IsNullOrWhiteSpace(key))
+            {
+                return;
+            }
+
+            Dictionary<string, object> accounts = ReadDictionary(values, "accounts");
+            Dictionary<string, object> profile = ReadDictionary(accounts, key);
+            accounts[key] = profile;
+            values["accounts"] = accounts;
+
+            if (!String.IsNullOrWhiteSpace(config.Token))
+            {
+                profile["token"] = config.Token;
+            }
+            else
+            {
+                profile.Remove("token");
+            }
+
+            if (!String.IsNullOrWhiteSpace(config.RefreshToken))
+            {
+                profile["refreshToken"] = config.RefreshToken;
+            }
+            else
+            {
+                profile.Remove("refreshToken");
+            }
+
+            profile["syncDir"] = !String.IsNullOrWhiteSpace(config.SyncDir) ? config.SyncDir : DefaultSyncDir();
+            profile["driveLetter"] = NormalizeDriveLetter(config.DriveLetter);
+            profile["syncFolders"] = folders;
+        }
+
         public DesktopConfig LoadDesktopConfig()
         {
             DesktopConfig config = new DesktopConfig();
@@ -1110,6 +1195,7 @@ namespace FileInNOutDesktop
                 {
                     LoadSyncFolders(value, config.SyncFolders);
                 }
+                ApplyAccountProfile(values, config);
             }
             catch
             {
@@ -1125,6 +1211,20 @@ namespace FileInNOutDesktop
         public void SaveDesktopConfig(DesktopConfig config)
         {
             Directory.CreateDirectory(configDir);
+            JavaScriptSerializer serializer = new JavaScriptSerializer();
+            Dictionary<string, object> existingValues = new Dictionary<string, object>();
+            if (File.Exists(configPath))
+            {
+                try
+                {
+                    existingValues = serializer.Deserialize<Dictionary<string, object>>(File.ReadAllText(configPath)) ?? new Dictionary<string, object>();
+                }
+                catch
+                {
+                    existingValues = new Dictionary<string, object>();
+                }
+            }
+
             Dictionary<string, object> values = new Dictionary<string, object>();
             values["server"] = String.IsNullOrWhiteSpace(config.Server) ? DefaultServer : config.Server.TrimEnd('/');
             values["email"] = config.Email ?? "";
@@ -1160,8 +1260,9 @@ namespace FileInNOutDesktop
                 folders.Add(item);
             }
             values["syncFolders"] = folders;
+            values["accounts"] = ReadDictionary(existingValues, "accounts");
+            SaveAccountProfile(values, config, folders);
 
-            JavaScriptSerializer serializer = new JavaScriptSerializer();
             File.WriteAllText(configPath, serializer.Serialize(values));
             RefreshWatchers();
         }
@@ -2081,12 +2182,17 @@ namespace FileInNOutDesktop
                         folder.LocalPath));
                 }
 
+                int conflicts = ConflictCount(syncStatus);
                 int skipped = SkippedDirtyCount(syncStatus);
-                if (skipped > 0)
+                if (conflicts > 0 || skipped > 0)
                 {
+                    int issueCount = conflicts > 0 ? conflicts : skipped;
+                    string issueDetail = conflicts > 0
+                        ? "\uC9C0\uB09C \uB3D9\uAE30\uD654\uC5D0\uC11C " + issueCount.ToString() + "\uAC1C \uCDA9\uB3CC \uC0AC\uBCF8\uC774 \uC0DD\uC131\uB428"
+                        : "\uC9C0\uB09C \uB3D9\uAE30\uD654\uC5D0\uC11C " + issueCount.ToString() + "\uAC1C \uD56D\uBAA9\uC774 \uBCF4\uD638\uB428";
                     items.Add(new SearchResultItem(
                         "[" + folderName + "] \uCDA9\uB3CC \uD655\uC778 \uD544\uC694",
-                        "\uC9C0\uB09C \uB3D9\uAE30\uD654\uC5D0\uC11C " + skipped.ToString() + "\uAC1C \uD56D\uBAA9\uC774 \uBCF4\uD638\uB428",
+                        issueDetail,
                         UnixTimeToLocal(ReadLong(syncStatus, "updatedAt")),
                         folder.LocalPath));
                 }
@@ -2150,6 +2256,11 @@ namespace FileInNOutDesktop
             if (downloadFailed > 0)
             {
                 return "\uB2E4\uC6B4\uB85C\uB4DC \uC2E4\uD328 " + downloadFailed.ToString();
+            }
+            int conflicts = ConflictCount(syncStatus);
+            if (conflicts > 0)
+            {
+                return "\uCDA9\uB3CC \uC0AC\uBCF8 " + conflicts.ToString();
             }
             int skipped = SkippedDirtyCount(syncStatus);
             if (skipped > 0)
@@ -2231,6 +2342,23 @@ namespace FileInNOutDesktop
             Dictionary<string, object> push = ReadDictionary(syncStatus, "push");
             Dictionary<string, object> pull = ReadDictionary(syncStatus, "pull");
             return ReadInt(push, "skippedDirty") + ReadInt(pull, "skippedDirty");
+        }
+
+        private static int ConflictCount(Dictionary<string, object> syncStatus)
+        {
+            Dictionary<string, object> push = ReadDictionary(syncStatus, "push");
+            Dictionary<string, object> pull = ReadDictionary(syncStatus, "pull");
+            return ConflictListCount(push) + ConflictListCount(pull);
+        }
+
+        private static int ConflictListCount(Dictionary<string, object> stats)
+        {
+            int count = 0;
+            foreach (object ignored in ReadEnumerable(stats, "conflicts"))
+            {
+                count += 1;
+            }
+            return count;
         }
 
         private static int DownloadFailedCount(Dictionary<string, object> syncStatus)
@@ -4334,6 +4462,7 @@ namespace FileInNOutDesktop
                 int koreanDeleted = ReadInt(koreanPush, "deleted") + ReadInt(koreanPull, "deleted");
                 int koreanFolders = ReadInt(koreanPush, "foldersCreated") + ReadInt(koreanPull, "foldersCreated");
                 int koreanSkipped = ReadInt(koreanPush, "skippedDirty") + ReadInt(koreanPull, "skippedDirty");
+                int koreanConflicts = ConflictCount(entry);
                 int koreanDownloadFailed = ReadInt(koreanPush, "downloadFailed") + ReadInt(koreanPull, "downloadFailed");
 
                 List<string> koreanParts = new List<string>();
@@ -4342,7 +4471,8 @@ namespace FileInNOutDesktop
                 if (koreanDeleted > 0) { koreanParts.Add("\uC0AD\uC81C " + koreanDeleted); }
                 if (koreanFolders > 0) { koreanParts.Add("\uD3F4\uB354 " + koreanFolders); }
                 if (koreanDownloadFailed > 0) { koreanParts.Add("\uB2E4\uC6B4\uB85C\uB4DC \uC2E4\uD328 " + koreanDownloadFailed); }
-                if (koreanSkipped > 0) { koreanParts.Add("\uAC74\uB108\uB700 " + koreanSkipped); }
+                if (koreanConflicts > 0) { koreanParts.Add("\uCDA9\uB3CC " + koreanConflicts); }
+                else if (koreanSkipped > 0) { koreanParts.Add("\uBCF4\uD638 " + koreanSkipped); }
                 return koreanParts.Count == 0 ? "\uBCC0\uACBD \uC5C6\uC74C" : String.Join(", ", koreanParts.ToArray());
             }
             string error = ReadString(entry, "error");

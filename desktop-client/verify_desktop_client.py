@@ -264,6 +264,32 @@ def main() -> int:
         assert not (download_root / "broken.bin").exists()
         assert "broken.bin" not in client.load_state(download_root)["remote"]
 
+    with tempfile.TemporaryDirectory() as tmp_conflict:
+        conflict_root = Path(tmp_conflict)
+        local_file = conflict_root / "doc.txt"
+        local_file.write_text("local draft", encoding="utf-8")
+        conflict_api = FakeSharedApi()
+        conflict_api.download_payloads[77] = b"remote draft"
+        conflict_stats = client.SyncStats()
+        client.preserve_local_conflict(
+            conflict_api,
+            local_file,
+            {"idx": 77, "fileOriginName": "doc.txt", "nodeType": "FILE"},
+            shared=False,
+            stats=conflict_stats,
+        )
+        conflict_files = list(conflict_root.glob("doc (conflict *.txt"))
+        assert local_file.read_bytes() == b"remote draft"
+        assert len(conflict_files) == 1
+        assert conflict_files[0].read_text(encoding="utf-8") == "local draft"
+        conflict_payload = client.stats_to_dict(conflict_stats)
+        assert conflict_payload["skippedDirty"] == 1
+        assert conflict_payload["conflicts"][0]["conflictPath"] == str(conflict_files[0])
+        assert conflict_payload["conflicts"][0]["remoteName"] == "doc.txt"
+        client.update_sync_status(conflict_root, "success", pull_stats=conflict_stats)
+        sync_status = client.load_state(conflict_root)["syncStatus"]
+        assert sync_status["pull"]["conflicts"][0]["remoteId"] == 77
+
     share_api = FakeSharedApi(shared_items=[
         {
             "idx": 30,
@@ -1070,6 +1096,85 @@ def main() -> int:
         assert refresh_updates == [client.AuthTokens("fresh-access", "fresh-refresh")]
     finally:
         client.urllib.request.urlopen = original_urlopen
+
+    original_load_global_config = client.load_global_config
+    original_update_global_config = client.update_global_config
+    original_urlopen = client.urllib.request.urlopen
+    stored_config = {
+        "server": "http://example.test/api",
+        "refreshToken": "stored-refresh",
+    }
+    config_updates: list[dict] = []
+    make_api_calls: list[str] = []
+    try:
+        def fake_load_global_config():
+            return dict(stored_config)
+
+        def fake_update_global_config(changes):
+            config_updates.append(dict(changes))
+            stored_config.update(changes)
+            return dict(stored_config)
+
+        def fake_make_api_urlopen(request, timeout=120):
+            path = client.urllib.parse.urlparse(request.full_url).path
+            make_api_calls.append(path)
+            assert request.get_header("Cookie") == "refresh=stored-refresh"
+            return FakeHttpResponse(
+                200,
+                {
+                    "Authorization": "Bearer restored-access",
+                    "Set-Cookie": "refresh=restored-refresh; Path=/; HttpOnly",
+                },
+                b"ok",
+            )
+
+        client.load_global_config = fake_load_global_config
+        client.update_global_config = fake_update_global_config
+        client.urllib.request.urlopen = fake_make_api_urlopen
+
+        api = client.make_api(Namespace(server=None, token=None))
+        assert make_api_calls == ["/api/auth/reissue"]
+        assert api.token == "restored-access"
+        assert api.refresh_token == "restored-refresh"
+        assert stored_config["token"] == "restored-access"
+        assert stored_config["refreshToken"] == "restored-refresh"
+        assert config_updates == [
+            {
+                "token": "restored-access",
+                "refreshToken": "restored-refresh",
+            }
+        ]
+    finally:
+        client.load_global_config = original_load_global_config
+        client.update_global_config = original_update_global_config
+        client.urllib.request.urlopen = original_urlopen
+
+    account_config = {
+        "email": "owner@example.com",
+        "token": "owner-token",
+        "refreshToken": "owner-refresh",
+        "syncDir": "C:/FileInNOut/owner",
+        "syncFolders": [
+            {
+                "name": "Owner",
+                "localPath": "C:/FileInNOut/owner",
+                "remotePath": "Owner",
+                "direction": "two-way",
+                "enabled": True,
+            }
+        ],
+    }
+    client.snapshot_account_profile(account_config)
+    assert account_config["accounts"]["owner@example.com"]["syncDir"] == "C:/FileInNOut/owner"
+    account_config["email"] = "recipient@example.com"
+    client.apply_account_profile(account_config, "recipient@example.com", include_tokens=False)
+    assert "syncFolders" not in account_config
+    assert account_config["syncDir"].endswith("recipient%40example.com\\sync") or account_config["syncDir"].endswith("recipient%40example.com/sync")
+    account_config["syncDir"] = "C:/FileInNOut/recipient"
+    client.snapshot_account_profile(account_config)
+    account_config["syncDir"] = "C:/FileInNOut/changed"
+    client.apply_account_profile(account_config, "owner@example.com", include_tokens=False)
+    assert account_config["syncDir"] == "C:/FileInNOut/owner"
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
