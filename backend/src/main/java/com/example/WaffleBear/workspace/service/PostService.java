@@ -20,6 +20,7 @@ import com.example.WaffleBear.workspace.model.relation.UserPost;
 import com.example.WaffleBear.workspace.model.relation.UserPostDto;
 import com.example.WaffleBear.workspace.repository.PostRepository;
 import com.example.WaffleBear.workspace.repository.UserPostRepository;
+import com.example.WaffleBear.workspace.revision.WorkspaceRevisionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,6 +48,7 @@ public class PostService {
     private final UserPostRepository upr;
     private final NotificationService ns;
     private final WorkspaceAssetService workspaceAssetService;
+    private final WorkspaceRevisionService workspaceRevisionService;
 
     // ─────────────────────────────────────────────────────────────────────────
     // 저장 / 수정
@@ -59,8 +61,16 @@ public class PostService {
         if (dto.idx() != null) {
             result = pr.findById(dto.idx())
                     .orElseThrow(() -> new BaseException(WORKSPACE_NOT_FOUND));
+
+            UserPost relation = upr.findByUser_IdxAndWorkspace_Idx(user.getIdx(), result.getIdx())
+                    .orElseThrow(() -> new BaseException(WORKSPACE_ACCESS_DENIED));
+            if (relation.getLevel() == AccessRole.READ) {
+                throw new BaseException(WORKSPACE_ACCESS_DENIED);
+            }
+
             result.update(dto.title(), dto.contents());
             pr.save(result);
+            workspaceRevisionService.recordSave(result, user);
             List<Long> user_list = upr.findUserIdsByPostIdx(result.getIdx());
 
             // 3. SSE를 통해 참여자들에게 실시간 알림 전송
@@ -72,6 +82,7 @@ public class PostService {
 
             pr.save(result);
             upr.save(new UserPostDto.ReqUserPost(null, null).toEntity(result, user));
+            workspaceRevisionService.recordSave(result, user);
 
             // 생성 직후에도 동일한 방식으로 SSE 타이틀 전파
             List<Long> user_list = upr.findUserIdsByPostIdx(result.getIdx());
@@ -168,6 +179,10 @@ public class PostService {
     // ─────────────────────────────────────────────────────────────────────────
 
     public BaseResponseStatus invite(String uuid, String email, AuthUserDetails user) {
+        return invite(uuid, email, user, null);
+    }
+
+    public BaseResponseStatus invite(String uuid, String email, AuthUserDetails user, AccessRole requestedRole) {
         Post post = pr.findByUUID(uuid)
                 .orElseThrow(() -> new BaseException(WORKSPACE_NOT_FOUND));
 
@@ -212,7 +227,7 @@ public class PostService {
             upr.save(UserPost.builder()
                     .user(checkUser)
                     .workspace(post)
-                    .Level(AccessRole.READ)
+                    .Level(requestedRole == null ? AccessRole.READ : normalizeShareRole(requestedRole))
                     .build());
             return SUCCESS;
         }
@@ -372,6 +387,11 @@ public class PostService {
 
     @Transactional
     public int shareWithUsers(Long postIdx, Long actorUserIdx, Collection<Long> targetUserIds) {
+        return shareWithUsers(postIdx, actorUserIdx, targetUserIds, AccessRole.WRITE);
+    }
+
+    @Transactional
+    public int shareWithUsers(Long postIdx, Long actorUserIdx, Collection<Long> targetUserIds, AccessRole requestedRole) {
         UserPost ownerRelation = upr.findByUser_IdxAndWorkspace_Idx(actorUserIdx, postIdx)
                 .orElseThrow(() -> new BaseException(WORKSPACE_ACCESS_DENIED));
 
@@ -384,19 +404,32 @@ public class PostService {
             throw new BaseException(WORKSPACE_SHARE_NOT_ALLOWED);
         }
 
+        AccessRole shareRole = normalizeShareRole(requestedRole);
         int affectedCount = 0;
         for (Long targetUserId : targetUserIds == null ? List.<Long>of() : targetUserIds.stream().filter(Objects::nonNull).distinct().toList()) {
             if (Objects.equals(actorUserIdx, targetUserId)) {
                 continue;
             }
 
-            if (upr.findByUser_IdxAndWorkspace_Idx(targetUserId, postIdx).isPresent()) {
+            Optional<UserPost> existingRelation = upr.findByUser_IdxAndWorkspace_Idx(targetUserId, postIdx);
+            if (existingRelation.isPresent()) {
+                UserPost relation = existingRelation.get();
+                if (relation.getLevel() != AccessRole.ADMIN && relation.getLevel() != shareRole) {
+                    relation.updateLevel(shareRole);
+                    sseService.sendRoleChanged(targetUserId, postIdx, shareRole.name());
+                    affectedCount += 1;
+                }
                 continue;
             }
 
             User targetUser = ur.findById(targetUserId)
                     .orElseThrow(() -> new BaseException(USER_NOT_FOUND));
 
+            upr.save(UserPost.builder()
+                    .user(targetUser)
+                    .workspace(workspace)
+                    .Level(shareRole)
+                    .build());
             if(!evr.findByToken(workspace.getUUID()).isPresent()) {
                 evr.save(new EmailVerify(workspace.getUUID(), targetUser.getEmail()));
             }
@@ -405,6 +438,13 @@ public class PostService {
         }
 
         return affectedCount;
+    }
+
+    private AccessRole normalizeShareRole(AccessRole requestedRole) {
+        if (requestedRole == AccessRole.READ) {
+            return AccessRole.READ;
+        }
+        return AccessRole.WRITE;
     }
 
     @Transactional(readOnly = true)

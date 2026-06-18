@@ -18,11 +18,21 @@ const privacyStatus = ref(props.initialStatus || "Private");
 const overview = ref(null);
 const isOverviewLoading = ref(false);
 const shareEmail = ref("");
+const shareRole = ref("WRITE");
+const memberRoles = ref([]);
+const isMemberRolesLoading = ref(false);
+const memberRoleActionLoading = ref("");
+const memberRoleError = ref("");
+const pendingRemoveMemberId = ref("");
 const selectedUserIds = ref([]);
 const selectedGroupIds = ref([]);
 const pendingInvites = ref([]);
 const shareError = ref("");
 const shareSuccess = ref("");
+const linkCopyMessage = ref("");
+const linkCopyError = ref("");
+const statusMessage = ref("");
+const statusError = ref("");
 const isSharing = ref(false);
 const isSavingStatus = ref(false);
 
@@ -30,13 +40,56 @@ const inviteUrl = computed(() => (
   `${typeof window !== "undefined" ? window.location.origin : ""}/workspace/invite?uuid=${props.uuid || ""}`
 ));
 
+const memberRoleOptions = [
+  { value: "READ", label: "보기" },
+  { value: "WRITE", label: "편집" },
+];
+
+const roleLabel = (role) => {
+  if (role === "ADMIN") return "관리자";
+  if (role === "WRITE") return "편집";
+  if (role === "READ") return "보기";
+  return role || "알 수 없음";
+};
+
+const memberDisplayName = (member) => (
+  member?.username || member?.name || member?.email || "이름 없음"
+);
+
+const memberInitial = (member) => (
+  memberDisplayName(member).trim().slice(0, 1).toUpperCase() || "?"
+);
+
+const memberActionKey = (member, action) => `${member?.idx || member?.userIdx || member?.id || ""}:${action}`;
+
+const memberIdentity = (member) => String(member?.idx ?? member?.userIdx ?? member?.id ?? member?.email ?? "");
+
+const normalizeMemberRole = (member) => ({
+  idx: member?.idx ?? member?.userIdx ?? member?.id ?? null,
+  username: member?.username ?? member?.name ?? "",
+  email: member?.email ?? "",
+  image: member?.image ?? member?.profileImage ?? "",
+  role: String(member?.role ?? member?.level ?? "READ").toUpperCase(),
+});
+
+const hasMemberRoles = computed(() => memberRoles.value.length > 0);
+
 const resetShareState = () => {
   shareEmail.value = "";
+  shareRole.value = "WRITE";
+  memberRoles.value = [];
+  memberRoleActionLoading.value = "";
+  memberRoleError.value = "";
+  pendingRemoveMemberId.value = "";
   selectedUserIds.value = [];
   selectedGroupIds.value = [];
   pendingInvites.value = [];
   shareError.value = "";
   shareSuccess.value = "";
+  linkCopyMessage.value = "";
+  linkCopyError.value = "";
+  statusMessage.value = "";
+  statusError.value = "";
   overview.value = null;
 };
 
@@ -57,6 +110,33 @@ const loadOverview = async () => {
   }
 };
 
+const loadMemberRoles = async () => {
+  if (!props.postIdx) {
+    memberRoles.value = [];
+    memberRoleError.value = "";
+    return [];
+  }
+
+  isMemberRolesLoading.value = true;
+  memberRoleError.value = "";
+
+  try {
+    const result = await postApi.loadRole(props.postIdx);
+    memberRoles.value = (Array.isArray(result) ? result : []).map(normalizeMemberRole);
+    pendingRemoveMemberId.value = "";
+    return memberRoles.value;
+  } catch (error) {
+    memberRoles.value = [];
+    memberRoleError.value =
+      error?.response?.data?.message ||
+      error?.message ||
+      "현재 멤버를 불러오지 못했습니다.";
+    return [];
+  } finally {
+    isMemberRolesLoading.value = false;
+  }
+};
+
 watch(
   [() => props.isOpen, () => props.initialStatus],
   async ([isOpen, nextStatus]) => {
@@ -67,15 +147,25 @@ watch(
 
     resetShareState();
     privacyStatus.value = nextStatus || "Private";
-    await loadOverview();
+    await Promise.all([loadOverview(), loadMemberRoles()]);
   },
   { immediate: true },
 );
 
 const copyLink = async () => {
   if (privacyStatus.value !== "Public") return;
-  await navigator.clipboard.writeText(inviteUrl.value);
-  window.alert("링크가 클립보드에 복사되었습니다.");
+  linkCopyMessage.value = "";
+  linkCopyError.value = "";
+
+  try {
+    if (!navigator?.clipboard?.writeText) {
+      throw new Error("이 브라우저에서는 클립보드를 사용할 수 없습니다.");
+    }
+    await navigator.clipboard.writeText(inviteUrl.value);
+    linkCopyMessage.value = "링크가 클립보드에 복사되었습니다.";
+  } catch (error) {
+    linkCopyError.value = error?.message || "링크를 복사하지 못했습니다.";
+  }
 };
 
 const handleShareTargets = async () => {
@@ -91,6 +181,8 @@ const handleShareTargets = async () => {
   isSharing.value = true;
   shareError.value = "";
   shareSuccess.value = "";
+  statusMessage.value = "";
+  statusError.value = "";
 
   try {
     if (privacyStatus.value === "Private") {
@@ -103,6 +195,7 @@ const handleShareTargets = async () => {
       userIds,
       groupIds,
       emails: recipientEmail ? [recipientEmail] : [],
+      role: shareRole.value,
     });
 
     selectedUserIds.value = [];
@@ -110,6 +203,8 @@ const handleShareTargets = async () => {
     shareEmail.value = "";
     pendingInvites.value = result?.pendingInvites || [];
     shareSuccess.value = "워크스페이스 공유 대상을 적용했습니다.";
+
+    await loadMemberRoles();
 
     if (loadpost?.side_list) {
       await loadpost.side_list();
@@ -125,8 +220,71 @@ const handleShareTargets = async () => {
   }
 };
 
+const handleMemberRoleChange = async (member, nextRole) => {
+  const targetUserIdx = member?.idx ?? member?.userIdx ?? member?.id ?? null;
+  const role = String(nextRole || "").toUpperCase();
+
+  if (!props.postIdx || !targetUserIdx || member?.role === "ADMIN") return;
+  if (!["READ", "WRITE"].includes(role) || role === member?.role) return;
+
+  memberRoleActionLoading.value = memberActionKey(member, role);
+  memberRoleError.value = "";
+
+  try {
+    await postApi.changeUserRole(props.postIdx, targetUserIdx, role);
+    memberRoles.value = memberRoles.value.map((item) => (
+      String(item.idx) === String(targetUserIdx) ? { ...item, role } : item
+    ));
+    emit("refresh");
+  } catch (error) {
+    memberRoleError.value =
+      error?.response?.data?.message ||
+      error?.message ||
+      "멤버 권한을 변경하지 못했습니다.";
+    await loadMemberRoles();
+  } finally {
+    memberRoleActionLoading.value = "";
+  }
+};
+
+const handleRemoveMember = async (member) => {
+  const targetUserIdx = member?.idx ?? member?.userIdx ?? member?.id ?? null;
+  if (!props.postIdx || !targetUserIdx || member?.role === "ADMIN") return;
+
+  const identity = memberIdentity(member);
+  if (pendingRemoveMemberId.value !== identity) {
+    pendingRemoveMemberId.value = identity;
+    return;
+  }
+
+  memberRoleActionLoading.value = memberActionKey(member, "KICKED");
+  memberRoleError.value = "";
+
+  try {
+    await postApi.kickUser(props.postIdx, targetUserIdx);
+    memberRoles.value = memberRoles.value.filter((item) => String(item.idx) !== String(targetUserIdx));
+    pendingRemoveMemberId.value = "";
+    shareSuccess.value = `${memberDisplayName(member)} 님을 공유 대상에서 제거했습니다.`;
+    emit("refresh");
+  } catch (error) {
+    memberRoleError.value =
+      error?.response?.data?.message ||
+      error?.message ||
+      "멤버를 제거하지 못했습니다.";
+    await loadMemberRoles();
+  } finally {
+    memberRoleActionLoading.value = "";
+  }
+};
+
+const cancelMemberRemoval = () => {
+  pendingRemoveMemberId.value = "";
+};
+
 const handleSaveStatus = async () => {
   isSavingStatus.value = true;
+  statusMessage.value = "";
+  statusError.value = "";
 
   try {
     await postApi.updateShareStatus(props.postIdx, privacyStatus.value);
@@ -134,11 +292,13 @@ const handleSaveStatus = async () => {
       await loadpost.side_list();
     }
     emit("refresh");
-    window.alert("공유 설정이 저장되었습니다.");
-    emit("close");
+    statusMessage.value = "공유 설정이 저장되었습니다.";
   } catch (error) {
     console.error("Save Status Error:", error);
-    window.alert("설정 저장 중 오류가 발생했습니다.");
+    statusError.value =
+      error?.response?.data?.message ||
+      error?.message ||
+      "설정 저장 중 오류가 발생했습니다.";
   } finally {
     isSavingStatus.value = false;
   }
@@ -209,6 +369,12 @@ const handleSaveStatus = async () => {
               링크 복사
             </button>
           </div>
+          <p v-if="linkCopyMessage" class="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">
+            {{ linkCopyMessage }}
+          </p>
+          <p v-if="linkCopyError" class="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600">
+            {{ linkCopyError }}
+          </p>
         </section>
 
         <section class="space-y-4">
@@ -218,6 +384,28 @@ const handleSaveStatus = async () => {
               <p class="mt-1 text-sm text-[var(--text-muted)]">
                 사용자, 그룹, 이메일을 함께 선택할 수 있습니다. 개인 상태에서 공유하면 자동으로 공유 상태로 전환됩니다.
               </p>
+            </div>
+            <div class="flex rounded-xl border border-[var(--border-color)] bg-[var(--bg-input)] p-1">
+              <button
+                type="button"
+                class="rounded-lg px-3 py-1.5 text-xs font-bold transition-all"
+                :class="shareRole === 'READ' ? 'bg-white text-sky-600 shadow-sm dark:bg-slate-700' : 'text-[var(--text-muted)]'"
+                :disabled="isSharing"
+                title="문서를 볼 수 있지만 수정할 수 없습니다."
+                @click="shareRole = 'READ'"
+              >
+                보기
+              </button>
+              <button
+                type="button"
+                class="rounded-lg px-3 py-1.5 text-xs font-bold transition-all"
+                :class="shareRole === 'WRITE' ? 'bg-white text-sky-600 shadow-sm dark:bg-slate-700' : 'text-[var(--text-muted)]'"
+                :disabled="isSharing"
+                title="문서를 보고 수정할 수 있습니다."
+                @click="shareRole = 'WRITE'"
+              >
+                편집
+              </button>
             </div>
           </div>
 
@@ -270,16 +458,134 @@ const handleSaveStatus = async () => {
             </button>
           </div>
         </section>
+
+        <section class="space-y-4 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-input)]/50 p-5">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p class="text-base font-black text-[var(--text-main)]">현재 멤버</p>
+              <p class="mt-1 text-sm text-[var(--text-muted)]">
+                공유된 사용자의 권한을 바로 조정하거나 공유 대상에서 제거할 수 있습니다.
+              </p>
+            </div>
+            <button
+              type="button"
+              class="rounded-xl border border-[var(--border-color)] bg-[var(--bg-main)] px-4 py-2 text-sm font-bold text-[var(--text-main)] transition hover:bg-white/70 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-slate-700/80"
+              :disabled="isMemberRolesLoading"
+              @click="loadMemberRoles"
+            >
+              {{ isMemberRolesLoading ? "새로고침 중..." : "새로고침" }}
+            </button>
+          </div>
+
+          <p v-if="memberRoleError" class="rounded-2xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600">
+            {{ memberRoleError }}
+          </p>
+
+          <div v-if="isMemberRolesLoading" class="rounded-2xl border border-dashed border-[var(--border-color)] px-4 py-6 text-center text-sm font-semibold text-[var(--text-muted)]">
+            멤버를 불러오는 중입니다.
+          </div>
+
+          <div v-else-if="!hasMemberRoles" class="rounded-2xl border border-dashed border-[var(--border-color)] px-4 py-6 text-center text-sm font-semibold text-[var(--text-muted)]">
+            아직 표시할 멤버가 없습니다.
+          </div>
+
+          <div v-else class="divide-y divide-[var(--border-color)] overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-main)]">
+            <div
+              v-for="member in memberRoles"
+              :key="member.idx || member.email"
+              class="grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto_minmax(110px,auto)] md:items-center"
+            >
+              <div class="flex min-w-0 items-center gap-3">
+                <img
+                  v-if="member.image"
+                  :src="member.image"
+                  alt=""
+                  class="h-10 w-10 shrink-0 rounded-full object-cover"
+                />
+                <div
+                  v-else
+                  class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sm font-black text-sky-700"
+                >
+                  {{ memberInitial(member) }}
+                </div>
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-extrabold text-[var(--text-main)]">
+                    {{ memberDisplayName(member) }}
+                  </p>
+                  <p class="truncate text-xs font-medium text-[var(--text-muted)]">
+                    {{ member.email || roleLabel(member.role) }}
+                  </p>
+                </div>
+              </div>
+
+              <select
+                v-if="member.role !== 'ADMIN'"
+                :value="member.role"
+                class="rounded-xl border border-[var(--border-color)] bg-[var(--bg-input)] px-3 py-2 text-sm font-bold text-[var(--text-main)] outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="Boolean(memberRoleActionLoading)"
+                @change="handleMemberRoleChange(member, $event.target.value)"
+              >
+                <option
+                  v-for="option in memberRoleOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+              <span
+                v-else
+                class="rounded-xl border border-[var(--border-color)] bg-[var(--bg-input)] px-3 py-2 text-center text-sm font-bold text-[var(--text-muted)]"
+              >
+                {{ roleLabel(member.role) }}
+              </span>
+
+              <div class="flex justify-end gap-2">
+                <button
+                  v-if="pendingRemoveMemberId === memberIdentity(member)"
+                  type="button"
+                  class="rounded-xl border border-[var(--border-color)] bg-[var(--bg-input)] px-3 py-2 text-sm font-bold text-[var(--text-muted)] transition hover:text-[var(--text-main)] disabled:cursor-not-allowed disabled:opacity-50"
+                  :disabled="Boolean(memberRoleActionLoading)"
+                  @click="cancelMemberRemoval"
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-extrabold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  :disabled="member.role === 'ADMIN' || Boolean(memberRoleActionLoading)"
+                  @click="handleRemoveMember(member)"
+                >
+                  {{
+                    memberRoleActionLoading === memberActionKey(member, "KICKED")
+                      ? "제거 중..."
+                      : pendingRemoveMemberId === memberIdentity(member)
+                        ? "제거 확인"
+                        : "제거"
+                  }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
         </div>
       </div>
 
       <div class="flex shrink-0 justify-end gap-3 border-t border-[var(--border-color)] bg-[var(--bg-input)] p-4">
+        <div class="mr-auto min-w-0 self-center">
+          <p v-if="statusMessage" class="truncate text-sm font-bold text-emerald-700">
+            {{ statusMessage }}
+          </p>
+          <p v-if="statusError" class="truncate text-sm font-bold text-rose-600">
+            {{ statusError }}
+          </p>
+        </div>
         <button
           type="button"
           class="px-4 py-2 text-sm font-semibold text-[var(--text-muted)] transition hover:text-[var(--text-main)]"
           @click="$emit('close')"
         >
-          취소
+          닫기
         </button>
         <button
           type="button"

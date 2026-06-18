@@ -1,6 +1,8 @@
 package com.example.WaffleBear.workspace.model.post;
 
 import com.example.WaffleBear.workspace.model.relation.UserPost;
+import com.example.WaffleBear.workspace.comment.WorkspaceComment;
+import com.example.WaffleBear.workspace.revision.WorkspaceRevision;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -32,6 +34,12 @@ public class Post {
 
     @OneToMany(mappedBy = "workspace", cascade = jakarta.persistence.CascadeType.ALL, orphanRemoval = true)
     private List<UserPost> userPosts;
+
+    @OneToMany(mappedBy = "workspace", cascade = jakarta.persistence.CascadeType.ALL, orphanRemoval = true)
+    private List<WorkspaceComment> comments;
+
+    @OneToMany(mappedBy = "workspace", cascade = jakarta.persistence.CascadeType.ALL, orphanRemoval = true)
+    private List<WorkspaceRevision> revisions;
 
     @Column(nullable = false)
     private String title;

@@ -139,6 +139,17 @@ const getPost = async (idx) =>
 const allPosts = async () =>
   apiCall('allPosts', () => api.get('/workspace/list'))
 
+const getWorkspacePreferences = async () =>
+  apiCall('getWorkspacePreferences', () => api.get('/workspace/preferences'), {
+    favoriteWorkspaceIds: [],
+    recentWorkspaceIds: [],
+    documentSections: [],
+    pageIndexViews: [],
+  })
+
+const saveWorkspacePreferences = async (payload) =>
+  apiCall('saveWorkspacePreferences', () => api.put('/workspace/preferences', payload))
+
 const deletePost = async (idx) =>
   apiCall('deletePost', () => api.post(`/workspace/delete/${idx}`))
 
@@ -153,7 +164,7 @@ const inviteUser = async (inviteData) =>
   apiCall(
     'inviteUser',
     () => api.post('/workspace/invite', null, {
-      params: { uuid: inviteData.uuid, type: inviteData.type, email: inviteData.email },
+      params: { uuid: inviteData.uuid, type: inviteData.type, email: inviteData.email, role: inviteData.role },
       timeout: 15000,
     }),
   )
@@ -243,6 +254,32 @@ const saveWorkspaceAssetToDrive = async (workspaceId, assetId, parentId = null) 
     }),
   )
 
+const getWorkspaceComments = async (workspaceId) =>
+  apiCall('getWorkspaceComments', () => api.get(`/workspace/${workspaceId}/comments`), [])
+
+const createWorkspaceComment = async (workspaceId, payload) => {
+  const body = typeof payload === 'string' ? { contents: payload } : payload
+  return apiCall('createWorkspaceComment', () => api.post(`/workspace/${workspaceId}/comments`, body))
+}
+
+const updateWorkspaceComment = async (workspaceId, commentId, contents) =>
+  apiCall('updateWorkspaceComment', () => api.patch(`/workspace/${workspaceId}/comments/${commentId}`, { contents }))
+
+const resolveWorkspaceComment = async (workspaceId, commentId, resolved = true) =>
+  apiCall('resolveWorkspaceComment', () => api.patch(`/workspace/${workspaceId}/comments/${commentId}/resolve`, { resolved }))
+
+const deleteWorkspaceComment = async (workspaceId, commentId) =>
+  apiCall('deleteWorkspaceComment', () => api.delete(`/workspace/${workspaceId}/comments/${commentId}`))
+
+const getWorkspaceRevisions = async (workspaceId) =>
+  apiCall('getWorkspaceRevisions', () => api.get(`/workspace/${workspaceId}/revisions`), [])
+
+const getWorkspaceRevision = async (workspaceId, revisionId) =>
+  apiCall('getWorkspaceRevision', () => api.get(`/workspace/${workspaceId}/revisions/${revisionId}`))
+
+const restoreWorkspaceRevision = async (workspaceId, revisionId) =>
+  apiCall('restoreWorkspaceRevision', () => api.post(`/workspace/${workspaceId}/revisions/${revisionId}/restore`))
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default {
@@ -254,6 +291,8 @@ export default {
   savePost,
   getPost,
   allPosts,
+  getWorkspacePreferences,
+  saveWorkspacePreferences,
   deletePost,
   list_delete,
   inviteUser,
@@ -270,4 +309,12 @@ export default {
   deleteEditorJsImage,
   uploadEditorJsImage,
   saveWorkspaceAssetToDrive,
+  getWorkspaceComments,
+  createWorkspaceComment,
+  updateWorkspaceComment,
+  resolveWorkspaceComment,
+  deleteWorkspaceComment,
+  getWorkspaceRevisions,
+  getWorkspaceRevision,
+  restoreWorkspaceRevision,
 }

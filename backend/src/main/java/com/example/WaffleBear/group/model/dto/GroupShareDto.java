@@ -19,7 +19,8 @@ public class GroupShareDto {
             Long workspaceId,
             List<Long> userIds,
             List<Long> groupIds,
-            List<String> emails
+            List<String> emails,
+            String role
     ) {
     }
 

@@ -93,12 +93,13 @@ export const shareFilesWithTargets = async ({ fileIds, userIds = [], groupIds = 
   return unwrapResult(response);
 };
 
-export const shareWorkspacesWithTargets = async ({ workspaceId, userIds = [], groupIds = [], emails = [] }) => {
+export const shareWorkspacesWithTargets = async ({ workspaceId, userIds = [], groupIds = [], emails = [], role = "WRITE" }) => {
   const response = await api.post("/group/share/workspaces", {
     workspaceId,
     userIds,
     groupIds,
     emails,
+    role,
   });
   return unwrapResult(response);
 };

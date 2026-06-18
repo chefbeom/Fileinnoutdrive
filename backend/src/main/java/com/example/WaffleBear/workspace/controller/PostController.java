@@ -115,13 +115,14 @@ public class PostController {
     public BaseResponse invite(
             @AuthenticationPrincipal AuthUserDetails user,
             @RequestParam("uuid") String uuid,
-            @RequestParam(value = "email", required = false) String email) {
+            @RequestParam(value = "email", required = false) String email,
+            @RequestParam(value = "role", required = false) AccessRole role) {
 
         if (email != null && email.contains("@kakao.social")) {
             return BaseResponse.fail(INVALID_EMAIL_FORMAT);
         }
 
-        BaseResponseStatus result = ps.invite(uuid, email, user);
+        BaseResponseStatus result = ps.invite(uuid, email, user, role);
         return BaseResponse.success(ResponseEntity.ok(result));
     }
 

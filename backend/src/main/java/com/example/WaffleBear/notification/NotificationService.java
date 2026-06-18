@@ -128,6 +128,17 @@ public class NotificationService {
         );
     }
 
+    public void sendWorkspaceMentionNotification(Long receiverUserIdx, String uuid, String workspaceName, String authorName) {
+        createAndDispatchNotification(
+                receiverUserIdx,
+                "workspace_mention",
+                "워크스페이스 멘션",
+                authorName + "님이 [" + workspaceName + "] 댓글에서 회원님을 언급했습니다.",
+                uuid,
+                null
+        );
+    }
+
     public void sendRelationshipInviteNotification(Long receiverUserIdx, Long inviteId, String senderName) {
         createAndDispatchNotification(
                 receiverUserIdx,

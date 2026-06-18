@@ -62,6 +62,29 @@ const normalizeAsset = (asset = {}) => ({
   fileSizeLabel: formatBytes(asset.fileSize),
 })
 
+const escapeHtml = (value = '') => String(value)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;')
+
+const safeUrl = (value = '') => {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+
+  try {
+    const parsed = new URL(raw, window.location.origin)
+    if (['http:', 'https:'].includes(parsed.protocol)) {
+      return escapeHtml(raw)
+    }
+  } catch {
+    return ''
+  }
+
+  return ''
+}
+
 // ── EditorJS 블록 렌더러 ──────────────────────────────────────────────────────
 const renderBlock = (block) => {
   if (!block?.type) return ''
@@ -71,29 +94,32 @@ const renderBlock = (block) => {
   switch (block.type) {
     case 'header': {
       const level = Math.min(Math.max(Number(d.level) || 2, 1), 6)
-      return `<h${level} class="ro-heading ro-heading--${level}">${d.text || ''}</h${level}>`
+      return `<h${level} class="ro-heading ro-heading--${level}">${escapeHtml(d.text)}</h${level}>`
     }
     case 'paragraph':
-      return `<p class="ro-paragraph">${d.text || ''}</p>`
+      return `<p class="ro-paragraph">${escapeHtml(d.text)}</p>`
     case 'list': {
       const tag = d.style === 'ordered' ? 'ol' : 'ul'
-      const items = (d.items || []).map((item) => `<li>${item}</li>`).join('')
-      return `<${tag} class="ro-list ro-list--${d.style || 'unordered'}">${items}</${tag}>`
+      const style = tag === 'ol' ? 'ordered' : 'unordered'
+      const items = (d.items || []).map((item) => `<li>${escapeHtml(item)}</li>`).join('')
+      return `<${tag} class="ro-list ro-list--${style}">${items}</${tag}>`
     }
     case 'image': {
-      const caption = d.caption ? `<figcaption class="ro-image-caption">${d.caption}</figcaption>` : ''
+      const caption = d.caption ? `<figcaption class="ro-image-caption">${escapeHtml(d.caption)}</figcaption>` : ''
       const classes = ['ro-image-wrap', d.withBorder && 'ro-image-wrap--border', d.stretched && 'ro-image-wrap--stretched'].filter(Boolean).join(' ')
-      return `<figure class="${classes}"><img src="${d.file?.url || d.url || ''}" alt="${d.caption || ''}" class="ro-image" />${caption}</figure>`
+      const src = safeUrl(d.file?.url || d.url)
+      if (!src) return caption ? `<figure class="${classes}">${caption}</figure>` : ''
+      return `<figure class="${classes}"><img src="${src}" alt="${escapeHtml(d.caption)}" class="ro-image" />${caption}</figure>`
     }
     case 'delimiter':
       return `<hr class="ro-delimiter" />`
     case 'quote':
-      return `<blockquote class="ro-quote"><p>${d.text || ''}</p>${d.caption ? `<cite>${d.caption}</cite>` : ''}</blockquote>`
+      return `<blockquote class="ro-quote"><p>${escapeHtml(d.text)}</p>${d.caption ? `<cite>${escapeHtml(d.caption)}</cite>` : ''}</blockquote>`
     case 'code':
-      return `<pre class="ro-code"><code>${(d.code || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`
+      return `<pre class="ro-code"><code>${escapeHtml(d.code)}</code></pre>`
     case 'table': {
       const rows = (d.content || []).map((row, ri) => {
-        const cells = row.map((cell) => ri === 0 && d.withHeadings ? `<th>${cell}</th>` : `<td>${cell}</td>`).join('')
+        const cells = row.map((cell) => ri === 0 && d.withHeadings ? `<th>${escapeHtml(cell)}</th>` : `<td>${escapeHtml(cell)}</td>`).join('')
         return `<tr>${cells}</tr>`
       }).join('')
       return `<div class="ro-table-wrap"><table class="ro-table">${rows}</table></div>`
@@ -102,13 +128,13 @@ const renderBlock = (block) => {
       const items = (d.items || []).map((item) =>
         `<li class="ro-checklist-item${item.checked ? ' ro-checklist-item--checked' : ''}">
           <span class="ro-checklist-mark">${item.checked ? '✓' : ''}</span>
-          <span>${item.text || ''}</span>
+          <span>${escapeHtml(item.text)}</span>
         </li>`
       ).join('')
       return `<ul class="ro-checklist">${items}</ul>`
     }
     default:
-      return d.text ? `<p class="ro-paragraph">${d.text}</p>` : ''
+      return d.text ? `<p class="ro-paragraph">${escapeHtml(d.text)}</p>` : ''
   }
 }
 
@@ -124,12 +150,8 @@ const renderContent = (raw) => {
   } catch {}
 
   // 이미 HTML인 경우 그대로 반환
-  if (typeof raw === 'string' && raw.trim().startsWith('<')) {
-    return raw
-  }
-
   // 일반 텍스트
-  return `<p class="ro-paragraph">${raw}</p>`
+  return `<p class="ro-paragraph">${escapeHtml(raw)}</p>`
 }
 
 // ── 데이터 로드 ──────────────────────────────────────────────────────────────

@@ -19,6 +19,7 @@ import com.example.WaffleBear.group.repository.RelationshipGroupRepository;
 import com.example.WaffleBear.group.repository.RelationshipRepository;
 import com.example.WaffleBear.user.model.User;
 import com.example.WaffleBear.user.repository.UserRepository;
+import com.example.WaffleBear.workspace.model.relation.AccessRole;
 import com.example.WaffleBear.workspace.service.PostService;
 import com.example.WaffleBear.chat.ChatRoomService;
 import lombok.RequiredArgsConstructor;
@@ -89,7 +90,12 @@ public class GroupShareService {
                 InviteType.WORKSPACE
         );
 
-        int affectedCount = postService.shareWithUsers(request.workspaceId(), userId, resolution.userIds());
+        int affectedCount = postService.shareWithUsers(
+                request.workspaceId(),
+                userId,
+                resolution.userIds(),
+                resolveWorkspaceShareRole(request.role())
+        );
         return new GroupShareDto.ShareResult(affectedCount, resolution.recipients(), resolution.pendingInvites());
     }
 
@@ -389,6 +395,13 @@ public class GroupShareService {
                 user.getIdx(),
                 new GroupShareDto.ShareRecipient(user.getIdx(), user.getName(), user.getEmail(), source)
         );
+    }
+
+    private AccessRole resolveWorkspaceShareRole(String rawRole) {
+        if ("READ".equalsIgnoreCase(String.valueOf(rawRole).trim())) {
+            return AccessRole.READ;
+        }
+        return AccessRole.WRITE;
     }
 
     private List<Long> normalizeGroupIds(List<Long> groupIds) {

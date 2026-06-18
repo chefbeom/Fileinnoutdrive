@@ -21,6 +21,7 @@ public class UserPostDto {
     public record ResRole(
             Long idx,
             String username,
+            String email,
             String image,
             AccessRole role
     ) {
@@ -28,6 +29,7 @@ public class UserPostDto {
             return new ResRole(
                     entity.getUser().getIdx(),
                     entity.getUser().getName(),
+                    entity.getUser().getEmail(),
                     null,
                     entity.getLevel()
             );
