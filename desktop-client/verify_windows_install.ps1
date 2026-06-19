@@ -233,14 +233,17 @@ try {
   $trayExePath = Join-Path $installDir "FileInNOutDesktop.exe"
   $trayIconPath = Join-Path $installDir "FileInNOutDesktop.ico"
   $traySourcePath = Join-Path $installDir "FileInNOutDesktopTray.cs"
+  $desktopModelsPath = Join-Path $installDir "DesktopModels.cs"
   $watchPath = Join-Path $installDir "fileinnout-watch.cmd"
   $watchHiddenPath = Join-Path $installDir "fileinnout-watch-hidden.vbs"
   $contextPath = Join-Path $installDir "fileinnout-context.cmd"
   $contextHiddenPath = Join-Path $installDir "fileinnout-context-hidden.vbs"
   $clientPath = Join-Path $installDir "fileinnout_desktop.py"
+  $clientConstantsPath = Join-Path $installDir "fileinnout_desktop_constants.py"
+  $clientModelsPath = Join-Path $installDir "fileinnout_desktop_models.py"
   $uninstallerPath = Join-Path $installDir "uninstall-windows.ps1"
 
-  foreach ($path in @($cmdPath, $trayExePath, $trayIconPath, $traySourcePath, $watchPath, $watchHiddenPath, $contextPath, $contextHiddenPath, $clientPath, $uninstallerPath)) {
+  foreach ($path in @($cmdPath, $trayExePath, $trayIconPath, $traySourcePath, $desktopModelsPath, $watchPath, $watchHiddenPath, $contextPath, $contextHiddenPath, $clientPath, $clientConstantsPath, $clientModelsPath, $uninstallerPath)) {
     if (-not (Test-Path -LiteralPath $path)) {
       throw "Expected installed file is missing: $path"
     }

@@ -29,49 +29,35 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-
-APP_NAME = "FileInNOut Desktop"
-CONFIG_DIR_NAME = "FileInNOutDesktop"
-STATE_DIR_NAME = ".fileinnout"
-STATE_FILE_NAME = "state.json"
-LOCK_FILE_NAME = "sync.lock"
-CHUNK_SIZE_BYTES = 80 * 1024 * 1024
-GET_RETRY_ATTEMPTS = 3
-PARTITION_SIZE_BYTES = 100 * 1024 * 1024
-SHARED_ROOT_NAME = "Shared"
-SHARE_URL_SCHEME = "fileinnout"
-SHARE_URL_HOSTS = {"shared", "share", "folder"}
-MY_DRIVE_HUB_NAME = "\ub0b4 \ub4dc\ub77c\uc774\ube0c"
-SHARED_DRIVE_HUB_NAME = "\uacf5\uc720 \ubb38\uc11c\ud568"
-ROOT_FILE_SYNC_FOLDER_NAME = "\ub8e8\ud2b8 \ud30c\uc77c"
-DRIVE_ROOT_HUB_FOLDER_NAMES = {
-    MY_DRIVE_HUB_NAME.casefold(),
-    SHARED_DRIVE_HUB_NAME.casefold(),
-}
-SKIPPED_ROOTS = {STATE_DIR_NAME}
-SKIPPED_FILES = {"desktop.ini", "Thumbs.db", ".DS_Store"}
-SKIPPED_FILE_PREFIXES = (".~", "~$")
-SKIPPED_FILE_SUFFIXES = (
-    ".download",
-    ".tmp",
-    ".temp",
-    ".crdownload",
-    ".part",
-    ".partial",
-    ".swp",
-    ".swx",
+from fileinnout_desktop_constants import (
+    ACCOUNT_PROFILE_FIELDS,
+    ACCOUNT_SYNC_FIELDS,
+    APP_NAME,
+    CHUNK_SIZE_BYTES,
+    CONFIG_DIR_NAME,
+    DRIVE_ROOT_HUB_FOLDER_NAMES,
+    DRIVE_ROOT_SKIPPED_FOLDER_NAMES,
+    FILE_ATTRIBUTE_REPARSE_POINT,
+    GET_RETRY_ATTEMPTS,
+    LOCK_FILE_NAME,
+    MY_DRIVE_HUB_NAME,
+    PARTITION_SIZE_BYTES,
+    ROOT_FILE_SYNC_FOLDER_NAME,
+    SHARE_URL_HOSTS,
+    SHARE_URL_SCHEME,
+    SHARED_DRIVE_HUB_NAME,
+    SHARED_ROOT_NAME,
+    SKIPPED_FILE_PREFIXES,
+    SKIPPED_FILE_SUFFIXES,
+    SKIPPED_FILES,
+    SKIPPED_ROOTS,
+    STATE_DIR_NAME,
+    STATE_FILE_NAME,
 )
-DRIVE_ROOT_SKIPPED_FOLDER_NAMES = {
-    STATE_DIR_NAME.casefold(),
-    "$recycle.bin",
-    "system volume information",
-    *DRIVE_ROOT_HUB_FOLDER_NAMES,
-}
-FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+from fileinnout_desktop_models import AuthTokens, DesktopError, SyncStats
 
 
 def app_config_dir() -> Path:
@@ -87,12 +73,6 @@ LEGACY_GLOBAL_CONFIG_PATH = (
     if os.environ.get("APPDATA")
     else Path.home() / ".fileinnout-desktop" / "config.json"
 )
-ACCOUNT_PROFILE_FIELDS = ("token", "refreshToken", "syncDir", "syncFolders", "driveLetter")
-ACCOUNT_SYNC_FIELDS = ("syncDir", "syncFolders", "driveLetter")
-
-
-class DesktopError(RuntimeError):
-    pass
 
 
 def extract_refresh_token(headers: dict[str, str]) -> str:
@@ -105,23 +85,6 @@ def extract_refresh_token(headers: dict[str, str]) -> str:
         if morsel is not None:
             return morsel.value
     return ""
-
-
-@dataclass
-class SyncStats:
-    pulled: int = 0
-    pushed: int = 0
-    deleted: int = 0
-    folders_created: int = 0
-    skipped_dirty: int = 0
-    download_failed: int = 0
-    conflicts: list[dict[str, Any]] = field(default_factory=list)
-
-
-@dataclass
-class AuthTokens:
-    access_token: str
-    refresh_token: str = ""
 
 
 class FileInNOutApi:

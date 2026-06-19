@@ -403,9 +403,12 @@ namespace FileInNOutDesktopSetup
             string[] required =
             {
                 "fileinnout_desktop.py",
+                "fileinnout_desktop_constants.py",
+                "fileinnout_desktop_models.py",
                 "FileInNOutDesktop.exe",
                 "FileInNOutDesktop.ico",
                 "FileInNOutDesktopTray.cs",
+                "DesktopModels.cs",
                 "install-windows.ps1",
                 "uninstall-windows.ps1",
                 "README.md",

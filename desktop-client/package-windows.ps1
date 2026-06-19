@@ -8,13 +8,16 @@ $ErrorActionPreference = "Stop"
 
 $sourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $client = Join-Path $sourceDir "fileinnout_desktop.py"
+$clientConstants = Join-Path $sourceDir "fileinnout_desktop_constants.py"
+$clientModels = Join-Path $sourceDir "fileinnout_desktop_models.py"
 $traySource = Join-Path $sourceDir "FileInNOutDesktopTray.cs"
+$desktopModelsSource = Join-Path $sourceDir "DesktopModels.cs"
 $installer = Join-Path $sourceDir "install-windows.ps1"
 $uninstaller = Join-Path $sourceDir "uninstall-windows.ps1"
 $installVerifier = Join-Path $sourceDir "verify_windows_install.ps1"
 $readme = Join-Path $sourceDir "README.md"
 
-foreach ($path in @($client, $traySource, $installer, $uninstaller, $installVerifier, $readme)) {
+foreach ($path in @($client, $clientConstants, $clientModels, $traySource, $desktopModelsSource, $installer, $uninstaller, $installVerifier, $readme)) {
   if (-not (Test-Path $path)) {
     throw "Required package file is missing: $path"
   }
@@ -108,7 +111,7 @@ function New-FileInNOutIcon {
 
 function Build-TrayApplication {
   param(
-    [string]$Source,
+    [string[]]$Sources,
     [string]$Output,
     [string]$Icon
   )
@@ -123,7 +126,7 @@ function Build-TrayApplication {
     /reference:System.Windows.Forms.dll `
     /reference:System.Drawing.dll `
     /reference:System.Web.Extensions.dll `
-    $Source
+    $Sources
   if ($LASTEXITCODE -ne 0) {
     throw "Failed to build FileInNOutDesktop.exe"
   }
@@ -137,16 +140,19 @@ if (Test-Path $stagingRoot) {
 
 New-Item -ItemType Directory -Force -Path $stagingRoot | Out-Null
 Copy-Item -Force -Path $client -Destination (Join-Path $stagingRoot "fileinnout_desktop.py")
+Copy-Item -Force -Path $clientConstants -Destination (Join-Path $stagingRoot "fileinnout_desktop_constants.py")
+Copy-Item -Force -Path $clientModels -Destination (Join-Path $stagingRoot "fileinnout_desktop_models.py")
 Copy-Item -Force -Path $installer -Destination (Join-Path $stagingRoot "install-windows.ps1")
 Copy-Item -Force -Path $uninstaller -Destination (Join-Path $stagingRoot "uninstall-windows.ps1")
 Copy-Item -Force -Path $installVerifier -Destination (Join-Path $stagingRoot "verify_windows_install.ps1")
 Copy-Item -Force -Path $readme -Destination (Join-Path $stagingRoot "README.md")
 Copy-Item -Force -Path $traySource -Destination (Join-Path $stagingRoot "FileInNOutDesktopTray.cs")
+Copy-Item -Force -Path $desktopModelsSource -Destination (Join-Path $stagingRoot "DesktopModels.cs")
 
 $iconPath = Join-Path $stagingRoot "FileInNOutDesktop.ico"
 $trayExePath = Join-Path $stagingRoot "FileInNOutDesktop.exe"
 New-FileInNOutIcon -Path $iconPath
-Build-TrayApplication -Source $traySource -Output $trayExePath -Icon $iconPath
+Build-TrayApplication -Sources @($traySource, $desktopModelsSource) -Output $trayExePath -Icon $iconPath
 
 if ($PythonRuntimeDir) {
   if (-not (Test-Path -LiteralPath $PythonRuntimeDir)) {
@@ -157,9 +163,12 @@ if ($PythonRuntimeDir) {
 
 $packageFiles = @(
   "fileinnout_desktop.py",
+  "fileinnout_desktop_constants.py",
+  "fileinnout_desktop_models.py",
   "FileInNOutDesktop.exe",
   "FileInNOutDesktop.ico",
   "FileInNOutDesktopTray.cs",
+  "DesktopModels.cs",
   "install-windows.ps1",
   "uninstall-windows.ps1",
   "verify_windows_install.ps1",

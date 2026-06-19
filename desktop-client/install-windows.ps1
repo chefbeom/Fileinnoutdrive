@@ -24,9 +24,12 @@ $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $clientSource = Join-Path $scriptDir "fileinnout_desktop.py"
+$clientConstantsSource = Join-Path $scriptDir "fileinnout_desktop_constants.py"
+$clientModelsSource = Join-Path $scriptDir "fileinnout_desktop_models.py"
 $trayExeSource = Join-Path $scriptDir "FileInNOutDesktop.exe"
 $trayIconSource = Join-Path $scriptDir "FileInNOutDesktop.ico"
 $traySource = Join-Path $scriptDir "FileInNOutDesktopTray.cs"
+$desktopModelsSource = Join-Path $scriptDir "DesktopModels.cs"
 $uninstallerSource = Join-Path $scriptDir "uninstall-windows.ps1"
 $configBase = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } elseif ($env:APPDATA) { $env:APPDATA } else { $env:USERPROFILE }
 $configDir = Join-Path $configBase "FileInNOutDesktop"
@@ -137,6 +140,12 @@ Get-Process -Name FileInNOutDesktop -ErrorAction SilentlyContinue |
   }
 Start-Sleep -Milliseconds 300
 Copy-Item -Force -Path $clientSource -Destination (Join-Path $InstallDir "fileinnout_desktop.py")
+if (Test-Path -LiteralPath $clientConstantsSource) {
+  Copy-Item -Force -Path $clientConstantsSource -Destination (Join-Path $InstallDir "fileinnout_desktop_constants.py")
+}
+if (Test-Path -LiteralPath $clientModelsSource) {
+  Copy-Item -Force -Path $clientModelsSource -Destination (Join-Path $InstallDir "fileinnout_desktop_models.py")
+}
 Copy-Item -Force -Path $uninstallerSource -Destination (Join-Path $InstallDir "uninstall-windows.ps1")
 if (Test-Path -LiteralPath $trayExeSource) {
   Copy-Item -Force -Path $trayExeSource -Destination (Join-Path $InstallDir "FileInNOutDesktop.exe")
@@ -157,6 +166,9 @@ if (Test-Path -LiteralPath $trayExeSource) {
       $trayBuildArgs += "/win32icon:$trayIconSource"
     }
     $trayBuildArgs += $traySource
+    if (Test-Path -LiteralPath $desktopModelsSource) {
+      $trayBuildArgs += $desktopModelsSource
+    }
     & $csc @trayBuildArgs
     if ($LASTEXITCODE -ne 0) {
       Write-Warning "Could not build FileInNOutDesktop.exe; command-line shortcuts will still be installed."
@@ -170,6 +182,9 @@ if (Test-Path -LiteralPath $trayIconSource) {
 }
 if (Test-Path -LiteralPath $traySource) {
   Copy-Item -Force -Path $traySource -Destination (Join-Path $InstallDir "FileInNOutDesktopTray.cs")
+}
+if (Test-Path -LiteralPath $desktopModelsSource) {
+  Copy-Item -Force -Path $desktopModelsSource -Destination (Join-Path $InstallDir "DesktopModels.cs")
 }
 
 if ($resolvedPythonRuntimeDir) {
