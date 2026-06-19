@@ -33,7 +33,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayOutputStream;
-import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -48,12 +47,18 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import static com.example.WaffleBear.file.util.FileContentUtils.buildThumbnailObjectKey;
+import static com.example.WaffleBear.file.util.FileContentUtils.isTextPreviewable;
+import static com.example.WaffleBear.file.util.FileContentUtils.isVideoFile;
+import static com.example.WaffleBear.file.util.FileContentUtils.resolveDownloadContentType;
+import static com.example.WaffleBear.file.util.FileContentUtils.resolveTextContentType;
+import static com.example.WaffleBear.file.util.FileContentUtils.sanitizeDownloadFileName;
+
 @Service
 @RequiredArgsConstructor
 public class ShareService {
 
     private static final int MAX_TEXT_PREVIEW_BYTES = 64 * 1024;
-    private static final String THUMBNAIL_DIRECTORY_NAME = "thumbnails";
 
     private final FileUpDownloadRepository fileUpDownloadRepository;
     private final ShareRepository shareRepository;
@@ -1221,48 +1226,6 @@ public class ShareService {
         }
     }
 
-    private String buildThumbnailObjectKey(String objectKey) {
-        int pathSeparatorIndex = objectKey.lastIndexOf('/');
-        String directory = pathSeparatorIndex >= 0 ? objectKey.substring(0, pathSeparatorIndex + 1) : "";
-        String fileName = pathSeparatorIndex >= 0 ? objectKey.substring(pathSeparatorIndex + 1) : objectKey;
-        int extensionIndex = fileName.lastIndexOf('.');
-        String baseName = extensionIndex >= 0 ? fileName.substring(0, extensionIndex) : fileName;
-
-        return directory + THUMBNAIL_DIRECTORY_NAME + "/" + baseName + ".jpg";
-    }
-
-    private boolean isVideoFile(String fileFormat) {
-        String extension = fileFormat == null ? "" : fileFormat.trim().toLowerCase(Locale.ROOT);
-        return Set.of("mp4", "mov", "avi", "mkv", "wmv", "webm", "m4v", "mpeg", "mpg", "ogv", "3gp").contains(extension);
-    }
-
-    private boolean isTextPreviewable(String fileFormat) {
-        String extension = fileFormat == null ? "" : fileFormat.trim().toLowerCase(Locale.ROOT);
-        return Set.of(
-                "txt", "md", "csv", "log", "json", "xml", "html", "htm",
-                "css", "js", "ts", "java", "py", "sql", "yml", "yaml",
-                "properties", "sh", "bat"
-        ).contains(extension);
-    }
-
-private String resolveTextContentType(String fileFormat) {
-    String extension = fileFormat == null ? "" : fileFormat.trim().toLowerCase(Locale.ROOT);
-
-        if (Set.of("json").contains(extension)) {
-            return "application/json";
-        }
-        if (Set.of("html", "htm").contains(extension)) {
-            return "text/html";
-        }
-        if (Set.of("xml").contains(extension)) {
-            return "application/xml";
-        }
-        if (Set.of("csv").contains(extension)) {
-            return "text/csv";
-    }
-    return "text/plain";
-}
-
 private byte[] readObjectBytes(String bucketName, String objectKey) {
     try (var objectStream = minioClient.getObject(
             GetObjectArgs.builder()
@@ -1307,26 +1270,6 @@ private String generateAttachmentDownloadUrl(String objectKey, String fileName, 
     } catch (Exception exception) {
         throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
     }
-}
-
-private String resolveDownloadContentType(String fileName) {
-    String contentType = URLConnection.guessContentTypeFromName(fileName == null ? "" : fileName);
-    return (contentType == null || contentType.isBlank()) ? "application/octet-stream" : contentType;
-}
-
-private String sanitizeDownloadFileName(String preferredName, String fallbackName) {
-    String candidate = preferredName;
-    if (candidate == null || candidate.isBlank()) {
-        candidate = fallbackName;
-    }
-    if (candidate == null || candidate.isBlank()) {
-        candidate = "file";
-    }
-
-    return candidate
-            .replace("\r", "")
-            .replace("\n", "")
-            .trim();
 }
 
 private FileNodeType resolveNodeType(FileInfo entity) {

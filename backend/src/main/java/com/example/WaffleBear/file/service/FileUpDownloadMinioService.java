@@ -36,7 +36,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -56,6 +55,14 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static com.example.WaffleBear.file.util.FileContentUtils.buildThumbnailObjectKey;
+import static com.example.WaffleBear.file.util.FileContentUtils.categorizeExtension;
+import static com.example.WaffleBear.file.util.FileContentUtils.isTextPreviewable;
+import static com.example.WaffleBear.file.util.FileContentUtils.isVideoFile;
+import static com.example.WaffleBear.file.util.FileContentUtils.resolveDownloadContentType;
+import static com.example.WaffleBear.file.util.FileContentUtils.resolveTextContentType;
+import static com.example.WaffleBear.file.util.FileContentUtils.sanitizeDownloadFileName;
+
 @Service
 @RequiredArgsConstructor
 public class FileUpDownloadMinioService implements FileUpDownloadService {
@@ -70,7 +77,6 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
     private final ShareInheritanceService shareInheritanceService;
 
     private static final int MAX_TEXT_PREVIEW_BYTES = 64 * 1024;
-    private static final String THUMBNAIL_DIRECTORY_NAME = "thumbnails";
     private final Set<String> thumbnailGenerationInProgress = ConcurrentHashMap.newKeySet();
 
     @Override
@@ -1032,16 +1038,6 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
         return objectKeys;
     }
 
-    private String buildThumbnailObjectKey(String objectKey) {
-        int pathSeparatorIndex = objectKey.lastIndexOf('/');
-        String directory = pathSeparatorIndex >= 0 ? objectKey.substring(0, pathSeparatorIndex + 1) : "";
-        String fileName = pathSeparatorIndex >= 0 ? objectKey.substring(pathSeparatorIndex + 1) : objectKey;
-        int extensionIndex = fileName.lastIndexOf('.');
-        String baseName = extensionIndex >= 0 ? fileName.substring(0, extensionIndex) : fileName;
-
-        return directory + THUMBNAIL_DIRECTORY_NAME + "/" + baseName + ".jpg";
-    }
-
     private String normalizeFormat(String rawFormat, String originName) {
         String format = rawFormat;
         if (format == null || format.isBlank()) {
@@ -1298,69 +1294,6 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
         categories.put("audio", new StorageCategoryAccumulator("오디오"));
         categories.put("other", new StorageCategoryAccumulator("기타"));
     }
-    private String categorizeExtension(String fileFormat) {
-        String extension = fileFormat == null ? "" : fileFormat.trim().toLowerCase(Locale.ROOT);
-
-        if (Set.of("pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "md", "csv", "hwp").contains(extension)) {
-            return "document";
-        }
-
-        if (Set.of("jpg", "jpeg", "png", "gif", "svg", "webp", "bmp", "heic").contains(extension)) {
-            return "image";
-        }
-
-        if (Set.of("mp4", "mov", "avi", "mkv", "wmv", "webm").contains(extension)) {
-            return "video";
-        }
-
-        if (Set.of("zip", "rar", "7z", "tar", "gz").contains(extension)) {
-            return "archive";
-        }
-
-        if (Set.of("mp3", "wav", "aac", "flac", "ogg", "m4a").contains(extension)) {
-            return "audio";
-        }
-
-        return "other";
-    }
-
-    private boolean isVideoFile(String fileFormat) {
-        String extension = fileFormat == null ? "" : fileFormat.trim().toLowerCase(Locale.ROOT);
-        return Set.of("mp4", "mov", "avi", "mkv", "wmv", "webm", "m4v", "mpeg", "mpg", "ogv", "3gp").contains(extension);
-    }
-
-    private boolean isTextPreviewable(String fileFormat) {
-        String extension = fileFormat == null ? "" : fileFormat.trim().toLowerCase(Locale.ROOT);
-
-        return Set.of(
-                "txt", "md", "csv", "log", "json", "xml", "html", "htm",
-                "css", "js", "ts", "java", "py", "sql", "yml", "yaml",
-                "properties", "sh", "bat"
-        ).contains(extension);
-    }
-
-    private String resolveTextContentType(String fileFormat) {
-        String extension = fileFormat == null ? "" : fileFormat.trim().toLowerCase(Locale.ROOT);
-
-        if (Set.of("json").contains(extension)) {
-            return "application/json";
-        }
-
-        if (Set.of("html", "htm").contains(extension)) {
-            return "text/html";
-        }
-
-        if (Set.of("xml").contains(extension)) {
-            return "application/xml";
-        }
-
-        if (Set.of("csv").contains(extension)) {
-            return "text/csv";
-        }
-
-        return "text/plain";
-    }
-
     private byte[] readObjectBytes(String bucketName, String objectKey) {
         try (var objectStream = minioClient.getObject(
                 GetObjectArgs.builder()
@@ -1372,26 +1305,6 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
         } catch (Exception exception) {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
         }
-    }
-
-    private String resolveDownloadContentType(String fileName) {
-        String contentType = URLConnection.guessContentTypeFromName(fileName == null ? "" : fileName);
-        return (contentType == null || contentType.isBlank()) ? "application/octet-stream" : contentType;
-    }
-
-    private String sanitizeDownloadFileName(String preferredName, String fallbackName) {
-        String candidate = preferredName;
-        if (candidate == null || candidate.isBlank()) {
-            candidate = fallbackName;
-        }
-        if (candidate == null || candidate.isBlank()) {
-            candidate = "file";
-        }
-
-        return candidate
-                .replace("\r", "")
-                .replace("\n", "")
-                .trim();
     }
 
     private FileInfoDto.StorageCategoryRes toStorageCategoryResponse(
