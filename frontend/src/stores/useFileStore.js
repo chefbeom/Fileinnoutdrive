@@ -29,6 +29,8 @@ import {
   setLockedFiles as setLockedFilesApi,
   shareFilesWithUser as shareFilesWithUserApi,
 } from "@/api/filesApi.js";
+import { IMAGE_EXTENSIONS, VIDEO_EXTENSIONS } from "@/constants/fileTypes.js";
+import { formatBytes as formatFileSize } from "@/utils/formatBytes.js";
 
 const ROOT_LOCATION_LABEL = "홈";
 const SHARED_LOCATION_LABEL = "공유 문서함";
@@ -40,9 +42,6 @@ const ADMIN_MAX_UPLOAD_COUNT = 500;
 const PRESIGNED_URL_SAFETY_MARGIN_MS = 30 * 1000;
 const DEFAULT_DRIVE_PAGE_SIZE = 10;
 const MAX_DRIVE_PAGE_SIZE = 30;
-
-const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "gif", "svg", "webp", "bmp", "heic", "avif", "apng", "jfif", "tif", "tiff"]);
-const VIDEO_EXTENSIONS = new Set(["mp4", "webm", "mov", "mkv", "avi", "wmv", "m4v", "mpeg", "mpg", "ogv", "3gp"]);
 
 const extractExtension = (fileName = "") => {
   const lastDot = fileName.lastIndexOf(".");
@@ -70,23 +69,6 @@ const formatDateLabel = (value) => {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
-};
-
-const formatFileSize = (bytes) => {
-  const size = Number(bytes || 0);
-  if (!Number.isFinite(size) || size <= 0) {
-    return "0 B";
-  }
-
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const unitIndex = Math.min(
-    Math.floor(Math.log(size) / Math.log(1024)),
-    units.length - 1,
-  );
-  const value = size / 1024 ** unitIndex;
-  const fractionDigits = unitIndex === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2;
-
-  return `${value.toFixed(fractionDigits)} ${units[unitIndex]}`;
 };
 
 const normalizeIdList = (ids) => {

@@ -6,6 +6,21 @@ import {
   updateAdministratorStorageCapacity,
   updateAdministratorUserStatus,
 } from "@/api/administratorApi.js";
+import {
+  ADMIN_SECTIONS,
+  DISPLAY_UNITS,
+  STORAGE_RANGE_OPTIONS,
+  VISUAL_COLORS,
+} from "@/constants/adminDashboardOptions.js";
+import {
+  buildRingStyle,
+  bytesToDisplayUnitInput,
+  clampPercent,
+  formatBytesAuto,
+  formatBytesByUnit as formatBytesBySelectedUnit,
+  formatPercent,
+  percentValue,
+} from "@/utils/storageFormat.js";
 
 const dashboard = ref(null);
 const storageAnalytics = ref(null);
@@ -24,94 +39,13 @@ const providerCapacityValue = ref("50");
 const providerCapacityUnit = ref("TB");
 const activeSection = ref("users");
 
-const DISPLAY_UNITS = [
-  { label: "B", value: "B", bytes: 1 },
-  { label: "KB", value: "KB", bytes: 1024 },
-  { label: "MB", value: "MB", bytes: 1024 ** 2 },
-  { label: "GB", value: "GB", bytes: 1024 ** 3 },
-  { label: "TB", value: "TB", bytes: 1024 ** 4 },
-  { label: "PB", value: "PB", bytes: 1024 ** 5 },
-];
-
-const VISUAL_COLORS = ["#2563eb", "#0ea5e9", "#14b8a6", "#22c55e", "#f59e0b", "#ef4444"];
-
-const STORAGE_RANGE_OPTIONS = [
-  { label: "1시간", value: "1H" },
-  { label: "12시간", value: "12H" },
-  { label: "24시간", value: "24H" },
-  { label: "1일", value: "1D" },
-  { label: "3일", value: "3D" },
-  { label: "7일", value: "7D" },
-  { label: "4주", value: "4W" },
-];
-
-const ADMIN_SECTIONS = [
-  { value: "users", label: "사용자 관리" },
-  { value: "storage", label: "스토리지 통계 및 분석" },
-  { value: "plans", label: "플랜 / 결제 비중 통계 분석" },
-];
-
-const formatBytesAuto = (bytes) => {
-  const size = Number(bytes || 0);
-  if (!Number.isFinite(size) || size <= 0) {
-    return "0 B";
-  }
-
-  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
-  const unitIndex = Math.min(Math.floor(Math.log(size) / Math.log(1024)), units.length - 1);
-  const value = size / 1024 ** unitIndex;
-  const fractionDigits = unitIndex === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2;
-  return `${value.toFixed(fractionDigits)} ${units[unitIndex]}`;
-};
-
-const formatBytesByUnit = (bytes, unit = storageDisplayUnit.value) => {
-  const selectedUnit = DISPLAY_UNITS.find((item) => item.value === unit) || DISPLAY_UNITS[3];
-  const size = Number(bytes || 0);
-  if (!Number.isFinite(size)) {
-    return `0 ${selectedUnit.label}`;
-  }
-
-  const value = size / selectedUnit.bytes;
-  const fractionDigits = selectedUnit.value === "B" ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2;
-  return `${value.toFixed(fractionDigits)} ${selectedUnit.label}`;
-};
-
-const percentValue = (numerator, denominator) => {
-  const safeDenominator = Number(denominator || 0);
-  if (!Number.isFinite(safeDenominator) || safeDenominator <= 0) {
-    return 0;
-  }
-
-  const safeNumerator = Number(numerator || 0);
-  return Math.round((safeNumerator * 10000) / safeDenominator) / 100;
-};
-
-const formatPercent = (value) => `${Number(value || 0).toFixed(2)}%`;
-
-const clampPercent = (value) => {
-  const numericValue = Number(value || 0);
-  if (!Number.isFinite(numericValue)) {
-    return 0;
-  }
-
-  return Math.min(100, Math.max(0, numericValue));
-};
-
-const buildRingStyle = (percent, color) => ({
-  background: `conic-gradient(${color} 0 ${clampPercent(percent)}%, var(--bg-input) ${clampPercent(percent)}% 100%)`,
-});
+const formatBytesByUnit = (bytes, unit = storageDisplayUnit.value) =>
+  formatBytesBySelectedUnit(bytes, unit);
 
 const applyCapacityInputFromBytes = (bytes) => {
-  const size = Number(bytes || 0);
-  if (!Number.isFinite(size) || size <= 0) {
-    providerCapacityValue.value = "50";
-    providerCapacityUnit.value = "TB";
-    return;
-  }
-
-  const preferredUnit = DISPLAY_UNITS.slice().reverse().find((unit) => size >= unit.bytes) || DISPLAY_UNITS[0];
-  providerCapacityUnit.value = preferredUnit.value;
-  providerCapacityValue.value = String(Number((size / preferredUnit.bytes).toFixed(preferredUnit.value === "B" ? 0 : 2)));
+  const input = bytesToDisplayUnitInput(bytes);
+  providerCapacityValue.value = input.value;
+  providerCapacityUnit.value = input.unit;
 };
 
 const summaryCards = computed(() => {

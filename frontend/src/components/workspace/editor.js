@@ -22,6 +22,13 @@ import { ref } from 'vue'
 import postApi from '@/api/postApi.js'
 import { getYjsStatusUrl, getYjsWebsocketUrl } from '@/utils/yjsUrl.js'
 import loadpost from './loadpost.js'
+import {
+  clampNumber,
+  colorForIdentity,
+  decodeTokenPayload,
+  readStoredUserInfo,
+  safeString,
+} from './editorIdentity.js'
 
 export async function initEditor(holderElement, room, initialData, idx, initialTitle, isPrivate, options = {}) {
   if (!holderElement) throw new Error('holderElement is required')
@@ -37,45 +44,6 @@ export async function initEditor(holderElement, room, initialData, idx, initialT
   }
 
   const yjsStatusUrl = !isPrivate ? getYjsStatusUrl() : null
-  const collaboratorColors = ['#2563eb', '#16a34a', '#f97316', '#db2777', '#7c3aed', '#0891b2', '#ca8a04', '#dc2626']
-
-  const safeString = (value) => (typeof value === 'string' ? value.trim() : '')
-  const clampNumber = (value, min = 0, max = 100) => Math.min(max, Math.max(min, Number(value) || 0))
-
-  const colorForIdentity = (identity) => {
-    const source = String(identity ?? ydoc.clientID)
-    let hash = 0
-    for (let i = 0; i < source.length; i += 1) {
-      hash = ((hash << 5) - hash + source.charCodeAt(i)) | 0
-    }
-    return collaboratorColors[Math.abs(hash) % collaboratorColors.length]
-  }
-
-  const decodeTokenPayload = (tokenValue) => {
-    if (!tokenValue) return null
-    try {
-      const base64Url = tokenValue.split('.')[1]
-      if (!base64Url) return null
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
-      const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')
-      const jsonPayload = decodeURIComponent(
-        atob(padded).split('').map((c) => `%${(`00${c.charCodeAt(0).toString(16)}`).slice(-2)}`).join('')
-      )
-      return JSON.parse(jsonPayload)
-    } catch (error) {
-      console.warn('토큰에서 사용자 정보를 읽어오는데 실패했습니다.', error)
-      return null
-    }
-  }
-
-  const readStoredUserInfo = () => {
-    try {
-      const stored = localStorage.getItem('USERINFO')
-      return stored ? JSON.parse(stored) : null
-    } catch {
-      return null
-    }
-  }
 
   const stopRealtimeStatusLogging = () => {
     if (realtimeStatusTimer) {
@@ -223,7 +191,7 @@ Redis 연결 상태 = ${status.redisAvailable === true ? '연결됨' : '연결 �
     safeString(tokenPayload?.nickname) ||
     myEmail ||
     `사용자 ${String(ydoc.clientID).slice(-4)}`
-  const myColor = colorForIdentity(myUserIdx ?? myEmail ?? myName)
+  const myColor = colorForIdentity(myUserIdx ?? myEmail ?? myName, ydoc.clientID)
   const userRole = String(options?.userRole ?? 'READ').toUpperCase()
   const initialReadOnly = Boolean(options?.readOnly) || userRole === 'READ'
   const localUserState = {
@@ -315,7 +283,7 @@ Redis 연결 상태 = ${status.redisAvailable === true ? '연결됨' : '연결 �
       userList.push({
         clientId: String(clientId),
         name:     safeString(state.user.name) || `사용자 ${String(clientId).slice(-4)}`,
-        color:    state.user.color || colorForIdentity(state.user.userIdx ?? state.user.email ?? clientId),
+        color:    state.user.color || colorForIdentity(state.user.userIdx ?? state.user.email ?? clientId, ydoc.clientID),
         isMe:     clientId === ydoc.clientID,
         role:     String(state.user.role ?? 'READ').toUpperCase(),
         userIdx:  state.user.userIdx ?? null,     // ✅ 백엔드 유저 ID
@@ -331,7 +299,7 @@ Redis 연결 상태 = ${status.redisAvailable === true ? '연결됨' : '연결 �
       if (mouse.visible !== false && mouse.x != null && mouse.y != null) {
         remotes[clientId] = {
           name:  safeString(state.user.name) || `사용자 ${String(clientId).slice(-4)}`,
-          color: state.user.color || colorForIdentity(state.user.userIdx ?? state.user.email ?? clientId),
+          color: state.user.color || colorForIdentity(state.user.userIdx ?? state.user.email ?? clientId, ydoc.clientID),
           style: {
             position:   'absolute',
             left:       `${clampNumber(mouse.x)}%`,

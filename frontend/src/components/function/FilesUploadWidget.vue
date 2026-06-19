@@ -155,17 +155,23 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import axios from "axios";
 import { onBeforeRouteLeave } from "vue-router";
 import { abortUpload, completeUpload, initUploadFiles, parseUploadResponse } from "@/api/filesApi.js";
+import {
+  ACTIVE_UPLOAD_STATUSES,
+  CHUNK_SIZE_BYTES,
+  DEFAULT_UPLOAD_CONCURRENCY,
+  PARTITION_SIZE_BYTES,
+  UPLOAD_CONCURRENCY_STORAGE_KEY,
+  normalizeUploadConcurrency,
+  uploadConcurrencyOptions,
+} from "@/constants/uploadOptions.js";
 import { api } from "@/plugins/axiosinterceptor.js";
 import { useFileStore } from "@/stores/useFileStore.js";
+import { formatBytes } from "@/utils/formatBytes.js";
 
 const emit = defineEmits(["upload-complete", "upload-fail"]);
 const fileStore = useFileStore();
 
-const PARTITION_SIZE_BYTES = 100 * 1024 * 1024;
-const CHUNK_SIZE_BYTES = 80 * 1024 * 1024;
-const STORAGE_KEY_CONCURRENCY = "file-upload-concurrency";
-const uploadConcurrencyOptions = [1, 2, 3, 4, 5];
-const transientStatuses = new Set(["preparing", "pending", "uploading", "merging", "canceling"]);
+const transientStatuses = ACTIVE_UPLOAD_STATUSES;
 const activeUploadControllers = new Map();
 
 const isDropdownOpen = ref(false);
@@ -271,7 +277,7 @@ watch(uploadConcurrency, (value) => {
     return;
   }
 
-  window.localStorage.setItem(STORAGE_KEY_CONCURRENCY, String(normalized));
+  window.localStorage.setItem(UPLOAD_CONCURRENCY_STORAGE_KEY, String(normalized));
 });
 
 watch(
@@ -286,12 +292,8 @@ watch(
 );
 
 function readSavedConcurrency() {
-  const savedValue = Number(window.localStorage.getItem(STORAGE_KEY_CONCURRENCY) || 3);
+  const savedValue = Number(window.localStorage.getItem(UPLOAD_CONCURRENCY_STORAGE_KEY) || DEFAULT_UPLOAD_CONCURRENCY);
   return normalizeUploadConcurrency(savedValue);
-}
-
-function normalizeUploadConcurrency(value) {
-  return Math.min(5, Math.max(1, Number(value || 3)));
 }
 
 function openPanel() {
@@ -378,19 +380,6 @@ function clearCompletedHistoryIfIdle() {
   uploadItems.value = [];
   isPanelCollapsed.value = false;
   isPanelHidden.value = false;
-}
-
-function formatBytes(bytes) {
-  const size = Number(bytes || 0);
-  if (!Number.isFinite(size) || size <= 0) {
-    return "0 B";
-  }
-
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const unitIndex = Math.min(Math.floor(Math.log(size) / Math.log(1024)), units.length - 1);
-  const value = size / 1024 ** unitIndex;
-  const fractionDigits = unitIndex === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2;
-  return `${value.toFixed(fractionDigits)} ${units[unitIndex]}`;
 }
 
 function formatUploadSpeed(item) {

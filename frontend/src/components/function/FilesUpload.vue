@@ -258,7 +258,20 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import axios from "axios"
 import { abortUpload, completeUpload, fetchUploadSessions, initUploadFiles, parseUploadResponse } from "@/api/filesApi.js"
+import {
+  ACTIVE_UPLOAD_STATUSES,
+  CHUNK_SIZE_BYTES,
+  DEFAULT_UPLOAD_CONCURRENCY,
+  MAX_SPEED_SAMPLES,
+  MIN_PROGRESS_SAMPLE_INTERVAL_MS,
+  PARTITION_SIZE_BYTES,
+  SPEED_SAMPLE_WINDOW_MS,
+  UPLOAD_CONCURRENCY_STORAGE_KEY,
+  normalizeUploadConcurrency,
+  uploadConcurrencyOptions,
+} from "@/constants/uploadOptions.js"
 import { useFileStore } from "@/stores/useFileStore.js"
+import { formatBytes as formatUploadLimitBytes } from "@/utils/formatBytes.js"
 
 const isDropdownOpen = ref(false)
 const uploadedFiles = ref([])
@@ -280,40 +293,9 @@ const maxUploadCount = computed(() => Number(planCapabilities.value?.maxUploadCo
 const maxUploadFileBytes = computed(() => Number(planCapabilities.value?.maxUploadFileBytes || 5 * 1024 * 1024 * 1024))
 
 const emit = defineEmits(["upload-complete", "upload-fail"])
-const PARTITION_SIZE_BYTES = 100 * 1024 * 1024
-const CHUNK_SIZE_BYTES = 80 * 1024 * 1024
-const DEFAULT_UPLOAD_CONCURRENCY = 3
-const MAX_UPLOAD_CONCURRENCY = 5
-const UPLOAD_CONCURRENCY_STORAGE_KEY = "file-upload-concurrency"
-const uploadConcurrencyOptions = [1, 2, 3, 4, 5]
-const ACTIVE_UPLOAD_STATUSES = new Set(["preparing", "pending", "uploading", "merging", "canceling"])
 const activeUploadControllers = new Map()
-const SPEED_SAMPLE_WINDOW_MS = 12000
-const MAX_SPEED_SAMPLES = 8
-const MIN_PROGRESS_SAMPLE_INTERVAL_MS = 400
 
 let tickTimerId = null
-
-const formatUploadLimitBytes = (bytes) => {
-  const size = Number(bytes || 0)
-  if (!Number.isFinite(size) || size <= 0) return "0 B"
-
-  const units = ["B", "KB", "MB", "GB", "TB"]
-  const unitIndex = Math.min(Math.floor(Math.log(size) / Math.log(1024)), units.length - 1)
-  const value = size / 1024 ** unitIndex
-  const fractionDigits = unitIndex === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2
-  return `${value.toFixed(fractionDigits)} ${units[unitIndex]}`
-}
-
-const normalizeUploadConcurrency = (value) => {
-  const parsedValue = Number(value)
-
-  if (!Number.isInteger(parsedValue)) {
-    return DEFAULT_UPLOAD_CONCURRENCY
-  }
-
-  return Math.min(MAX_UPLOAD_CONCURRENCY, Math.max(1, parsedValue))
-}
 
 const readStoredUploadConcurrency = () => {
   if (typeof window === "undefined") {

@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/useAuthStore.js'
 import SockJS from 'sockjs-client'
 import Stomp from 'stompjs'
 import { apiPath } from '@/utils/backendUrl.js'
+import { formatBytes as formatFileSize } from '@/utils/formatBytes.js'
 
 const props = defineProps({
   room: Object,
@@ -574,12 +575,6 @@ const handleFileSelect = async (e) => {
   }
 
   e.target.value = '' // 같은 파일 재업로드 가능하도록
-}
-
-const formatFileSize = (bytes) => {
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
 const stopPresenceHeartbeat = () => {

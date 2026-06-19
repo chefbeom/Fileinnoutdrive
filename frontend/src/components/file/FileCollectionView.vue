@@ -3,14 +3,13 @@ import { computed, ref, watch } from "vue";
 import { useFileStore } from "@/stores/useFileStore.js";
 import { useViewStore } from "@/stores/viewStore.js";
 import { downloadFileAsset } from "@/api/filesApi.js";
+import { IMAGE_EXTENSIONS, VIDEO_EXTENSIONS } from "@/constants/fileTypes.js";
 import {
   getCachedFileThumbnailUrl,
   getFileThumbnailCacheKey,
   loadFileThumbnailUrl,
 } from "@/utils/fileThumbnailCache.js";
-
-const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "gif", "svg", "webp", "bmp", "heic", "avif", "apng", "jfif", "tif", "tiff"]);
-const VIDEO_EXTENSIONS = new Set(["mp4", "webm", "mov", "mkv", "avi", "wmv", "m4v", "mpeg", "mpg", "ogv", "3gp"]);
+import { formatBytes } from "@/utils/formatBytes.js";
 
 const props = defineProps({
   files: {
@@ -152,17 +151,7 @@ const formatDisplaySize = (file) => {
   if (typeof file?.size === "string") return file.size;
 
   const bytes = Number(file?.sizeBytes ?? file?.fileSize ?? file?.size ?? 0);
-  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
-
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const unitIndex = Math.min(
-    Math.floor(Math.log(bytes) / Math.log(1024)),
-    units.length - 1,
-  );
-  const value = bytes / 1024 ** unitIndex;
-  const fractionDigits = unitIndex === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2;
-
-  return `${value.toFixed(fractionDigits)} ${units[unitIndex]}`;
+  return formatBytes(bytes);
 };
 
 const getFileName = (file) => file?.name || file?.fileOriginName || "이름 없는 파일";

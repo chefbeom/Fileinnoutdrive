@@ -19,6 +19,7 @@ import {
   rejectRelationshipInvite,
 } from "@/api/groupApi.js";
 import { useFileStore } from "@/stores/useFileStore.js";
+import { formatRelativeTime } from "@/utils/formatRelativeTime.js";
 import { registerPushNotification } from "@/utils/pushNotification.js";
 import ProfileModal from "./ProfileModal.vue";
 import GamesHubModal from "@/components/games/GamesHubModal.vue";
@@ -134,24 +135,6 @@ const avatarInitials = computed(() => (
 
 const updateNotifBadge = () => {
   hasNewNotif.value = notifications.value.some((notification) => !notification.read);
-};
-
-const formatRelativeTime = (dateStr) => {
-  if (!dateStr) return "방금 전";
-
-  const parsed = new Date(dateStr);
-  if (Number.isNaN(parsed.getTime())) return "방금 전";
-
-  const diff = Date.now() - parsed.getTime();
-  const minutes = Math.floor(diff / 60000);
-
-  if (minutes < 1) return "방금 전";
-  if (minutes < 60) return `${minutes}분 전`;
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}시간 전`;
-
-  return `${Math.floor(hours / 24)}일 전`;
 };
 
 const getChatNotificationMessage = (item = {}) => {

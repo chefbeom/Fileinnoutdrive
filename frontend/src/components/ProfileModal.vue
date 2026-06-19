@@ -5,6 +5,7 @@ import { updateSettingsProfile, uploadSettingsProfileImage } from "@/api/featerA
 import { STORAGE_ADDON_PRODUCTS, findMembershipProduct, formatKrw } from "@/constants/billingProducts.js";
 import { useAuthStore } from "@/stores/useAuthStore.js";
 import { useFileStore } from "@/stores/useFileStore.js";
+import { formatBytes } from "@/utils/formatBytes.js";
 import GroupManagerPanel from "@/components/group/GroupManagerPanel.vue";
 
 const props = defineProps({
@@ -188,17 +189,6 @@ const formatDate = (value) => {
     month: "2-digit",
     day: "2-digit",
   }).format(date);
-};
-
-const formatBytes = (bytes) => {
-  const size = Number(bytes || 0);
-  if (!Number.isFinite(size) || size <= 0) return "0 B";
-
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const unitIndex = Math.min(Math.floor(Math.log(size) / Math.log(1024)), units.length - 1);
-  const value = size / 1024 ** unitIndex;
-  const fractionDigits = unitIndex === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2;
-  return `${value.toFixed(fractionDigits)} ${units[unitIndex]}`;
 };
 
 const applySavedProfile = (savedProfile) => {
