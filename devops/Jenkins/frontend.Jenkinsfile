@@ -53,14 +53,15 @@ spec:
     string(name: 'FRONTEND_CONTAINER', defaultValue: 'frontend', description: 'Frontend container name inside the workload.')
     choice(name: 'WEBSOCKET_RESOURCE_KIND', choices: ['rollout', 'deployment'], description: 'Websocket workload kind to update.')
     string(name: 'WEBSOCKET_RESOURCE_NAME', defaultValue: 'waffle-release-wafflebear-websocket', description: 'Websocket workload name.')
+    string(name: 'VITE_WEB_PUSH_PUBLIC_KEY', defaultValue: '', description: 'Optional Vite Web Push public key for browser push registration.')
     string(name: 'WEBSOCKET_CONTAINER', defaultValue: 'websocket-server', description: 'Websocket container name inside the workload.')
   }
 
   environment {
     DOCKERFILE_PATH = "${env.WORKSPACE}/CI-CD/Dockerfile"
-    FRONTEND_IMAGE_NAME = 'lumisia/frontend'
-    WEBSOCKET_IMAGE_NAME = 'lumisia/websocket-server'
-    BACKEND_IMAGE_NAME = 'lumisia/backend'
+    FRONTEND_IMAGE_NAME = 'chefbeom/fileinnoutdrive-frontend'
+    WEBSOCKET_IMAGE_NAME = 'chefbeom/fileinnoutdrive-websocket'
+    BACKEND_IMAGE_NAME = 'chefbeom/fileinnoutdrive-backend'
     IMAGE_TAG = "v${env.BUILD_NUMBER}"
   }
 
@@ -77,7 +78,9 @@ spec:
           sh '''
             set -eu
             npm ci
+            npm run test:unit
             npm run build
+            npm run test:workspace-chunks
           '''
         }
       }
@@ -106,6 +109,7 @@ spec:
               --target=frontend-runtime \
               --build-arg BACKEND_UPSTREAM="${BACKEND_UPSTREAM}" \
               --build-arg REALTIME_UPSTREAM="${REALTIME_UPSTREAM}" \
+              --build-arg VITE_WEB_PUSH_PUBLIC_KEY="${VITE_WEB_PUSH_PUBLIC_KEY:-}" \
               --destination="${FRONTEND_IMAGE_NAME}:${IMAGE_TAG}" \
               --destination="${FRONTEND_IMAGE_NAME}:latest" \
               --single-snapshot \

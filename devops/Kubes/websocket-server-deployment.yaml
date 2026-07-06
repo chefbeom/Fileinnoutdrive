@@ -1,4 +1,5 @@
-﻿apiVersion: apps/v1
+# Legacy deployment artifact: do not deploy directly. Use devops/Helm as the source of truth.
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: websocket-server-deployment
@@ -18,7 +19,7 @@ spec:
     spec:
       containers:
       - name: websocket-server
-        image: lumisia/websocket-server:v2
+        image: chefbeom/fileinnoutdrive-websocket:REPLACE_WITH_EXPLICIT_TAG
         imagePullPolicy: Always
         env:
         - name: PORT

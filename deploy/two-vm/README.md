@@ -18,7 +18,7 @@ docker compose -f deploy/two-vm/docker-compose.vm151.yml --env-file deploy/two-v
 Expected public endpoints:
 
 - Frontend: `http://192.168.35.151`
-- Backend health: `http://192.168.35.151/api/test/version`
+- Backend health: `http://192.168.35.151/api/actuator/health`
 - Yjs/realtime status through frontend: `http://192.168.35.151/wss/statusz`
 - MinIO console: `http://192.168.35.152:9001`
 
@@ -30,6 +30,7 @@ compose stacks.
 
 ```powershell
 $env:VM_PASSWORD="<vm-password>"
+$env:FILEINNOUT_MINIO_IMAGE_TAG="<minio-release-tag>"
 python deploy/two-vm/tools/remote_deploy.py
 ```
 
@@ -38,6 +39,7 @@ desktop upload/pull/delete smoke, use:
 
 ```powershell
 $env:VM_PASSWORD="<vm-password>"
+$env:FILEINNOUT_MINIO_IMAGE_TAG="<minio-release-tag>"
 python deploy/two-vm/tools/remote_deploy.py --verify-admin-only --verify-diagnostics-on-fail
 ```
 
@@ -46,8 +48,11 @@ generated env files and frontend realtime proxy will use the supplied values:
 
 ```powershell
 $env:VM_PASSWORD="<vm-password>"
+$env:FILEINNOUT_MINIO_IMAGE_TAG="<minio-release-tag>"
 python deploy/two-vm/tools/remote_deploy.py --vm151 192.168.35.161 --vm152 192.168.35.162
 ```
+
+VM152 requires `FILEINNOUT_MINIO_IMAGE_TAG` to point at an explicit MinIO release tag; `latest` is rejected before compose starts.
 
 The two-VM deployment defaults to admin-only mode:
 
@@ -114,7 +119,7 @@ smoke through both `verify_admin_only.py` and the installed
 `fileinnout-desktop.cmd` command:
 
 ```powershell
-python deploy/two-vm/tools/verify_local_docker_smoke.py
+python deploy/two-vm/tools/verify_local_docker_smoke.py --minio-image-tag <minio-release-tag>
 ```
 
 To verify the Google-Drive-style shared folder workflow before VMware while
@@ -133,7 +138,10 @@ temporarily starts the local stack with signups enabled only for verification.
 
 The smoke test writes ignored temporary `.env.vm151.local-smoke` and
 `.env.vm152.local-smoke` files and tears the containers down unless
-`--keep-running` is passed.
+`--keep-running` is passed. If local admin, database, MinIO, or shared-recipient
+passwords are not supplied through arguments or `FILEINNOUT_LOCAL_*` environment
+variables, the smoke runner generates per-run random secrets instead of using
+committed defaults.
 
 Use `--skip-docker`, `--skip-powershell`, or `--skip-package` only when that
 toolchain is intentionally unavailable on the current machine.

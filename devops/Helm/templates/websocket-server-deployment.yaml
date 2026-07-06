@@ -34,7 +34,7 @@ spec:
       terminationGracePeriodSeconds: 120
       containers:
         - name: websocket-server
-          image: "{{ .Values.websocket.image.repository }}:{{ .Values.websocket.image.tag }}"
+          image: '{{ include "wafflebear.requiredImageReference" (list "websocket" .Values.websocket.image.repository .Values.websocket.image.tag .Values.websocket.image.digest) }}'
           imagePullPolicy: {{ .Values.websocket.image.pullPolicy }}
           envFrom:
             - configMapRef:

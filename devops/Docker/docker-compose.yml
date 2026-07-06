@@ -1,7 +1,7 @@
 services:
   # 1. Redis 서버
   redis:
-    image: redis:latest
+    image: redis:7.4-alpine
     container_name: waffle-redis
     ports:
       - "6379:6379"
@@ -11,7 +11,7 @@ services:
 
   # 2. MariaDB 서버
   db:
-    image: mariadb:latest
+    image: mariadb:11.4
     container_name: waffle-db
     restart: always
     environment:
@@ -32,7 +32,7 @@ services:
 
   # 3. MinIO 서버
   minio:
-    image: minio/minio
+    image: minio/minio:${MINIO_IMAGE_TAG:?MINIO_IMAGE_TAG must be set to an explicit non-latest tag}
     container_name: waffle-minio
     ports:
       - "9000:9000"
@@ -52,7 +52,7 @@ services:
     build:
       context: ../../../Users/Playdata/Downloads/CI-CD
       dockerfile: backend.dockerfile
-    image: lumisia/backend:${COMPOSE_IMAGE_TAG:-latest}
+    image: chefbeom/fileinnoutdrive-backend:${COMPOSE_IMAGE_TAG:?COMPOSE_IMAGE_TAG must be set to an explicit non-latest tag}
     ports:
       - "8080:8080"
     environment:
@@ -69,7 +69,11 @@ services:
       # [보안 및 인증]
       - JWT_KEY=${JWT_KEY}
       - JWT_EXPIRE=${JWT_EXPIRE}
+      - PROJECT_AES_KEY=${PROJECT_AES_KEY}
       - PORTONE_SECRET=${PORTONE_SECRET}
+      - WEB_PUSH_PUBLIC_KEY=${WEB_PUSH_PUBLIC_KEY:-}
+      - WEB_PUSH_PRIVATE_KEY=${WEB_PUSH_PRIVATE_KEY:-}
+      - WEB_PUSH_SUBJECT=${WEB_PUSH_SUBJECT:-mailto:no-reply@fileinnout.local}
 
       # [관리자 설정]
       - ADMIN_EMAIL=${ADMIN_EMAIL}
@@ -131,7 +135,7 @@ services:
     build:
       context: ../../../Users/Playdata/Downloads/CI-CD
       dockerfile: websocket.dockerfile
-    image: lumisia/websocket-server:${COMPOSE_IMAGE_TAG:-latest}
+    image: chefbeom/fileinnoutdrive-websocket:${COMPOSE_IMAGE_TAG:?COMPOSE_IMAGE_TAG must be set to an explicit non-latest tag}
     environment:
       - PORT=1234
       - HOST=0.0.0.0
@@ -139,6 +143,8 @@ services:
       - REDIS_PORT=6379
       - BACKEND_HOST=backend-app
       - BACKEND_PORT=8080
+      - YJS_AUTH_REQUIRED=true
+      - YJS_AUTH_TIMEOUT_MS=3000
     ports:
       - "1234:1234"
     depends_on:
@@ -160,7 +166,9 @@ services:
     build:
       context: ../../../Users/Playdata/Downloads/CI-CD
       dockerfile: frontend.dockerfile
-    image: lumisia/frontend:${COMPOSE_IMAGE_TAG:-latest}
+      args:
+        VITE_WEB_PUSH_PUBLIC_KEY: ${WEB_PUSH_PUBLIC_KEY:-}
+    image: chefbeom/fileinnoutdrive-frontend:${COMPOSE_IMAGE_TAG:?COMPOSE_IMAGE_TAG must be set to an explicit non-latest tag}
     container_name: waffle-frontend
     ports:
       - "80:80"

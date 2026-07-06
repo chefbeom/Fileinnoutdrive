@@ -34,3 +34,11 @@ topologySpreadConstraints:
       matchLabels:
 {{ toYaml . | nindent 8 }}
 {{- end -}}
+{{- define "wafflebear.requiredImageTag" -}}
+{{- $component := index . 0 -}}
+{{- $tag := (index . 1 | default "" | toString) -}}
+{{- if or (eq $tag "") (eq $tag "latest") -}}
+{{- fail (printf "%s.image.tag must be set to an explicit immutable tag; latest is not allowed" $component) -}}
+{{- end -}}
+{{- $tag -}}
+{{- end -}}

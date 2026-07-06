@@ -26,6 +26,7 @@ spec:
     metadata:
       annotations:
         checksum/backend-env: {{ include (print $.Template.BasePath "/backend-configmap.yaml") . | sha256sum }}
+        checksum/backend-secret: {{ include (print $.Template.BasePath "/backend-secret.yaml") . | sha256sum }}
       labels:
         app.kubernetes.io/name: backend
         app.kubernetes.io/part-of: wafflebear
@@ -57,7 +58,7 @@ spec:
               done
       containers:
         - name: backend
-          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          image: '{{ include "wafflebear.requiredImageReference" (list "backend" .Values.backend.image.repository .Values.backend.image.tag .Values.backend.image.digest) }}'
           imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
           ports:
             - containerPort: {{ .Values.backend.service.port }}
@@ -65,11 +66,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "wafflebear.fullname" . }}-backend-env
-          env:
-            - name: POD_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
+            - secretRef:
+                name: {{ include "wafflebear.fullname" . }}-backend-secret
           lifecycle:
             preStop:
               exec:

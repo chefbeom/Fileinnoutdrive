@@ -1,6 +1,8 @@
 # --- 1단계: 빌드 (Node.js) ---
 FROM node:lts-alpine AS build-stage
 WORKDIR /app
+ARG VITE_WEB_PUSH_PUBLIC_KEY=
+ENV VITE_WEB_PUSH_PUBLIC_KEY=${VITE_WEB_PUSH_PUBLIC_KEY}
 
 # 1. 패키지 파일 복사 (루트 기준 frontend 폴더 내부의 것을 복사)
 COPY ../frontend/package*.json ./

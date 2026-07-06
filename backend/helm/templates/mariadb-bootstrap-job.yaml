@@ -1,3 +1,4 @@
+# Legacy deployment artifact: do not deploy directly. Use devops/Helm as the source of truth.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -27,6 +28,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "wafflebear.fullname" . }}-backend-env
+            - secretRef:
+                name: {{ include "wafflebear.fullname" . }}-backend-secret
           env:
             - name: MARIADB_DATABASE
               value: web

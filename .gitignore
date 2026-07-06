@@ -29,6 +29,7 @@ __pycache__/
 *.jks
 *.keystore
 id_rsa*
+.fileinnout-run/
 
 # Two-VM deployment runtime files
 deploy/two-vm/.env.vm151*
@@ -37,3 +38,4 @@ deploy/two-vm/*.tar
 deploy/two-vm/*.tar.gz
 desktop-client/dist/
 frontend/public/downloads/
+backend/src/main/resources/application-local.yml

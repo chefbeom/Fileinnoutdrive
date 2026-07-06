@@ -1,3 +1,4 @@
+# Legacy deployment artifact: do not deploy directly. Use devops/Helm as the source of truth.
 {{- $websocketRollout := .Values.websocket.rollout | default dict -}}
 {{- $websocketBlueGreen := $websocketRollout.blueGreen | default dict -}}
 apiVersion: argoproj.io/v1alpha1
@@ -34,7 +35,7 @@ spec:
       terminationGracePeriodSeconds: 120
       containers:
         - name: websocket-server
-          image: "{{ .Values.websocket.image.repository }}:{{ .Values.websocket.image.tag }}"
+          image: '{{ .Values.websocket.image.repository }}:{{ include "wafflebear.requiredImageTag" (list "websocket" .Values.websocket.image.tag) }}'
           imagePullPolicy: {{ .Values.websocket.image.pullPolicy }}
           envFrom:
             - configMapRef:

@@ -54,13 +54,13 @@ spec:
                   key: DB_ID
             - name: MARIADB_PASSWORD
               valueFrom:
-                configMapKeyRef:
-                  name: {{ include "wafflebear.fullname" . }}-backend-env
+                secretKeyRef:
+                  name: {{ include "wafflebear.fullname" . }}-backend-secret
                   key: DB_PASS
             - name: MARIADB_ROOT_PASSWORD
               valueFrom:
-                configMapKeyRef:
-                  name: {{ include "wafflebear.fullname" . }}-backend-env
+                secretKeyRef:
+                  name: {{ include "wafflebear.fullname" . }}-backend-secret
                   key: DB_PASS
             - name: MARIADB_ROOT_HOST
               value: "%"

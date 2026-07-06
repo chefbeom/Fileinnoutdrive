@@ -26,6 +26,7 @@ Required result:
 - Windows desktop package is created, manifest checksums are verified, and the
   install/uninstall smoke test passes.
 - VM151 and VM152 compose files render with `docker compose config`.
+- VM152 compose receives an explicit `MINIO_IMAGE_TAG`; `latest` is not allowed.
 
 Optional but recommended local Docker smoke:
 
@@ -42,6 +43,9 @@ Required result:
 - Admin desktop sync upload, pull, and delete smoke test passes.
 - Installed `fileinnout-desktop.cmd` upload, pull, and delete smoke test
   passes against the live local backend.
+- The script generates per-run random local admin, database, MinIO, and shared
+  recipient secrets when they are not supplied explicitly.
+- The MinIO image tag is supplied through `FILEINNOUT_LOCAL_MINIO_IMAGE_TAG` or `--minio-image-tag`.
 - The script tears down the local smoke containers and volumes unless
   `--keep-running` is passed.
 
@@ -105,7 +109,7 @@ python deploy/two-vm/tools/remote_deploy.py --vm151 <backend-frontend-ip> --vm15
 Required result:
 
 - VM151 exposes `http://<vm151>`.
-- VM151 backend health responds at `http://<vm151>/api/test/version`.
+- VM151 backend health responds at `http://<vm151>/api/actuator/health`.
 - VM151 proxies Yjs status at `http://<vm151>/wss/statusz`.
 - VM152 exposes MinIO console at `http://<vm152>:9001`.
 - VM151 env sets `MINIO_PUBLIC_API=http://<vm152>:9000` so desktop presigned

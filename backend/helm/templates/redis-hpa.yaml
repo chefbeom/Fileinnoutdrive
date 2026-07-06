@@ -1,3 +1,4 @@
+# Legacy deployment artifact: do not deploy directly. Use devops/Helm as the source of truth.
 {{- if .Values.redis.autoscaling.enabled }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler

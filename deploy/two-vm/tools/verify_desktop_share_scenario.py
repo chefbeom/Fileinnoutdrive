@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import secrets
 from pathlib import Path
 import sys
 import tempfile
@@ -38,7 +39,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vm152", default=os.environ.get("FILEINNOUT_VM152", "192.168.35.152"))
     parser.add_argument("--ssh-user", default=os.environ.get("FILEINNOUT_SSH_USER", "test"))
     parser.add_argument("--ssh-password", default=os.environ.get("FILEINNOUT_SSH_PASSWORD", os.environ.get("VM_PASSWORD", "")))
-    parser.add_argument("--password", default=os.environ.get("FILEINNOUT_SCENARIO_PASSWORD", "ScenarioPassword1!"))
+    parser.add_argument("--password", default=os.environ.get("FILEINNOUT_SCENARIO_PASSWORD", ""))
     parser.add_argument("--a-email", default=os.environ.get("FILEINNOUT_SCENARIO_A_EMAIL", ""))
     parser.add_argument("--b-email", default=os.environ.get("FILEINNOUT_SCENARIO_B_EMAIL", ""))
     parser.add_argument("--c-email", default=os.environ.get("FILEINNOUT_SCENARIO_C_EMAIL", ""))
@@ -238,6 +239,15 @@ def assert_text_preview(api: desktop.FileInNOutApi, file_id: int, expected: str,
         raise RuntimeError(f"{label} text preview mismatch: {content!r}")
 
 
+def generated_secret(label: str) -> str:
+    return f"{label}-{secrets.token_urlsafe(24)}"
+
+
+def ensure_temp_user_password(args: argparse.Namespace) -> None:
+    if args.create_temp_users and not args.password:
+        args.password = generated_secret("scenario")
+
+
 def require_existing_account_args(args: argparse.Namespace) -> tuple[str, str, str, str, str, str]:
     values = {
         "a-email": args.a_email,
@@ -250,13 +260,21 @@ def require_existing_account_args(args: argparse.Namespace) -> tuple[str, str, s
             "existing account mode requires --a-email, --b-email, and --c-email "
             f"(missing: {', '.join(missing)}). Pass --create-temp-users only when temporary DB users are approved."
         )
+    passwords = {
+        "a-password or FILEINNOUT_SCENARIO_PASSWORD": args.a_password or args.password,
+        "b-password or FILEINNOUT_SCENARIO_PASSWORD": args.b_password or args.password,
+        "c-password or FILEINNOUT_SCENARIO_PASSWORD": args.c_password or args.password,
+    }
+    missing_passwords = [name for name, value in passwords.items() if not value]
+    if missing_passwords:
+        raise RuntimeError("existing account mode requires explicit password(s): " + ", ".join(missing_passwords))
     return (
         args.a_email.strip().lower(),
         args.b_email.strip().lower(),
         args.c_email.strip().lower(),
-        args.a_password or args.password,
-        args.b_password or args.password,
-        args.c_password or args.password,
+        passwords["a-password or FILEINNOUT_SCENARIO_PASSWORD"],
+        passwords["b-password or FILEINNOUT_SCENARIO_PASSWORD"],
+        passwords["c-password or FILEINNOUT_SCENARIO_PASSWORD"],
     )
 
 

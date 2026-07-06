@@ -66,6 +66,8 @@ const BACKEND_HOST = resolveBackendHost()
 const BACKEND_PORT = resolveBackendPort()
 const BACKEND_UPSTREAM = `${BACKEND_HOST}:${BACKEND_PORT}`
 const BACKEND_CLIENT = BACKEND_PROTOCOL === 'https:' ? https : http
+const YJS_AUTH_REQUIRED = String(process.env.YJS_AUTH_REQUIRED || 'true').trim().toLowerCase() !== 'false'
+const YJS_AUTH_TIMEOUT_MS = Number.parseInt(process.env.YJS_AUTH_TIMEOUT_MS || '3000', 10)
 
 const REDIS_ORIGIN = Symbol('redis-origin')
 const SNAPSHOT_ORIGIN = Symbol('snapshot-origin')
@@ -201,6 +203,65 @@ const isRealtimeProxyPath = (pathname) =>
 // Backend app is mounted under the /api context path, so keep the original path intact
 // when proxying realtime HTTP and websocket upgrade traffic.
 const rewriteProxyPath = (pathname, search = '') => `${pathname}${search}`
+const parseWorkspaceIdFromDocName = (docName) => {
+  const match = /^notion-room-(\d+)$/.exec(String(docName || '').trim())
+  if (!match) {
+    return null
+  }
+
+  const workspaceIdx = Number.parseInt(match[1], 10)
+  return Number.isFinite(workspaceIdx) && workspaceIdx > 0 ? workspaceIdx : null
+}
+
+const extractYjsAccessToken = (requestUrl, req) => {
+  const rawToken =
+    requestUrl.searchParams.get('accessToken') ||
+    requestUrl.searchParams.get('token') ||
+    req.headers.authorization ||
+    ''
+  const token = String(rawToken || '').trim()
+  return token.toLowerCase().startsWith('bearer ') ? token.slice('bearer '.length).trim() : token
+}
+
+const sanitizeYjsRequestUrl = (req, docName) => {
+  req.url = `/${encodeURIComponent(docName)}`
+}
+
+const verifyYjsWorkspaceAccess = (workspaceIdx, accessToken) => new Promise((resolve) => {
+  const query = new URLSearchParams({
+    workspaceIdx: String(workspaceIdx),
+    write: 'true',
+  })
+
+  const authReq = BACKEND_CLIENT.request(
+    {
+      hostname: BACKEND_HOST,
+      port: BACKEND_PORT,
+      method: 'GET',
+      path: `/api/workspace/realtime/authorize?${query.toString()}`,
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+    (authRes) => {
+      const allowed = authRes.statusCode >= 200 && authRes.statusCode < 300
+      authRes.resume()
+      authRes.on('end', () => resolve(allowed))
+    },
+  )
+
+  authReq.setTimeout(YJS_AUTH_TIMEOUT_MS, () => {
+    authReq.destroy(new Error('authorization timeout'))
+  })
+
+  authReq.on('error', (error) => {
+    console.warn('[YJS] authorization request failed', error.message)
+    resolve(false)
+  })
+
+  authReq.end()
+})
 
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',
@@ -577,7 +638,23 @@ const subscribeToRedisChannels = async () => {
 }
 
 const handleConnection = async (ws, req) => {
-  const docName = normalizeDocName((req.url || '').slice(1).split('?')[0])
+  const requestUrl = new URL(req.url || '/', 'http://localhost')
+  const docName = normalizeDocName(requestUrl.pathname.slice(1))
+
+  if (YJS_AUTH_REQUIRED) {
+    const workspaceIdx = parseWorkspaceIdFromDocName(docName)
+    const accessToken = extractYjsAccessToken(requestUrl, req)
+    const authorized = workspaceIdx && accessToken
+      ? await verifyYjsWorkspaceAccess(workspaceIdx, accessToken)
+      : false
+
+    if (!authorized) {
+      ws.close(1008, 'Unauthorized realtime workspace')
+      return
+    }
+  }
+
+  sanitizeYjsRequestUrl(req, docName)
   const doc = getYDoc(docName, true)
 
   try {

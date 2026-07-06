@@ -1,6 +1,8 @@
 FROM node:24-bullseye AS build-stage
 
 WORKDIR /app
+ARG VITE_WEB_PUSH_PUBLIC_KEY=
+ENV VITE_WEB_PUSH_PUBLIC_KEY=${VITE_WEB_PUSH_PUBLIC_KEY}
 COPY frontend/package*.json ./
 RUN npm ci
 

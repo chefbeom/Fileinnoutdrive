@@ -1,3 +1,4 @@
+# Legacy deployment artifact: do not deploy directly. Use devops/Helm as the source of truth.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,7 +24,7 @@ spec:
       nodeName: worker03
       containers:
       - name: backend
-        image: lumisia/backend:v3
+        image: chefbeom/fileinnoutdrive-backend:REPLACE_WITH_EXPLICIT_TAG
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080

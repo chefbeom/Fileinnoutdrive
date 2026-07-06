@@ -1,0 +1,275 @@
+{
+    "version":  1,
+    "policy":  "devops/Helm is the canonical deployment source. Legacy deployment artifacts are quarantined until they can be deleted; this lock prevents drift while they remain in the repository.",
+    "legacyRoots":  [
+                        "backend/helm",
+                        "devops/Kubes",
+                        "frontend/k8s"
+                    ],
+    "files":  [
+                  {
+                      "path":  "backend/helm/Chart.yaml",
+                      "sha256NormalizedText":  "6223d62645f332cc3a2dc998436ce384c2c37c293950c3878f9d98c62abdcb4a"
+                  },
+                  {
+                      "path":  "backend/helm/README.md",
+                      "sha256NormalizedText":  "fe98f44e4572d740dbb6d429ca79d64d94d4b556209f704e500c880f57a53aad"
+                  },
+                  {
+                      "path":  "backend/helm/templates/_helpers.tpl",
+                      "sha256NormalizedText":  "e6947b2b93b96c57dc46021d2bf3d630a4b4a801f2299f84443913786ba885fc"
+                  },
+                  {
+                      "path":  "backend/helm/templates/backend-deployment.yaml",
+                      "sha256NormalizedText":  "940561c2fa33078d2442c36bf40b604c783f5907336ceb38132eb25716d2f1db"
+                  },
+                  {
+                      "path":  "backend/helm/templates/backend-ingress.yaml",
+                      "sha256NormalizedText":  "6083b7fa8f79d6eaf8c7a5401f9b3a373949b6ee5897f51c0b4a98ac478af9c5"
+                  },
+                  {
+                      "path":  "backend/helm/templates/backend-pdb.yaml",
+                      "sha256NormalizedText":  "9273601bcf35a0bfad8a5da847a629a3e8e1f1834c972347efb59b5a6c3c77d1"
+                  },
+                  {
+                      "path":  "backend/helm/templates/backend-preview-service.yaml",
+                      "sha256NormalizedText":  "c9800d89c2473c2341d81620261e31d0da6ea7ba260f00e4f64f7a3a36e346b4"
+                  },
+                  {
+                      "path":  "backend/helm/templates/backend-secret.yaml",
+                      "sha256NormalizedText":  "12dd605f84ac2e3f3257d33afdbc2919d4502864f9807676461151f58dbf6534"
+                  },
+                  {
+                      "path":  "backend/helm/templates/backend-service.yaml",
+                      "sha256NormalizedText":  "41818c5c1568973483216f6f993b43203fe0c267c2e582ede7ff15a1c7a052bf"
+                  },
+                  {
+                      "path":  "backend/helm/templates/frontend-canary-service.yaml",
+                      "sha256NormalizedText":  "37ae03db047bd521a38face9cde4abcb341a42fddbdc2cf439cc36f249e389e4"
+                  },
+                  {
+                      "path":  "backend/helm/templates/frontend-configmap.yaml",
+                      "sha256NormalizedText":  "898227240b91f1cd2078cf096f01b3a202388f7017b97ca41b319b7417f263ac"
+                  },
+                  {
+                      "path":  "backend/helm/templates/frontend-deployment.yaml",
+                      "sha256NormalizedText":  "184920c80d5116b259471a506e961e7ab53c60ec3b0ee289a72603145fddd3b5"
+                  },
+                  {
+                      "path":  "backend/helm/templates/frontend-ingress.yaml",
+                      "sha256NormalizedText":  "cb6118d97dee8e9bc49257ce158d28eb08ab21f5287503318da617b1539fca0b"
+                  },
+                  {
+                      "path":  "backend/helm/templates/frontend-pdb.yaml",
+                      "sha256NormalizedText":  "4aeb4fb0fa6b6c5dcb7c86d2d288d0eda6b08c471de9a1c64287f08e54bf6299"
+                  },
+                  {
+                      "path":  "backend/helm/templates/frontend-preview-service.yaml",
+                      "sha256NormalizedText":  "c5271095238b7bd095dcb00a0cd8165418a52249d8a0f6178b634a806d344c6b"
+                  },
+                  {
+                      "path":  "backend/helm/templates/frontend-service.yaml",
+                      "sha256NormalizedText":  "8cebd2ffb4bf67abeb46d8053d631891c88b56d89a7c64576a9a022eac847166"
+                  },
+                  {
+                      "path":  "backend/helm/templates/ingress.yaml",
+                      "sha256NormalizedText":  "f7ac4af59b20bd8ec4ef5d655481ea5e57a7730d8d5bf60db07e4a4ac4cdb57a"
+                  },
+                  {
+                      "path":  "backend/helm/templates/legacy-blocker.yaml",
+                      "sha256NormalizedText":  "6653dcf05537b57a928d4bdb927d580856ee461ab4d8cc2d2f1e3246a96b5322"
+                  },
+                  {
+                      "path":  "backend/helm/templates/mariadb-bootstrap-job.yaml",
+                      "sha256NormalizedText":  "a77cac44e604dfea8a48c938d8a9781255a45616a1dc4ab2f0cf9fcef9e6f4e9"
+                  },
+                  {
+                      "path":  "backend/helm/templates/mariadb-statefulset.yaml",
+                      "sha256NormalizedText":  "87983f63b216bb471c07a920854baa6bfb4c6c861a14a5a5120db3934d3858c7"
+                  },
+                  {
+                      "path":  "backend/helm/templates/realtime-ingress.yaml",
+                      "sha256NormalizedText":  "9df31cd77249ddd0f5e62f06096cbdc8b0f0fa1384d0673d306b9520ce62b734"
+                  },
+                  {
+                      "path":  "backend/helm/templates/redis-deployment.yaml",
+                      "sha256NormalizedText":  "c2d5dc324425ec5ed0a87a4e5b8c0b591c752fd4798c42acf1c0e975fad9a025"
+                  },
+                  {
+                      "path":  "backend/helm/templates/redis-headless-service.yaml",
+                      "sha256NormalizedText":  "fd759e46c8101e31c4a9b26a46965c6326dca706eccda07f86f4c890435a75d7"
+                  },
+                  {
+                      "path":  "backend/helm/templates/redis-hpa.yaml",
+                      "sha256NormalizedText":  "18fc8bf91cde6b0f115aaedb9569644e1a9450e5baca776c93cd78e691ef2234"
+                  },
+                  {
+                      "path":  "backend/helm/templates/redis-pdb.yaml",
+                      "sha256NormalizedText":  "2754f65f2c7f63dde6849a77cb6f36b299d8c939aa5aaf3cfa99a4b1e8694846"
+                  },
+                  {
+                      "path":  "backend/helm/templates/redis-pvc.yaml",
+                      "sha256NormalizedText":  "9bd01e9b691e64f0045d7e989dd75951245409821c5d00046f1306945191f97d"
+                  },
+                  {
+                      "path":  "backend/helm/templates/redis-scripts-configmap.yaml",
+                      "sha256NormalizedText":  "397b521ad09d559ab90bbf8d2bd1d24fae498984a54a0c36d55a6480f8043e13"
+                  },
+                  {
+                      "path":  "backend/helm/templates/redis-sentinel-deployment.yaml",
+                      "sha256NormalizedText":  "db3aa525884182bbd2aae8d3ddd2399684847dd1fdc0237ba64eff032f7a8172"
+                  },
+                  {
+                      "path":  "backend/helm/templates/redis-sentinel-pdb.yaml",
+                      "sha256NormalizedText":  "2d7b602cb9cf02bb45626cd353590929a56ad0d8bff17a805e9e729ab5937823"
+                  },
+                  {
+                      "path":  "backend/helm/templates/redis-sentinel-service.yaml",
+                      "sha256NormalizedText":  "1dc0448432b0211f793fbc778ddcc4339aba0bab795d7af0dbad3da0eae2d32b"
+                  },
+                  {
+                      "path":  "backend/helm/templates/redis-service.yaml",
+                      "sha256NormalizedText":  "3a47ae391bec45afd9173506c7f51de1a5ca84149c7dcadc0f13398852c3c432"
+                  },
+                  {
+                      "path":  "backend/helm/templates/unified-ingress.yaml",
+                      "sha256NormalizedText":  "3e3df6dfd07b2cfe02c8c0f39cd59ba92274e8461745223d3b9d5e59cdb483e3"
+                  },
+                  {
+                      "path":  "backend/helm/templates/websocket-ingress.yaml",
+                      "sha256NormalizedText":  "5edf2cfe9a6ad29d73e39877b04b001de17585be37c3a9d3ab183d1bc7eb9c1c"
+                  },
+                  {
+                      "path":  "backend/helm/templates/websocket-server-configmap.yaml",
+                      "sha256NormalizedText":  "3251fea910250dcef849300179c26a339f9f9c2273a62c8d382e8d295f60913b"
+                  },
+                  {
+                      "path":  "backend/helm/templates/websocket-server-deployment.yaml",
+                      "sha256NormalizedText":  "15e289e159dfcedb505d64acab77f9a4e2fbdc3a56d3315edf1739f3f9a93469"
+                  },
+                  {
+                      "path":  "backend/helm/templates/websocket-server-hpa.yaml",
+                      "sha256NormalizedText":  "ed54eb892a7a2938b04c2d9d34a64fc24d6ffd4e4e7e4476d20d6feada4b0de7"
+                  },
+                  {
+                      "path":  "backend/helm/templates/websocket-server-pdb.yaml",
+                      "sha256NormalizedText":  "0438d78611877fd40942a486cbd3f3a6ff8773ad14eed312e476f4a3e5f78c1f"
+                  },
+                  {
+                      "path":  "backend/helm/templates/websocket-server-preview-service.yaml",
+                      "sha256NormalizedText":  "3cc4f0c5d5ad536536bf5b1ff57efdbfb22e00a9df8f3e19ad8955f3625b6980"
+                  },
+                  {
+                      "path":  "backend/helm/templates/websocket-server-service.yaml",
+                      "sha256NormalizedText":  "10749bcffbff9f2601a30fb5ae2e5b653a47f8014a5ef6764f3441a371f1a208"
+                  },
+                  {
+                      "path":  "backend/helm/values.yaml",
+                      "sha256NormalizedText":  "e73f62d1b03766723a77d2b0f417ab561882f10308a0e83e01545aeebdc9f098"
+                  },
+                  {
+                      "path":  "devops/Kubes/README.md",
+                      "sha256NormalizedText":  "a87ef0ae1bca5cab28d17d764b7acd9e25d4629735602eec83faef2da7fb76e6"
+                  },
+                  {
+                      "path":  "devops/Kubes/backend-deployment.yaml",
+                      "sha256NormalizedText":  "b7e17d16d654d871d96cf467c86e89ad10a9b9c6d1175b96d2a788d7c89f50e7"
+                  },
+                  {
+                      "path":  "devops/Kubes/backend-service.yaml",
+                      "sha256NormalizedText":  "657770d34f806698d8b6c05f96f69f6bd9e1d0843e5a6f88576f40e3eb1f14cb"
+                  },
+                  {
+                      "path":  "devops/Kubes/frontend-configmap.yaml",
+                      "sha256NormalizedText":  "66ced91f5c0ca5ee8429276ecd1e1f8e9ad6c88bfa8c36a7884e1ffa9a269be8"
+                  },
+                  {
+                      "path":  "devops/Kubes/frontend-deployment.yaml",
+                      "sha256NormalizedText":  "84c16365b720e0a222abaefc4c8da529748a16d7c7f6aeb95056ee4e509121d9"
+                  },
+                  {
+                      "path":  "devops/Kubes/infra-service.yaml",
+                      "sha256NormalizedText":  "01c59bddaed3b04c5c19a072d32a638554c76f9750fc35690a50953b4d7a43eb"
+                  },
+                  {
+                      "path":  "devops/Kubes/kustomization.yaml",
+                      "sha256NormalizedText":  "dd97446daf1ee3214cfdd61d85cec36a6b1530df37b4b36a9e9800ee39843c47"
+                  },
+                  {
+                      "path":  "devops/Kubes/mariadb-bootstrap-job.yaml",
+                      "sha256NormalizedText":  "a1b89d6fe75e34c42c77f0c7a97c25ec705ab33d266e65c57d820634ae87921f"
+                  },
+                  {
+                      "path":  "devops/Kubes/mariadb-statefulset.yaml",
+                      "sha256NormalizedText":  "0e11e35f35b69b882a461e2047364e53125e0c2b12e765ef8e4061b0b1b1f83d"
+                  },
+                  {
+                      "path":  "devops/Kubes/redis-hpa.yaml",
+                      "sha256NormalizedText":  "c018707d5bfcd57aff6857898f8154dcfd4aa55fa14a201fa8a07cc663c91aea"
+                  },
+                  {
+                      "path":  "devops/Kubes/service.yaml",
+                      "sha256NormalizedText":  "789df6561008648193ac97dc0d0cfc7013516dc1b37bb78f270a4082564839fd"
+                  },
+                  {
+                      "path":  "devops/Kubes/websocket-server-deployment.yaml",
+                      "sha256NormalizedText":  "ac74ad99affff1de503aec38e1a875ed2e7a8a6c9a3ff56f8939cc79f4484013"
+                  },
+                  {
+                      "path":  "devops/Kubes/websocket-server-service.yaml",
+                      "sha256NormalizedText":  "c0a8641626e469d52402fb3d8cee6d1158bdbc8c752887d4bf4ebbcbf81ff1ea"
+                  },
+                  {
+                      "path":  "frontend/k8s/README.md",
+                      "sha256NormalizedText":  "a87ef0ae1bca5cab28d17d764b7acd9e25d4629735602eec83faef2da7fb76e6"
+                  },
+                  {
+                      "path":  "frontend/k8s/backend-deployment.yaml",
+                      "sha256NormalizedText":  "b7e17d16d654d871d96cf467c86e89ad10a9b9c6d1175b96d2a788d7c89f50e7"
+                  },
+                  {
+                      "path":  "frontend/k8s/backend-service.yaml",
+                      "sha256NormalizedText":  "657770d34f806698d8b6c05f96f69f6bd9e1d0843e5a6f88576f40e3eb1f14cb"
+                  },
+                  {
+                      "path":  "frontend/k8s/frontend-configmap.yaml",
+                      "sha256NormalizedText":  "6425d23e2283a73632cb52d24ba38a9214e63121e103c6c719cc4bfacb0cbf17"
+                  },
+                  {
+                      "path":  "frontend/k8s/frontend-deployment.yaml",
+                      "sha256NormalizedText":  "84c16365b720e0a222abaefc4c8da529748a16d7c7f6aeb95056ee4e509121d9"
+                  },
+                  {
+                      "path":  "frontend/k8s/infra-service.yaml",
+                      "sha256NormalizedText":  "01c59bddaed3b04c5c19a072d32a638554c76f9750fc35690a50953b4d7a43eb"
+                  },
+                  {
+                      "path":  "frontend/k8s/kustomization.yaml",
+                      "sha256NormalizedText":  "dd97446daf1ee3214cfdd61d85cec36a6b1530df37b4b36a9e9800ee39843c47"
+                  },
+                  {
+                      "path":  "frontend/k8s/mariadb-bootstrap-job.yaml",
+                      "sha256NormalizedText":  "a1b89d6fe75e34c42c77f0c7a97c25ec705ab33d266e65c57d820634ae87921f"
+                  },
+                  {
+                      "path":  "frontend/k8s/mariadb-statefulset.yaml",
+                      "sha256NormalizedText":  "0e11e35f35b69b882a461e2047364e53125e0c2b12e765ef8e4061b0b1b1f83d"
+                  },
+                  {
+                      "path":  "frontend/k8s/redis-hpa.yaml",
+                      "sha256NormalizedText":  "c018707d5bfcd57aff6857898f8154dcfd4aa55fa14a201fa8a07cc663c91aea"
+                  },
+                  {
+                      "path":  "frontend/k8s/service.yaml",
+                      "sha256NormalizedText":  "789df6561008648193ac97dc0d0cfc7013516dc1b37bb78f270a4082564839fd"
+                  },
+                  {
+                      "path":  "frontend/k8s/websocket-server-deployment.yaml",
+                      "sha256NormalizedText":  "ac74ad99affff1de503aec38e1a875ed2e7a8a6c9a3ff56f8939cc79f4484013"
+                  },
+                  {
+                      "path":  "frontend/k8s/websocket-server-service.yaml",
+                      "sha256NormalizedText":  "c0a8641626e469d52402fb3d8cee6d1158bdbc8c752887d4bf4ebbcbf81ff1ea"
+                  }
+              ]
+}

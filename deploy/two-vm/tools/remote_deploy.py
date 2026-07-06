@@ -46,13 +46,21 @@ def make_jwt_key() -> str:
     return base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=")
 
 
+
+def make_aes_key() -> str:
+    return secrets.token_hex(16)
+
 def env_text(items: dict[str, str]) -> str:
     return "\n".join(f"{key}={value}" for key, value in items.items()) + "\n"
 
 
 def build_env_files(default_secret: str, vm151_host: str, vm152_host: str) -> tuple[str, str, str]:
     jwt_key = os.environ.get("FILEINNOUT_JWT_KEY") or make_jwt_key()
+    project_aes_key = os.environ.get("FILEINNOUT_PROJECT_AES_KEY") or make_aes_key()
     db_pass = os.environ.get("FILEINNOUT_DB_PASS", default_secret)
+    minio_image_tag = os.environ.get("FILEINNOUT_MINIO_IMAGE_TAG", "").strip()
+    if not minio_image_tag or minio_image_tag.lower() == "latest":
+        raise SystemExit("Set FILEINNOUT_MINIO_IMAGE_TAG to an explicit non-latest MinIO release tag.")
     minio_user = os.environ.get("FILEINNOUT_MINIO_USER", "minioadmin")
     minio_secret = os.environ.get("FILEINNOUT_MINIO_SECRET", default_secret)
     admin_password = os.environ.get("FILEINNOUT_ADMIN_PASSWORD", default_secret)
@@ -62,6 +70,7 @@ def build_env_files(default_secret: str, vm151_host: str, vm152_host: str) -> tu
         "PORTONE_SECRET": os.environ.get("FILEINNOUT_PORTONE_SECRET", ""),
         "JWT_KEY": jwt_key,
         "JWT_EXPIRE": "86400000",
+        "PROJECT_AES_KEY": project_aes_key,
         "ADMIN_EMAIL": os.environ.get("FILEINNOUT_ADMIN_EMAIL", "admin@fileinnout.local"),
         "ADMIN_NAME": os.environ.get("FILEINNOUT_ADMIN_NAME", "Administrator"),
         "ADMIN_ROLE": "ROLE_ADMIN",
@@ -71,6 +80,11 @@ def build_env_files(default_secret: str, vm151_host: str, vm152_host: str) -> tu
         "APP_BACKEND_URL": f"http://{vm151_host}/api",
         "APP_SECURE_COOKIE": "false",
         "APP_ADMIN_ONLY": os.environ.get("FILEINNOUT_ADMIN_ONLY", "true"),
+        "APP_HEALTH_EXPOSE_VERSION": os.environ.get("FILEINNOUT_HEALTH_EXPOSE_VERSION", "false"),
+        "APP_HEALTH_PUBLIC_TEST_VERSION": os.environ.get("FILEINNOUT_HEALTH_PUBLIC_TEST_VERSION", "false"),
+        "WEB_PUSH_PUBLIC_KEY": os.environ.get("FILEINNOUT_WEB_PUSH_PUBLIC_KEY", ""),
+        "WEB_PUSH_PRIVATE_KEY": os.environ.get("FILEINNOUT_WEB_PUSH_PRIVATE_KEY", ""),
+        "WEB_PUSH_SUBJECT": os.environ.get("FILEINNOUT_WEB_PUSH_SUBJECT", "mailto:no-reply@fileinnout.local"),
         "REALTIME_UPSTREAM": f"{vm152_host}:1234",
         "DB_SERVER": "org.mariadb.jdbc.Driver",
         "DB_URL": f"jdbc:mariadb://{vm152_host}:3306/web",
@@ -81,14 +95,14 @@ def build_env_files(default_secret: str, vm151_host: str, vm152_host: str) -> tu
         "REDIS_SENTINEL_MASTER": "",
         "REDIS_SENTINEL_NODES": "",
         "REDIS_PASSWORD": "",
-        "GOOGLE_CLIENT_ID": os.environ.get("FILEINNOUT_GOOGLE_CLIENT_ID", "dummy-google-client-id"),
-        "GOOGLE_CLIENT_SECRET": os.environ.get("FILEINNOUT_GOOGLE_CLIENT_SECRET", "dummy-google-client-secret"),
-        "NAVER_CLIENT_ID": os.environ.get("FILEINNOUT_NAVER_CLIENT_ID", "dummy-naver-client-id"),
-        "NAVER_CLIENT_SECRET": os.environ.get("FILEINNOUT_NAVER_CLIENT_SECRET", "dummy-naver-client-secret"),
-        "KAKAO_CLIENT_ID": os.environ.get("FILEINNOUT_KAKAO_CLIENT_ID", "dummy-kakao-client-id"),
-        "KAKAO_CLIENT_SECRET": os.environ.get("FILEINNOUT_KAKAO_CLIENT_SECRET", "dummy-kakao-client-secret"),
-        "CLIENT_ID": os.environ.get("FILEINNOUT_KAKAO_CLIENT_ID", "dummy-kakao-client-id"),
-        "CLIENT_SECRET": os.environ.get("FILEINNOUT_KAKAO_CLIENT_SECRET", "dummy-kakao-client-secret"),
+        "GOOGLE_CLIENT_ID": os.environ.get("FILEINNOUT_GOOGLE_CLIENT_ID", "disabled"),
+        "GOOGLE_CLIENT_SECRET": os.environ.get("FILEINNOUT_GOOGLE_CLIENT_SECRET", "disabled"),
+        "NAVER_CLIENT_ID": os.environ.get("FILEINNOUT_NAVER_CLIENT_ID", "disabled"),
+        "NAVER_CLIENT_SECRET": os.environ.get("FILEINNOUT_NAVER_CLIENT_SECRET", "disabled"),
+        "KAKAO_CLIENT_ID": os.environ.get("FILEINNOUT_KAKAO_CLIENT_ID", "disabled"),
+        "KAKAO_CLIENT_SECRET": os.environ.get("FILEINNOUT_KAKAO_CLIENT_SECRET", "disabled"),
+        "CLIENT_ID": os.environ.get("FILEINNOUT_KAKAO_CLIENT_ID", "disabled"),
+        "CLIENT_SECRET": os.environ.get("FILEINNOUT_KAKAO_CLIENT_SECRET", "disabled"),
         "MAIL_PORT": os.environ.get("FILEINNOUT_MAIL_PORT", "587"),
         "MAIL_ID": os.environ.get("FILEINNOUT_MAIL_ID", ""),
         "MAIL_PASS": os.environ.get("FILEINNOUT_MAIL_PASS", ""),
@@ -122,7 +136,10 @@ def build_env_files(default_secret: str, vm151_host: str, vm152_host: str) -> tu
         "BACKEND_PORT": "8080",
         "YJS_REDIS_PREFIX": "wafflebear:yjs",
         "YJS_SNAPSHOT_SAVE_DELAY_MS": "150",
+        "YJS_AUTH_REQUIRED": "true",
+        "YJS_AUTH_TIMEOUT_MS": "3000",
         "DB_PASS": db_pass,
+        "MINIO_IMAGE_TAG": minio_image_tag,
         "MINIO_NAME": minio_user,
         "MINIO_SECRET": minio_secret,
     }
@@ -335,7 +352,7 @@ def main():
             check(vm152, "docker ps --format 'table {{.Names}}\\t{{.Status}}\\t{{.Ports}}'", sudo=True)
             check(vm151, "docker ps --format 'table {{.Names}}\\t{{.Status}}\\t{{.Ports}}'", sudo=True)
             check(vm152, "curl -fsS http://localhost:1234/statusz")
-            check(vm151, "curl -fsS http://localhost:8080/api/test/version")
+            check(vm151, "curl -fsS http://localhost:8080/api/actuator/health")
             check(vm151, "curl -fsSI http://localhost | head -n 5")
 
         if args.verify_admin_only:

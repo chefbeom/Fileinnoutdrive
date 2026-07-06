@@ -3,6 +3,7 @@ from pathlib import Path
 import http.cookiejar
 import json
 import os
+import secrets
 import shutil
 import shlex
 import subprocess
@@ -22,6 +23,9 @@ try:
 except ImportError as exc:
     raise SystemExit(f"Cannot import desktop client from {DESKTOP_CLIENT_DIR}: {exc}") from exc
 
+
+def generated_test_password(label):
+    return f"{label}-{secrets.token_urlsafe(18)}"
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Verify the admin-only two-VM deployment.")
@@ -343,7 +347,7 @@ class Verifier:
         self.request("HEAD", self.args.frontend_url, expected=(200,))
         self.log("frontend http")
 
-        self.api("GET", "/test/version")
+        self.api("GET", "/actuator/health")
         self.log("backend health")
 
         self.request("GET", self.args.yjs_url, expected=(200,))
@@ -362,7 +366,7 @@ class Verifier:
         self.api("POST", "/user/signup", body={
             "email": "blocked-signup@fileinnout.local",
             "name": "Blocked Signup",
-            "password": "BlockedSignupPassword1!",
+            "password": generated_test_password("blocked-signup"),
         }, expected=(403,))
         self.log("signup blocked")
 
@@ -432,7 +436,7 @@ def collect_diagnostics(args):
         ("system", "hostname; date; uptime; ip -br addr"),
         ("docker ps", "docker ps --format 'table {{.Names}}\\t{{.Status}}\\t{{.Ports}}'"),
         ("compose ps", f"cd {remote_root} && docker compose -f deploy/two-vm/docker-compose.vm151.yml --env-file deploy/two-vm/.env.vm151 ps"),
-        ("backend health", "curl -fsS http://localhost:8080/api/test/version"),
+        ("backend health", "curl -fsS http://localhost:8080/api/actuator/health"),
         ("frontend head", "curl -fsSI http://localhost | head -n 10"),
         ("backend logs", "docker logs --tail=160 fileinnout-backend"),
         ("frontend logs", "docker logs --tail=120 fileinnout-frontend"),

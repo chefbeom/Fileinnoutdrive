@@ -46,17 +46,17 @@ spec:
   }
 
   parameters {
-    string(name: 'APP_REPO_URL', defaultValue: 'https://github.com/beyond-sw-camp/be24-3rd-ShakeShackFile-In-N-Out-File.git', description: 'Backend application repository URL.')
+    string(name: 'APP_REPO_URL', defaultValue: 'https://github.com/chefbeom/Fileinnoutdrive.git', description: 'Backend application repository URL.')
     string(name: 'APP_REPO_BRANCH', defaultValue: 'main', description: 'Backend application branch to build.')
-    string(name: 'HELM_REPO_URL', defaultValue: 'https://github.com/Lumisia/fullstack_project.git', description: 'Repository that contains the main Helm chart.')
+    string(name: 'HELM_REPO_URL', defaultValue: 'https://github.com/chefbeom/Fileinnoutdrive.git', description: 'Repository that contains the main Helm chart.')
     string(name: 'HELM_REPO_BRANCH', defaultValue: 'main', description: 'Helm repository branch to deploy.')
-    string(name: 'HELM_CHART_PATH', defaultValue: 'helm', description: 'Chart path inside the Helm repository.')
+    string(name: 'HELM_CHART_PATH', defaultValue: 'devops/Helm', description: 'Chart path inside the Helm repository.')
     string(name: 'HELM_RELEASE_NAME', defaultValue: 'waffle-release', description: 'Helm release name.')
     string(name: 'K8S_NAMESPACE', defaultValue: 'helm-service', description: 'Kubernetes namespace to deploy into.')
-    string(name: 'FRONTEND_IMAGE_REPOSITORY', defaultValue: 'lumisia/frontend', description: 'Frontend image repository used by the Helm chart.')
-    string(name: 'FRONTEND_IMAGE_TAG', defaultValue: 'latest', description: 'Frontend image tag used by the Helm chart.')
-    string(name: 'WEBSOCKET_IMAGE_REPOSITORY', defaultValue: 'lumisia/websocket-server', description: 'Websocket image repository used by the Helm chart.')
-    string(name: 'WEBSOCKET_IMAGE_TAG', defaultValue: 'latest', description: 'Websocket image tag used by the Helm chart.')
+    string(name: 'FRONTEND_IMAGE_REPOSITORY', defaultValue: 'chefbeom/fileinnoutdrive-frontend', description: 'Frontend image repository used by the Helm chart.')
+    string(name: 'FRONTEND_IMAGE_TAG', defaultValue: '', description: 'Required explicit non-latest frontend image tag used by the Helm chart.')
+    string(name: 'WEBSOCKET_IMAGE_REPOSITORY', defaultValue: 'chefbeom/fileinnoutdrive-websocket', description: 'Websocket image repository used by the Helm chart.')
+    string(name: 'WEBSOCKET_IMAGE_TAG', defaultValue: '', description: 'Required explicit non-latest websocket image tag used by the Helm chart.')
     string(name: 'HELM_SECRET_VALUES_CREDENTIAL_ID', defaultValue: '', description: 'Optional Jenkins secret file credential ID for private Helm values.')
     booleanParam(name: 'FORCE_DEPLOY', defaultValue: false, description: 'Deploy even when the Jenkins branch is not main.')
   }
@@ -64,7 +64,7 @@ spec:
   environment {
     APP_DIR = 'app'
     HELM_SOURCE_DIR = 'helm-source'
-    BACKEND_IMAGE_REPOSITORY = 'lumisia/backend'
+    BACKEND_IMAGE_REPOSITORY = 'chefbeom/fileinnoutdrive-backend'
     BACKEND_IMAGE_TAG = "v${env.BUILD_NUMBER}"
   }
 
@@ -113,6 +113,24 @@ spec:
       }
     }
 
+    stage('Validate Deployment Image Tags') {
+      steps {
+        script {
+          def requiredTags = [
+            backend: env.BACKEND_IMAGE_TAG,
+            frontend: params.FRONTEND_IMAGE_TAG,
+            websocket: params.WEBSOCKET_IMAGE_TAG
+          ]
+          requiredTags.each { component, tag ->
+            def normalized = tag?.trim()
+            if (!normalized || normalized == 'latest') {
+              error("${component}.image.tag must be set to an explicit non-latest tag")
+            }
+          }
+        }
+      }
+    }
+
     stage('Helm Sanity Check') {
       steps {
         container('helm') {
@@ -120,7 +138,13 @@ spec:
             withEnv([
               "CHART_DIR=${env.WORKSPACE}/${env.HELM_SOURCE_DIR}/${params.HELM_CHART_PATH}",
               "DEPLOY_NAMESPACE=${params.K8S_NAMESPACE}",
-              "RELEASE_NAME=${params.HELM_RELEASE_NAME}"
+              "RELEASE_NAME=${params.HELM_RELEASE_NAME}",
+              "BACKEND_IMAGE_REPO=${env.BACKEND_IMAGE_REPOSITORY}",
+              "BACKEND_IMAGE_TAG=${env.BACKEND_IMAGE_TAG}",
+              "WEBSOCKET_IMAGE_REPO=${params.WEBSOCKET_IMAGE_REPOSITORY}",
+              "WEBSOCKET_IMAGE_TAG=${params.WEBSOCKET_IMAGE_TAG}",
+              "FRONTEND_IMAGE_REPO=${params.FRONTEND_IMAGE_REPOSITORY}",
+              "FRONTEND_IMAGE_TAG=${params.FRONTEND_IMAGE_TAG}"
             ]) {
               sh '''
                 set -eu
@@ -128,8 +152,10 @@ spec:
                 RENDERED_FILE="$(mktemp)"
                 trap 'rm -f "$RENDERED_FILE"' EXIT
 
-                helm lint "$CHART_DIR"
-                helm template "$RELEASE_NAME" "$CHART_DIR" --namespace "$DEPLOY_NAMESPACE" > "$RENDERED_FILE"
+                HELM_TAG_ARGS="--set-string backend.image.repository=$BACKEND_IMAGE_REPO --set-string backend.image.tag=$BACKEND_IMAGE_TAG --set-string websocket.image.repository=$WEBSOCKET_IMAGE_REPO --set-string websocket.image.tag=$WEBSOCKET_IMAGE_TAG --set-string frontend.image.repository=$FRONTEND_IMAGE_REPO --set-string frontend.image.tag=$FRONTEND_IMAGE_TAG"
+
+                helm lint "$CHART_DIR" $HELM_TAG_ARGS
+                helm template "$RELEASE_NAME" "$CHART_DIR" --namespace "$DEPLOY_NAMESPACE" $HELM_TAG_ARGS > "$RENDERED_FILE"
 
                 grep -q '^kind: Rollout$' "$RENDERED_FILE"
                 grep -q "name: $RELEASE_NAME-wafflebear-backend" "$RENDERED_FILE"

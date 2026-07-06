@@ -27,6 +27,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "wafflebear.fullname" . }}-backend-env
+            - secretRef:
+                name: {{ include "wafflebear.fullname" . }}-backend-secret
           env:
             - name: MARIADB_DATABASE
               value: web

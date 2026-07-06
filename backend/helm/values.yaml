@@ -4,8 +4,8 @@ fullnameOverride: ""
 backend:
   replicaCount: 1
   image:
-    repository: lumisia/backend
-    tag: latest
+    repository: chefbeom/fileinnoutdrive-backend
+    tag: ""
     pullPolicy: Always
   service:
     port: 8080
@@ -13,53 +13,61 @@ backend:
     # Public defaults only. Sensitive values are overridden from values.private.yaml.
     TZ: 'Asia/Seoul'
     APP_VERSION: '{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}'
-    PORTONE_SECRET: ''
-    JWT_KEY: ''
     JWT_EXPIRE: '86400000'
     ADMIN_EMAIL: ''
     ADMIN_NAME: ''
     ADMIN_ROLE: 'ROLE_ADMIN'
-    ADMIN_PASSWORD: ''
     ADMIN_ADDITIONAL_USERS: ''
     APP_FRONTEND_URL: 'https://www.fileinnoutcloud.kro.kr'
     APP_BACKEND_URL: 'https://api.fileinnoutcloud.kro.kr/api'
     APP_SECURE_COOKIE: 'true'
     APP_ADMIN_ONLY: 'true'
+    APP_COOKIE_SAME_SITE: 'Lax'
+    APP_DOCS_PUBLIC_OPENAPI: 'false'
+    APP_CORS_ALLOW_DEVELOPMENT_ORIGIN_PATTERNS: 'false'
     REDIS_HOST: '{{ .Values.redis.service.name }}.{{ .Release.Namespace }}.svc.cluster.local'
     REDIS_PORT: '{{ .Values.redis.service.port }}'
     REDIS_SENTINEL_MASTER: '{{ if .Values.redis.sentinel.enabled }}{{ .Values.redis.sentinel.masterName }}{{ else }}{{ "" }}{{ end }}'
     REDIS_SENTINEL_NODES: '{{ if .Values.redis.sentinel.enabled }}{{ .Values.redis.sentinel.name }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.redis.sentinel.port }}{{ else }}{{ "" }}{{ end }}'
     SPRING_DATASOURCE_HIKARI_INITIALIZATION_FAIL_TIMEOUT: '-1'
     GOOGLE_CLIENT_ID: ''
-    GOOGLE_CLIENT_SECRET: ''
     NAVER_CLIENT_ID: ''
-    NAVER_CLIENT_SECRET: ''
     KAKAO_CLIENT_ID: ''
-    KAKAO_CLIENT_SECRET: ''
     CLIENT_ID: ''
-    CLIENT_SECRET: ''
     MAIL_PORT: '587'
     MAIL_ID: ''
-    MAIL_PASS: ''
     DB_SERVER: 'org.mariadb.jdbc.Driver'
     DB_URL: 'jdbc:mariadb://mariadb:3306/web'
     DB_ID: ''
-    DB_PASS: ''
     STORAGE_PROVIDER: 'minio'
     MINIO_API: 'https://www.minio.calenledger.kro.kr/'
     MINIO_PUBLIC_API: 'https://www.minio.calenledger.kro.kr/'
-    MINIO_NAME: ''
-    MINIO_SECRET: ''
     MINIO_CLOUD_BUCKET: 'fileinnout'
     MINIO_WORKSPACE_BUCKET: 'fileinnout'
     MINIO_REGION: 'ap-northeast-2'
     S3AMAZON_API: 'https://s3.ap-northeast-2.amazonaws.com'
     S3AMAZON_PUBLIC_API: 'https://s3.ap-northeast-2.amazonaws.com'
-    S3AMAZON_NAME: ''
-    S3AMAZON_SECRET: ''
     S3AMAZON_CLOUD_BUCKET: 'your-bucket-name'
     S3AMAZON_WORKSPACE_BUCKET: 'your-workspace-bucket-name'
     S3AMAZON_REGION: 'ap-northeast-2'
+    WEB_PUSH_PUBLIC_KEY: ''
+    WEB_PUSH_SUBJECT: 'mailto:no-reply@fileinnout.local'
+  secretEnv:
+    PORTONE_SECRET: ''
+    JWT_KEY: ''
+    PROJECT_AES_KEY: ''
+    ADMIN_PASSWORD: ''
+    GOOGLE_CLIENT_SECRET: ''
+    NAVER_CLIENT_SECRET: ''
+    KAKAO_CLIENT_SECRET: ''
+    CLIENT_SECRET: ''
+    MAIL_PASS: ''
+    DB_PASS: ''
+    MINIO_NAME: ''
+    MINIO_SECRET: ''
+    S3AMAZON_NAME: ''
+    S3AMAZON_SECRET: ''
+    WEB_PUSH_PRIVATE_KEY: ''
   resources:
     requests:
       # Single worker node (4 CPU / 8 GiB): allow a bit more room for Spring Boot
@@ -101,8 +109,8 @@ mariadb:
 frontend:
   replicaCount: 1
   image:
-    repository: lumisia/frontend
-    tag: latest
+    repository: chefbeom/fileinnoutdrive-frontend
+    tag: ""
     pullPolicy: Always
   service:
     type: ClusterIP
@@ -122,8 +130,8 @@ frontend:
 websocket:
   replicaCount: 1
   image:
-    repository: lumisia/websocket-server
-    tag: latest
+    repository: chefbeom/fileinnoutdrive-websocket
+    tag: ""
     pullPolicy: Always
   service:
     port: 1234
@@ -139,6 +147,8 @@ websocket:
     BACKEND_PORT: '{{ .Values.backend.service.port }}'
     YJS_REDIS_PREFIX: 'wafflebear:yjs'
     YJS_SNAPSHOT_SAVE_DELAY_MS: '150'
+    YJS_AUTH_REQUIRED: 'true'
+    YJS_AUTH_TIMEOUT_MS: '3000'
   resources:
     requests:
       cpu: "200m"
@@ -222,9 +232,9 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-buffering: "off"
-    # Tip: cert-manager 관련 어노테이션은 이제 넣지 않아도 됩니다.
+    # Tip: TLS is provided by an existing Secret or a cert-manager-managed Secret.
 
-    # CORS 및 헤더 설정
+    # Ingress CORS is intentionally not configured here; the backend owns CORS.
   
   hosts:
     frontend: "www.fileinnoutcloud.kro.kr"
@@ -232,5 +242,5 @@ ingress:
     
   tls:
     enabled: true
-    # 👈 아까 kubectl로 만든 Secret 이름입니다.
+    # Name of the Kubernetes TLS Secret used by ingress-nginx.
     secretName: "fileinnoutcloud-tls"

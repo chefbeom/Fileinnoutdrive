@@ -86,20 +86,35 @@ def shared_recipient_password(args):
     return args.shared_recipient_password
 
 
+def generated_secret(label):
+    return f"{label}-{secrets.token_urlsafe(24)}"
+
+
+def ensure_local_secrets(args):
+    if not args.minio_image_tag or args.minio_image_tag.strip().lower() == "latest":
+        raise RuntimeError("Set FILEINNOUT_LOCAL_MINIO_IMAGE_TAG or --minio-image-tag to an explicit non-latest MinIO release tag.")
+    if not args.admin_password:
+        args.admin_password = generated_secret("local-admin")
+    if not args.db_password:
+        args.db_password = generated_secret("local-db")
+    if not args.minio_secret_key:
+        args.minio_secret_key = generated_secret("local-minio")
+
+
 def ensure_shared_recipient(args):
     if not (args.shared_e2e or args.admin_only_shared_e2e):
         return
     if not args.shared_recipient_email:
         args.shared_recipient_email = f"local-shared-{int(time.time())}@fileinnout.local"
     if not args.shared_recipient_password:
-        args.shared_recipient_password = "LocalSharedPassword1!"
+        args.shared_recipient_password = generated_secret("local-shared")
 
 
 def write_smoke_env(args):
-    admin_password = args.admin_password or "LocalAdminPassword1!"
-    db_password = args.db_password or "LocalDbPassword1!"
+    admin_password = args.admin_password
+    db_password = args.db_password
     minio_access_key = args.minio_access_key or "fileinnoutlocal"
-    minio_secret_key = args.minio_secret_key or "LocalMinioPassword1!"
+    minio_secret_key = args.minio_secret_key
     prefix = args.container_prefix
     dependency_host = args.dependency_host
 
@@ -115,6 +130,7 @@ def write_smoke_env(args):
         "VM152_MINIO_HOST_PORT": args.minio_port,
         "VM152_MINIO_CONSOLE_HOST_PORT": args.minio_console_port,
         "VM152_WEBSOCKET_HOST_PORT": args.websocket_port,
+        "MINIO_IMAGE_TAG": args.minio_image_tag,
         "PORT": "1234",
         "HOST": "0.0.0.0",
         "REDIS_NAME": "redis",
@@ -154,6 +170,8 @@ def write_smoke_env(args):
         "APP_BACKEND_URL": f"http://localhost:{args.backend_port}/api",
         "APP_SECURE_COOKIE": "false",
         "APP_ADMIN_ONLY": "false" if args.shared_e2e else "true",
+        "APP_HEALTH_EXPOSE_VERSION": "false",
+        "APP_HEALTH_PUBLIC_TEST_VERSION": "false",
         "REALTIME_UPSTREAM": f"{dependency_host}:{args.websocket_port}",
         "DB_SERVER": "org.mariadb.jdbc.Driver",
         "DB_URL": f"jdbc:mariadb://{dependency_host}:{args.db_port}/web",
@@ -164,14 +182,14 @@ def write_smoke_env(args):
         "REDIS_SENTINEL_MASTER": "",
         "REDIS_SENTINEL_NODES": "",
         "REDIS_PASSWORD": "",
-        "GOOGLE_CLIENT_ID": "dummy-google-client-id",
-        "GOOGLE_CLIENT_SECRET": "dummy-google-client-secret",
-        "NAVER_CLIENT_ID": "dummy-naver-client-id",
-        "NAVER_CLIENT_SECRET": "dummy-naver-client-secret",
-        "KAKAO_CLIENT_ID": "dummy-kakao-client-id",
-        "KAKAO_CLIENT_SECRET": "dummy-kakao-client-secret",
-        "CLIENT_ID": "dummy-kakao-client-id",
-        "CLIENT_SECRET": "dummy-kakao-client-secret",
+        "GOOGLE_CLIENT_ID": "disabled",
+        "GOOGLE_CLIENT_SECRET": "disabled",
+        "NAVER_CLIENT_ID": "disabled",
+        "NAVER_CLIENT_SECRET": "disabled",
+        "KAKAO_CLIENT_ID": "disabled",
+        "KAKAO_CLIENT_SECRET": "disabled",
+        "CLIENT_ID": "disabled",
+        "CLIENT_SECRET": "disabled",
         "MAIL_PORT": "587",
         "MAIL_ID": "",
         "MAIL_PASS": "",
@@ -445,7 +463,7 @@ def verify_shared_e2e(args, admin_password, db_password):
         request_json("POST", f"{base_url}/user/signup", body={
             "email": f"blocked-shared-{int(time.time())}@fileinnout.local",
             "name": "Blocked Shared User",
-            "password": "BlockedSharedPassword1!",
+            "password": generated_secret("blocked-share"),
         }, expected=(403,))
         print("PASS admin-only signup blocked during shared E2E", flush=True)
     else:
@@ -491,6 +509,7 @@ def parse_args():
     parser.add_argument("--db-password", default=os.environ.get("FILEINNOUT_LOCAL_DB_PASSWORD", ""))
     parser.add_argument("--minio-access-key", default=os.environ.get("FILEINNOUT_LOCAL_MINIO_ACCESS_KEY", ""))
     parser.add_argument("--minio-secret-key", default=os.environ.get("FILEINNOUT_LOCAL_MINIO_SECRET_KEY", ""))
+    parser.add_argument("--minio-image-tag", default=os.environ.get("FILEINNOUT_LOCAL_MINIO_IMAGE_TAG", ""))
     parser.add_argument("--shared-e2e", action="store_true", help="Run the stack with signups enabled and verify live desktop shared-folder E2E.")
     parser.add_argument(
         "--admin-only-shared-e2e",
@@ -509,10 +528,11 @@ def main():
     args = parse_args()
     if args.shared_e2e and args.admin_only_shared_e2e:
         raise RuntimeError("--shared-e2e cannot be combined with --admin-only-shared-e2e.")
+    ensure_local_secrets(args)
     ensure_shared_recipient(args)
 
     vm151_env, vm152_env, admin_password = write_smoke_env(args)
-    db_password = args.db_password or "LocalDbPassword1!"
+    db_password = args.db_password
     vm151_project = f"{args.container_prefix}-vm151"
     vm152_project = f"{args.container_prefix}-vm152"
     vm151_compose = DEPLOY_DIR / "docker-compose.vm151.yml"
@@ -527,7 +547,7 @@ def main():
         wait_url(f"http://localhost:{args.websocket_port}/readyz", timeout_seconds=180)
 
         compose_up(vm151_project, vm151_compose, vm151_env, build=not args.skip_build)
-        wait_url(f"http://localhost:{args.backend_port}/api/test/version", timeout_seconds=240)
+        wait_url(f"http://localhost:{args.backend_port}/api/actuator/health", timeout_seconds=240)
         wait_url(f"http://localhost:{args.frontend_port}", timeout_seconds=120)
         wait_url(f"http://localhost:{args.frontend_port}/wss/statusz", timeout_seconds=120)
 

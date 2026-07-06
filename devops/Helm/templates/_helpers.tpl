@@ -34,3 +34,26 @@ topologySpreadConstraints:
       matchLabels:
 {{ toYaml . | nindent 8 }}
 {{- end -}}
+{{- define "wafflebear.requiredImageReference" -}}
+{{- $component := index . 0 -}}
+{{- $repository := (index . 1 | default "" | toString) -}}
+{{- $tag := (index . 2 | default "" | toString) -}}
+{{- $digest := (index . 3 | default "" | toString) -}}
+{{- if eq $repository "" -}}
+{{- fail (printf "%s.image.repository must be set" $component) -}}
+{{- end -}}
+{{- if ne $digest "" -}}
+{{- if ne $tag "" -}}
+{{- fail (printf "%s.image.tag must be empty when %s.image.digest is set" $component $component) -}}
+{{- end -}}
+{{- if not (regexMatch "^sha256:[0-9a-f]{64}$" $digest) -}}
+{{- fail (printf "%s.image.digest must use sha256:<64 lowercase hex chars>" $component) -}}
+{{- end -}}
+{{- printf "%s@%s" $repository $digest -}}
+{{- else -}}
+{{- if or (eq $tag "") (eq $tag "latest") -}}
+{{- fail (printf "%s.image.tag must be set to an explicit immutable tag or %s.image.digest must be set; latest is not allowed" $component $component) -}}
+{{- end -}}
+{{- printf "%s:%s" $repository $tag -}}
+{{- end -}}
+{{- end -}}

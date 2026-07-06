@@ -34,7 +34,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: frontend
-          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          image: '{{ include "wafflebear.requiredImageReference" (list "frontend" .Values.frontend.image.repository .Values.frontend.image.tag .Values.frontend.image.digest) }}'
           imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
           ports:
             - containerPort: {{ .Values.frontend.service.port }}

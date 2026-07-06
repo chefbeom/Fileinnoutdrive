@@ -1,0 +1,2 @@
+# Legacy deployment artifact: do not deploy directly. Use devops/Helm as the source of truth.
+{{- fail "backend/helm is a legacy compatibility artifact. Use devops/Helm as the deployment source of truth." -}}

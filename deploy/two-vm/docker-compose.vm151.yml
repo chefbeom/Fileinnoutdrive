@@ -13,7 +13,7 @@ services:
       - "${VM151_BACKEND_HOST_PORT:-8080}:8080"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/test/version >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/actuator/health >/dev/null || exit 1"]
       interval: 20s
       timeout: 5s
       retries: 15
@@ -26,6 +26,7 @@ services:
       args:
         BACKEND_UPSTREAM: backend-app:8080
         REALTIME_UPSTREAM: ${REALTIME_UPSTREAM:-192.168.35.152:1234}
+        VITE_WEB_PUSH_PUBLIC_KEY: ${WEB_PUSH_PUBLIC_KEY:-}
     image: fileinnout/frontend:two-vm
     container_name: ${FILEINNOUT_CONTAINER_PREFIX:-fileinnout}-frontend
     extra_hosts:

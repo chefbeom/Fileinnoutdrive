@@ -31,7 +31,7 @@ data:
       location = /version.json {
         default_type application/json;
         add_header Cache-Control "no-store";
-        return 200 '{"service":"frontend","version":"{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}","podName":"$hostname"}';
+        return 200 '{"service":"frontend","status":"ok"}';
       }
 
       location = /api {

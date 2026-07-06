@@ -1,3 +1,4 @@
+# Legacy deployment artifact: do not deploy directly. Use devops/Helm as the source of truth.
 {{- $frontendRollout := .Values.frontend.rollout | default dict -}}
 {{- $frontendBlueGreen := $frontendRollout.blueGreen | default dict -}}
 apiVersion: argoproj.io/v1alpha1
@@ -34,7 +35,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: frontend
-          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          image: '{{ .Values.frontend.image.repository }}:{{ include "wafflebear.requiredImageTag" (list "frontend" .Values.frontend.image.tag) }}'
           imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
           ports:
             - containerPort: {{ .Values.frontend.service.port }}
