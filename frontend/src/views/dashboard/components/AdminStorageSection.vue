@@ -507,4 +507,3 @@ const saveCapacity = () => {
     </div>
   </section>
 </template>
-

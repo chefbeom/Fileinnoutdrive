@@ -175,7 +175,7 @@ export const useWorkspacePageSetup = () => {
     activeWorkspacePanelTab,
     isWorkspacePanelCollapsed,
   } = workspaceState
-  
+
   const coreAccessSetup = workspaceComposables.useWorkspaceCoreAccessSetup({
     platform: {
       route,
