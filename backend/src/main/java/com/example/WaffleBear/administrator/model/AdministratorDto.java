@@ -81,6 +81,34 @@ public class AdministratorDto {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    public static class SessionRes {
+        private Long sessionId;
+        private String email;
+        private Long userIdx;
+        private String name;
+        private String role;
+        private String accountStatus;
+        private boolean enabled;
+        private LocalDateTime createdAt;
+        private LocalDateTime updatedAt;
+        private LocalDateTime expiresAt;
+        private boolean expired;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class ForceLogoutRes {
+        private int affectedCount;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
     public static class StatusUpdateReq {
         private String accountStatus;
     }

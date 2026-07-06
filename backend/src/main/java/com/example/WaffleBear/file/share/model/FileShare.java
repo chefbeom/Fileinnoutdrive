@@ -18,6 +18,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 @Entity
 @Getter
@@ -50,6 +51,10 @@ public class FileShare {
 
     private LocalDateTime createdAt;
     private LocalDateTime respondedAt;
+    private LocalDateTime expiresAt;
+    private Integer downloadLimit;
+    private int downloadCount;
+    private String passwordHash;
 
     @PrePersist
     public void prePersist() {
@@ -72,8 +77,50 @@ public class FileShare {
         this.permission = permission == null ? FileSharePermission.READ : permission;
     }
 
+    public boolean changePolicy(LocalDateTime expiresAt, Integer downloadLimit) {
+        Integer normalizedDownloadLimit = normalizeDownloadLimit(downloadLimit);
+        boolean changed = !Objects.equals(this.expiresAt, expiresAt)
+                || !Objects.equals(this.downloadLimit, normalizedDownloadLimit);
+        boolean downloadLimitChanged = !Objects.equals(this.downloadLimit, normalizedDownloadLimit);
+        this.expiresAt = expiresAt;
+        this.downloadLimit = normalizedDownloadLimit;
+        if (downloadLimitChanged) {
+            this.downloadCount = 0;
+        }
+        return changed;
+    }
+
+    public boolean changePasswordHash(String passwordHash) {
+        boolean changed = !Objects.equals(this.passwordHash, passwordHash);
+        this.passwordHash = passwordHash;
+        return changed;
+    }
+
+    public boolean isPasswordProtected() {
+        return passwordHash != null && !passwordHash.isBlank();
+    }
     public FileShareStatus getEffectiveStatus() {
         return status == null ? FileShareStatus.ACCEPTED : status;
+    }
+
+    public boolean isExpired(LocalDateTime now) {
+        return expiresAt != null && now != null && !expiresAt.isAfter(now);
+    }
+
+    public boolean isDownloadLimitReached() {
+        return downloadLimit != null && downloadLimit > 0 && downloadCount >= downloadLimit;
+    }
+
+    public boolean isDownloadAvailable(LocalDateTime now) {
+        return !isExpired(now) && !isDownloadLimitReached();
+    }
+
+    public boolean recordDownloadAccess() {
+        if (downloadLimit == null || downloadLimit <= 0) {
+            return false;
+        }
+        downloadCount += 1;
+        return true;
     }
 
     public void markPending() {
@@ -95,5 +142,8 @@ public class FileShare {
         this.status = status == null ? FileShareStatus.PENDING : status;
         this.respondedAt = this.status == FileShareStatus.PENDING ? null : LocalDateTime.now();
     }
-}
 
+    private Integer normalizeDownloadLimit(Integer downloadLimit) {
+        return downloadLimit != null && downloadLimit > 0 ? downloadLimit : null;
+    }
+}

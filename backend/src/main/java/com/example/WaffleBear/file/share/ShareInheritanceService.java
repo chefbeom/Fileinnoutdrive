@@ -46,11 +46,13 @@ public class ShareInheritanceService {
                     currentShare.changePermission(inheritedPermission);
                     changed = true;
                 }
+                if (currentShare.changePolicy(parentShare.getExpiresAt(), parentShare.getDownloadLimit())) {
+                    changed = true;
+                }
                 if (currentShare.getEffectiveStatus() == FileShareStatus.PENDING && inheritedStatus.isAccepted()) {
                     currentShare.accept();
                     changed = true;
-                }
-                if (changed) {
+                }                if (changed) {
                     shareRepository.save(currentShare);
                 }
                 continue;
@@ -68,6 +70,8 @@ public class ShareInheritanceService {
                     .permission(inheritedPermission)
                     .status(inheritedStatus)
                     .respondedAt(parentShare.getRespondedAt())
+                    .expiresAt(parentShare.getExpiresAt())
+                    .downloadLimit(parentShare.getDownloadLimit())
                     .build());
             childSharedFlagChanged = true;
         }

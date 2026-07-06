@@ -25,8 +25,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -88,7 +89,7 @@ class OAuth2LoginCallbackFlowTest {
             "kakao,kakao-user@example.com,Kakao User",
             "naver,naver-user@example.com,Naver User"
     })
-    void oauth2LoginCallbackCreatesUserAndRedirectsWithAccessToken(
+    void oauth2LoginCallbackCreatesUserAndRedirectsWithoutAccessToken(
             String provider,
             String expectedEmail,
             String expectedName
@@ -96,10 +97,11 @@ class OAuth2LoginCallbackFlowTest {
         MvcResult authorizationResult = mockMvc
                 .perform(get("/api/oauth2/authorization/{provider}", provider).contextPath("/api"))
                 .andExpect(status().is3xxRedirection())
-                .andExpect(cookie().exists("OAUTH2_REQUEST"))
+                .andExpect(header().string("Set-Cookie", containsString("OAUTH2_REQUEST=")))
+                .andExpect(header().string("Set-Cookie", containsString("SameSite=Lax")))
                 .andReturn();
 
-        Cookie authorizationCookie = authorizationResult.getResponse().getCookie("OAUTH2_REQUEST");
+        Cookie authorizationCookie = cookieFromSetCookie(authorizationResult.getResponse().getHeader("Set-Cookie"));
         String state = queryParam(authorizationResult.getResponse().getRedirectedUrl(), "state");
 
         MvcResult callbackResult = mockMvc.perform(get("/api/login/oauth2/code/{provider}", provider)
@@ -108,11 +110,14 @@ class OAuth2LoginCallbackFlowTest {
                         .param("state", state)
                         .cookie(authorizationCookie))
                 .andExpect(status().is3xxRedirection())
-                .andExpect(cookie().exists("refresh"))
-                .andExpect(header().string("Location", org.hamcrest.Matchers.containsString("http://localhost/main/home?accessToken=")))
+                .andExpect(header().stringValues("Set-Cookie", hasItem(containsString("refresh="))))
+                .andExpect(header().stringValues("Set-Cookie", hasItem(containsString("SameSite=Lax"))))
+                .andExpect(header().string("Location", "http://localhost/main/home"))
                 .andReturn();
 
-        assertThat(callbackResult.getResponse().getRedirectedUrl()).doesNotContain("mock-access-token");
+        assertThat(callbackResult.getResponse().getRedirectedUrl())
+                .doesNotContain("accessToken")
+                .doesNotContain("mock-access-token");
         assertThat(userRepository.findByEmail(expectedEmail))
                 .isPresent()
                 .get()
@@ -123,6 +128,11 @@ class OAuth2LoginCallbackFlowTest {
                 });
     }
 
+    private static Cookie cookieFromSetCookie(String setCookie) {
+        String nameValue = setCookie.split(";", 2)[0];
+        String[] pair = nameValue.split("=", 2);
+        return new Cookie(pair[0], pair.length > 1 ? pair[1] : "");
+    }
     private static void startMockOAuthServer() {
         if (oauthServer != null) {
             return;

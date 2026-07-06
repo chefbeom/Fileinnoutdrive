@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -34,6 +35,34 @@ public class AdministratorController {
         return ResponseEntity.ok(BaseResponse.success(result));
     }
 
+    @GetMapping("/sessions")
+    @Operation(summary = "Get login sessions", description = "Returns active refresh-token sessions for administrators.")
+    public ResponseEntity<?> getSessions(@AuthenticationPrincipal AuthUserDetails userDetails) {
+        return ResponseEntity.ok(BaseResponse.success(administratorService.getSessions(userDetails)));
+    }
+
+    @DeleteMapping("/sessions/{sessionId}")
+    @Operation(summary = "Force logout session", description = "Invalidates a single refresh-token session.")
+    public ResponseEntity<?> forceLogoutSession(
+            @AuthenticationPrincipal AuthUserDetails userDetails,
+            @PathVariable Long sessionId
+    ) {
+        return ResponseEntity.ok(BaseResponse.success(administratorService.forceLogoutSession(userDetails, sessionId)));
+    }
+
+    @DeleteMapping("/users/{userIdx}/sessions")
+    @Operation(summary = "Force logout user", description = "Invalidates every refresh-token session for a user.")
+    public ResponseEntity<?> forceLogoutUserSessions(
+            @AuthenticationPrincipal AuthUserDetails userDetails,
+            @PathVariable Long userIdx
+    ) {
+        return ResponseEntity.ok(BaseResponse.success(administratorService.forceLogoutUserSessions(userDetails, userIdx)));
+    }
+    @GetMapping("/share-audit")
+    @Operation(summary = "Get share audit logs", description = "Returns recent share audit events for administrators.")
+    public ResponseEntity<?> getShareAuditLogs(@AuthenticationPrincipal AuthUserDetails userDetails) {
+        return ResponseEntity.ok(BaseResponse.success(administratorService.getShareAuditLogs(userDetails)));
+    }
     @PatchMapping("/users/{userIdx}/status")
     @Operation(summary = "Update user status", description = "Changes a user's account status.")
     public ResponseEntity<?> updateUserStatus(

@@ -7,7 +7,10 @@ import com.example.WaffleBear.file.FileUpDownloadRepository;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
 import com.example.WaffleBear.file.service.StoragePlanService;
+import com.example.WaffleBear.file.share.ShareAuditService;
+import com.example.WaffleBear.file.share.model.ShareDto;
 import com.example.WaffleBear.user.model.AuthUserDetails;
+import com.example.WaffleBear.user.model.RefreshToken;
 import com.example.WaffleBear.user.model.User;
 import com.example.WaffleBear.user.model.UserAccountStatus;
 import com.example.WaffleBear.user.repository.RefreshTokenRepository;
@@ -17,6 +20,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
 
 import java.util.Comparator;
 import java.util.HashMap;
@@ -32,6 +37,7 @@ public class AdministratorService {
     private final FileUpDownloadRepository fileUpDownloadRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final StoragePlanService storagePlanService;
+    private final ShareAuditService shareAuditService;
 
     public AdministratorDto.DashboardRes getDashboard(AuthUserDetails adminUser) {
         validateAdministrator(adminUser);
@@ -72,6 +78,60 @@ public class AdministratorService {
                 .build();
     }
 
+    public List<ShareDto.ShareAuditRes> getShareAuditLogs(AuthUserDetails adminUser) {
+        validateAdministrator(adminUser);
+        return shareAuditService.listForAdministrator();
+    }
+    @Transactional
+    public List<AdministratorDto.SessionRes> getSessions(AuthUserDetails adminUser) {
+        validateAdministrator(adminUser);
+        LocalDateTime now = LocalDateTime.now();
+        refreshTokenRepository.deleteByExpiryDateBefore(now);
+
+        List<RefreshToken> sessions = refreshTokenRepository.findAllByOrderByIdDesc();
+        Map<String, User> usersByEmail = loadUsersByEmail(sessions.stream()
+                .map(RefreshToken::getEmail)
+                .filter(email -> email != null && !email.isBlank())
+                .distinct()
+                .toList());
+
+        return sessions.stream()
+                .map(session -> toSessionResponse(session, usersByEmail.get(session.getEmail()), now))
+                .toList();
+    }
+
+    @Transactional
+    public AdministratorDto.ForceLogoutRes forceLogoutSession(AuthUserDetails adminUser, Long sessionId) {
+        validateAdministrator(adminUser);
+        if (sessionId == null) {
+            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
+
+        return refreshTokenRepository.findById(sessionId)
+                .map(session -> {
+                    refreshTokenRepository.delete(session);
+                    return AdministratorDto.ForceLogoutRes.builder().affectedCount(1).build();
+                })
+                .orElseGet(() -> AdministratorDto.ForceLogoutRes.builder().affectedCount(0).build());
+    }
+
+    @Transactional
+    public AdministratorDto.ForceLogoutRes forceLogoutUserSessions(AuthUserDetails adminUser, Long userIdx) {
+        validateAdministrator(adminUser);
+        if (userIdx == null) {
+            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
+
+        User targetUser = userRepository.findById(userIdx)
+                .orElseThrow(() -> BaseException.from(BaseResponseStatus.USER_NOT_FOUND));
+        List<RefreshToken> sessions = refreshTokenRepository.findAllByEmailOrderByIdDesc(targetUser.getEmail());
+        if (!sessions.isEmpty()) {
+            refreshTokenRepository.deleteAll(sessions);
+        }
+        return AdministratorDto.ForceLogoutRes.builder()
+                .affectedCount(sessions.size())
+                .build();
+    }
     @Transactional
     public AdministratorDto.UserRes updateUserStatus(
             AuthUserDetails adminUser,
@@ -205,6 +265,36 @@ public class AdministratorService {
         );
     }
 
+    private Map<String, User> loadUsersByEmail(List<String> emails) {
+        Map<String, User> usersByEmail = new HashMap<>();
+        if (emails == null || emails.isEmpty()) {
+            return usersByEmail;
+        }
+
+        userRepository.findAllByEmailIn(emails).forEach(user -> {
+            if (user.getEmail() != null) {
+                usersByEmail.put(user.getEmail(), user);
+            }
+        });
+        return usersByEmail;
+    }
+
+    private AdministratorDto.SessionRes toSessionResponse(RefreshToken session, User user, LocalDateTime now) {
+        LocalDateTime expiresAt = session.getExpiryDate();
+        return AdministratorDto.SessionRes.builder()
+                .sessionId(session.getId())
+                .email(session.getEmail())
+                .userIdx(user != null ? user.getIdx() : null)
+                .name(user != null ? user.getName() : null)
+                .role(user != null ? user.getRole() : null)
+                .accountStatus(user != null ? resolveAccountStatus(user).name() : null)
+                .enabled(user != null && Boolean.TRUE.equals(user.getEnable()))
+                .createdAt(session.getCreatedAt())
+                .updatedAt(session.getUpdatedAt())
+                .expiresAt(expiresAt)
+                .expired(expiresAt != null && !expiresAt.isAfter(now))
+                .build();
+    }
     private AdministratorDto.UserRes toUserResponse(User user, UserFileStat stat) {
         StoragePlan plan = resolvePlan(user);
         return AdministratorDto.UserRes.builder()

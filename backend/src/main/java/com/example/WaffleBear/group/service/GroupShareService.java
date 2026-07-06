@@ -71,7 +71,10 @@ public class GroupShareService {
                 userId,
                 request.fileIds(),
                 resolution.userIds(),
-                request.permission()
+                request.permission(),
+                request.expiresAt(),
+                request.downloadLimit(),
+                request.sharePassword()
         );
         return new GroupShareDto.ShareResult(affectedCount, resolution.recipients(), resolution.pendingInvites());
     }

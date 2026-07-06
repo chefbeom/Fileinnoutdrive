@@ -25,6 +25,9 @@ public class Aes256 {
 
     @Value("${project.aes.key}")
     public void setSecretKey(String key) {
+        if (key == null || key.length() != 32) {
+            throw new IllegalArgumentException("project.aes.key must be exactly 32 characters for AES-256.");
+        }
         SECRET_KEY = key;
     }
 

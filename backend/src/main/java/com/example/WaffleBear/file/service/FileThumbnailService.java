@@ -3,12 +3,15 @@ package com.example.WaffleBear.file.service;
 import com.example.WaffleBear.common.exception.BaseException;
 import com.example.WaffleBear.common.model.BaseResponseStatus;
 import com.example.WaffleBear.config.MinioProperties;
+import com.example.WaffleBear.config.MinioPresignedUrlService;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
 import io.minio.GetObjectArgs;
+import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.StatObjectArgs;
+import io.minio.http.Method;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -17,6 +20,7 @@ import java.io.ByteArrayOutputStream;
 import java.time.ZoneId;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @RequiredArgsConstructor
@@ -31,9 +35,12 @@ public class FileThumbnailService {
     );
 
     private final MinioClient minioClient;
+    private final MinioPresignedUrlService minioPresignedUrlService;
     private final MinioProperties minioProperties;
     private final VideoThumbnailService videoThumbnailService;
     private final ImageThumbnailService imageThumbnailService;
+    private final ThumbnailTaskExecutor thumbnailTaskExecutor;
+    private final Set<String> thumbnailGenerationInProgress = ConcurrentHashMap.newKeySet();
 
     public ThumbnailPayload loadThumbnail(FileInfo file) {
         validateFile(file);
@@ -52,6 +59,29 @@ public class FileThumbnailService {
         }
 
         return null;
+    }
+
+    public String generatePresignedThumbnailUrl(FileInfo file) {
+        if (!isPresignedThumbnailEligible(file)) {
+            return null;
+        }
+
+        String objectKey = file.getFileSavePath();
+        if (objectKey == null || objectKey.isBlank()) {
+            return null;
+        }
+
+        String thumbnailObjectKey = buildThumbnailObjectKey(objectKey);
+        try {
+            if (!objectExists(thumbnailObjectKey)) {
+                triggerThumbnailGeneration(file, thumbnailObjectKey);
+                return null;
+            }
+
+            return generatePresignedGetUrl(thumbnailObjectKey);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private ThumbnailPayload loadVideoThumbnail(FileInfo file, String objectKey) {
@@ -76,6 +106,34 @@ public class FileThumbnailService {
         }
 
         return readObject(objectKey, resolveImageContentType(extension), file);
+    }
+
+    private void triggerThumbnailGeneration(FileInfo file, String thumbnailObjectKey) {
+        if (thumbnailObjectKey == null || thumbnailObjectKey.isBlank()) {
+            return;
+        }
+
+        if (!videoThumbnailService.supports(file.getFileFormat())) {
+            return;
+        }
+
+        if (!thumbnailGenerationInProgress.add(thumbnailObjectKey)) {
+            return;
+        }
+
+        try {
+            thumbnailTaskExecutor.runAsync(() -> {
+                try {
+                    if (!objectExists(thumbnailObjectKey)) {
+                        ensureVideoThumbnail(file, thumbnailObjectKey);
+                    }
+                } finally {
+                    thumbnailGenerationInProgress.remove(thumbnailObjectKey);
+                }
+            });
+        } catch (RuntimeException exception) {
+            thumbnailGenerationInProgress.remove(thumbnailObjectKey);
+        }
     }
 
     private void ensureVideoThumbnail(FileInfo file, String thumbnailObjectKey) {
@@ -189,10 +247,35 @@ public class FileThumbnailService {
         }
     }
 
+    private String generatePresignedGetUrl(String objectKey) {
+        if (objectKey == null || objectKey.isBlank()) {
+            return null;
+        }
+
+        try {
+            return minioPresignedUrlService.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+                    .method(Method.GET)
+                    .bucket(minioProperties.getBucket_cloud())
+                    .object(objectKey)
+                    .expiry(minioProperties.getPresignedUrlExpirySeconds())
+                    .build());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
     private void validateFile(FileInfo file) {
         if (file == null || resolveNodeType(file) != FileNodeType.FILE || file.isLockedFile() || file.isTrashed()) {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
         }
+    }
+
+    private boolean isPresignedThumbnailEligible(FileInfo file) {
+        return file != null
+                && resolveNodeType(file) == FileNodeType.FILE
+                && !file.isLockedFile()
+                && !file.isTrashed()
+                && VIDEO_EXTENSIONS.contains(normalizeExtension(file.getFileFormat()));
     }
 
     private FileNodeType resolveNodeType(FileInfo file) {

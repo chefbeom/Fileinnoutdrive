@@ -64,6 +64,20 @@ public class PostController {
         return BaseResponse.success(ResponseEntity.ok(result));
     }
 
+    @GetMapping("/realtime/authorize")
+    @Operation(summary = "Authorize realtime workspace", description = "Checks whether the current user may open a realtime editing channel for a workspace.")
+    public ResponseEntity<PostDto.RealtimeAuthorizeRes> authorizeRealtime(
+            @AuthenticationPrincipal AuthUserDetails user,
+            @RequestParam("workspaceIdx") Long workspaceIdx,
+            @RequestParam(value = "write", defaultValue = "true") boolean write) {
+
+        if (user == null) {
+            throw new BaseException(WORKSPACE_ACCESS_DENIED);
+        }
+
+        return ResponseEntity.ok(ps.authorizeRealtime(workspaceIdx, user.getIdx(), write));
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // UUID로 조회
     // ─────────────────────────────────────────────────────────────────────────

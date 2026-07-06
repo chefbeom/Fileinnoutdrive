@@ -9,7 +9,10 @@ public class ShareDto {
             List<Long> fileIdxList,
             String recipientEmail,
             String permission,
-            List<String> permissions
+            List<String> permissions,
+            LocalDateTime expiresAt,
+            Integer downloadLimit,
+            String sharePassword
     ) {
     }
 
@@ -19,7 +22,8 @@ public class ShareDto {
     }
 
     public record SaveToDriveReq(
-            Long parentId
+            Long parentId,
+            String sharePassword
     ) {
     }
 
@@ -35,6 +39,12 @@ public class ShareDto {
             LocalDateTime createdAt,
             String status,
             LocalDateTime respondedAt,
+            LocalDateTime expiresAt,
+            Integer downloadLimit,
+            Integer downloadCount,
+            Boolean expired,
+            Boolean downloadLimitReached,
+            Boolean passwordProtected,
             Boolean readable,
             Boolean downloadable,
             Boolean uploadable,
@@ -68,6 +78,12 @@ public class ShareDto {
             LocalDateTime sharedAt,
             String status,
             LocalDateTime respondedAt,
+            LocalDateTime expiresAt,
+            Integer downloadLimit,
+            Integer downloadCount,
+            Boolean expired,
+            Boolean downloadLimitReached,
+            Boolean passwordProtected,
             Boolean readable,
             Boolean downloadable,
             Boolean uploadable
@@ -81,6 +97,12 @@ public class ShareDto {
             LocalDateTime sharedAt,
             String status,
             LocalDateTime respondedAt,
+            LocalDateTime expiresAt,
+            Integer downloadLimit,
+            Integer downloadCount,
+            Boolean expired,
+            Boolean downloadLimitReached,
+            Boolean passwordProtected,
             Boolean readable,
             Boolean downloadable,
             Boolean uploadable,
@@ -116,9 +138,38 @@ public class ShareDto {
             List<ShareRecipientRes> recipients,
             String status,
             LocalDateTime respondedAt,
+            LocalDateTime expiresAt,
+            Integer downloadLimit,
+            Integer downloadCount,
+            Boolean expired,
+            Boolean downloadLimitReached,
+            Boolean passwordProtected,
             Boolean readable,
             Boolean downloadable,
             Boolean uploadable
+    ) {
+    }
+    public record ShareAuditRes(
+            Long idx,
+            Long shareIdx,
+            Long fileIdx,
+            String fileName,
+            Long ownerIdx,
+            String ownerEmail,
+            String ownerName,
+            Long recipientIdx,
+            String recipientEmail,
+            String recipientName,
+            Long actorIdx,
+            String actorEmail,
+            String actorName,
+            String action,
+            String permission,
+            String status,
+            LocalDateTime expiresAt,
+            Integer downloadLimit,
+            Integer downloadCount,
+            LocalDateTime createdAt
     ) {
     }
 }

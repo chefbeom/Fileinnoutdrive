@@ -2,6 +2,7 @@ package com.example.WaffleBear.group.model.dto;
 
 import com.example.WaffleBear.group.model.enums.InviteType;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 public class GroupShareDto {
@@ -11,7 +12,10 @@ public class GroupShareDto {
             List<Long> userIds,
             List<Long> groupIds,
             List<String> emails,
-            String permission
+            String permission,
+            LocalDateTime expiresAt,
+            Integer downloadLimit,
+            String sharePassword
     ) {
     }
 

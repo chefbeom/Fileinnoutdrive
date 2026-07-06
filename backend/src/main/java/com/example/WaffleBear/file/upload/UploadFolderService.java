@@ -32,7 +32,7 @@ public class UploadFolderService {
         }
     }
 
-    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    @Transactional
     public FileInfo saveCompletedUpload(
             Long userIdx,
             UploadDto.CompleteReq request,

@@ -1,13 +1,16 @@
 package com.example.WaffleBear.workspace.service;
 
+import com.example.WaffleBear.common.exception.BaseException;
 import com.example.WaffleBear.config.sse.SseService;
 import com.example.WaffleBear.email.EmailVerifyRepository;
 import com.example.WaffleBear.email.EmailVerifyService;
 import com.example.WaffleBear.notification.NotificationService;
+import com.example.WaffleBear.user.model.AuthUserDetails;
 import com.example.WaffleBear.user.model.User;
 import com.example.WaffleBear.user.repository.UserRepository;
 import com.example.WaffleBear.workspace.asset.WorkspaceAssetService;
 import com.example.WaffleBear.workspace.model.post.Post;
+import com.example.WaffleBear.workspace.model.post.PostDto;
 import com.example.WaffleBear.workspace.model.post.isShare;
 import com.example.WaffleBear.workspace.model.relation.AccessRole;
 import com.example.WaffleBear.workspace.model.relation.UserPost;
@@ -24,7 +27,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 import java.util.Optional;
 
+import static com.example.WaffleBear.common.model.BaseResponseStatus.ADMIN_ONLY_ACTION;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -110,11 +115,87 @@ class PostServiceShareTest {
         verify(notificationService, never()).sendWorkspaceInviteNotification(any(), any(), any());
     }
 
+    @Test
+    void authorizeRealtimeAllowsWritableMembers() {
+        User editor = user(2L, "editor@example.com");
+        Post workspace = sharedWorkspace();
+        UserPost editorRelation = relation(editor, workspace, AccessRole.WRITE);
+
+        when(userPostRepository.findByUser_IdxAndWorkspace_Idx(2L, 42L)).thenReturn(Optional.of(editorRelation));
+
+        PostDto.RealtimeAuthorizeRes result = postService.authorizeRealtime(42L, 2L, true);
+
+        assertThat(result.workspaceIdx()).isEqualTo(42L);
+        assertThat(result.accessRole()).isEqualTo(AccessRole.WRITE);
+        assertThat(result.writable()).isTrue();
+    }
+
+    @Test
+    void authorizeRealtimeRejectsReadOnlyMemberForWriteChannel() {
+        User viewer = user(3L, "viewer@example.com");
+        Post workspace = sharedWorkspace();
+        UserPost viewerRelation = relation(viewer, workspace, AccessRole.READ);
+
+        when(userPostRepository.findByUser_IdxAndWorkspace_Idx(3L, 42L)).thenReturn(Optional.of(viewerRelation));
+
+        assertThatThrownBy(() -> postService.authorizeRealtime(42L, 3L, true))
+                .isInstanceOf(BaseException.class);
+    }
+
+    @Test
+    void readOnlyMemberCannotInviteWorkspaceMember() {
+        User viewer = user(2L, "viewer@example.com");
+        Post workspace = sharedWorkspace();
+        UserPost viewerRelation = relation(viewer, workspace, AccessRole.READ);
+
+        when(postRepository.findByUUID("workspace-uuid")).thenReturn(Optional.of(workspace));
+        when(userPostRepository.findByUser_IdxAndWorkspace_Idx(2L, 42L)).thenReturn(Optional.of(viewerRelation));
+
+        assertThatThrownBy(() -> postService.invite(
+                "workspace-uuid",
+                "new@example.com",
+                authUser(viewer),
+                AccessRole.READ
+        )).isInstanceOfSatisfying(BaseException.class, error ->
+                assertThat(error.getStatus()).isEqualTo(ADMIN_ONLY_ACTION)
+        );
+
+        verify(userRepository, never()).findByEmail("new@example.com");
+        verify(notificationService, never()).sendWorkspaceInviteNotification(any(), any(), any());
+    }
+
+    @Test
+    void readOnlyMemberCannotChangeWorkspaceSharingState() {
+        User viewer = user(2L, "viewer@example.com");
+        Post workspace = sharedWorkspace();
+        UserPost viewerRelation = relation(viewer, workspace, AccessRole.READ);
+
+        when(userPostRepository.findByUser_IdxAndWorkspace_Idx(2L, 42L)).thenReturn(Optional.of(viewerRelation));
+
+        assertThatThrownBy(() -> postService.isShared(
+                42L,
+                2L,
+                new PostDto.ReqType(true, isShare.Public)
+        )).isInstanceOfSatisfying(BaseException.class, error ->
+                assertThat(error.getStatus()).isEqualTo(ADMIN_ONLY_ACTION)
+        );
+
+        verify(postRepository, never()).save(any(Post.class));
+    }
     private User user(Long idx, String email) {
         return User.builder()
                 .idx(idx)
                 .email(email)
                 .name(email)
+                .build();
+    }
+
+    private AuthUserDetails authUser(User user) {
+        return AuthUserDetails.builder()
+                .idx(user.getIdx())
+                .email(user.getEmail())
+                .name(user.getName())
+                .role("ROLE_USER")
                 .build();
     }
 

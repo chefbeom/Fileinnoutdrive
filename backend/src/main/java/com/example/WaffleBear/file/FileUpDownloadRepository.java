@@ -83,4 +83,16 @@ public interface FileUpDownloadRepository extends JpaRepository<FileInfo, Long>,
             @Param("parentId") Long parentId,
             @Param("fileNodeType") FileNodeType fileNodeType
     );
+    @Query("""
+            select f.fileSavePath
+            from FileInfo f
+            where f.fileSavePath is not null
+              and f.fileSavePath <> ''
+              and (f.nodeType is null or f.nodeType = :fileNodeType)
+            """)
+    List<String> findStoredObjectKeys(@Param("fileNodeType") FileNodeType fileNodeType);
+
+    default List<String> findStoredObjectKeys() {
+        return findStoredObjectKeys(FileNodeType.FILE);
+    }
 }

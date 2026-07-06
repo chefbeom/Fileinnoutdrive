@@ -1,10 +1,10 @@
 package com.example.WaffleBear.config.oauth2;
 
+import com.example.WaffleBear.config.CookieResponseWriter;
 import com.example.WaffleBear.user.model.AuthUserDetails;
 import com.example.WaffleBear.user.model.TokenDto;
 import com.example.WaffleBear.user.service.AuthService;
 import jakarta.servlet.ServletException;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -21,12 +21,10 @@ import java.io.IOException;
 public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationSuccessHandler {
 
     private final AuthService authService;
+    private final CookieResponseWriter cookieResponseWriter;
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
-
-    @Value("${app.secure-cookie:false}")
-    private boolean secureCookie;
 
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response, Authentication authentication)
@@ -41,19 +39,13 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
                 user.getRole()
         );
 
-        Cookie refreshCookie = new Cookie("refresh", tokens.refreshToken());
-        refreshCookie.setMaxAge(14 * 24 * 60 * 60);
-        refreshCookie.setHttpOnly(true);
-        refreshCookie.setPath("/");
-        refreshCookie.setSecure(secureCookie);
-        response.addCookie(refreshCookie);
+        cookieResponseWriter.addRefreshCookie(response, tokens.refreshToken());
 
         clearAuthenticationAttributes(request);
 
         String redirectUrl = UriComponentsBuilder
                 .fromUriString(frontendUrl)
                 .path("/main/home")
-                .queryParam("accessToken", tokens.accessToken())
                 .build()
                 .toUriString();
         getRedirectStrategy().sendRedirect(request, response, redirectUrl);

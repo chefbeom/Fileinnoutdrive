@@ -12,7 +12,7 @@ import groovy.json.JsonSlurper
 class TestRunner {
     protected static String baseUrl = System.getProperty('baseUrl', 'http://192.100.220.17:8080/file')
     protected static String loginEmail = System.getProperty('loginEmail', 'administrator@administrator.adm')
-    protected static String loginPassword = System.getProperty('loginPassword', 'fweiuhfge2232n12@#xSD23@')
+    protected static String loginPassword = System.getProperty('loginPassword', System.getenv('NGRINDER_LOGIN_PASSWORD') ?: '')
 
     protected static net.grinder.script.GTest test
     protected static org.ngrinder.http.HTTPRequest request

@@ -79,4 +79,11 @@ public interface WorkspaceAssetRepository extends JpaRepository<WorkspaceAsset, 
             group by a.uploader.idx
             """)
     List<UserStoredBytesProjection> aggregateStoredBytesByUploader();
+    @Query("""
+            select a.objectKey
+            from WorkspaceAsset a
+            where a.objectKey is not null
+              and a.objectKey <> ''
+            """)
+    List<String> findAllObjectKeys();
 }

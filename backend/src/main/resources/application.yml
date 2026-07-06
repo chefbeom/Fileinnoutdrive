@@ -18,7 +18,7 @@ jwt:
 
 project:
   aes:
-    key: "aessecretkey01234567891011121314"
+    key: ${PROJECT_AES_KEY}
 
 admin:
   email: ${ADMIN_EMAIL}
@@ -32,8 +32,49 @@ app:
   backend-url: ${APP_BACKEND_URL:http://localhost/api}
   secure-cookie: ${APP_SECURE_COOKIE:false}
   admin-only: ${APP_ADMIN_ONLY:false}
+  cookie:
+    same-site: ${APP_COOKIE_SAME_SITE:Lax}
+  cors:
+    allowed-origin-patterns: ${APP_CORS_ALLOWED_ORIGIN_PATTERNS:}
+    allow-development-origin-patterns: ${APP_CORS_ALLOW_DEVELOPMENT_ORIGIN_PATTERNS:false}
+  docs:
+    public-openapi: ${APP_DOCS_PUBLIC_OPENAPI:false}
+  thumbnail:
+    executor:
+      core-pool-size: ${THUMBNAIL_EXECUTOR_CORE_POOL_SIZE:1}
+      max-pool-size: ${THUMBNAIL_EXECUTOR_MAX_POOL_SIZE:2}
+      queue-capacity: ${THUMBNAIL_EXECUTOR_QUEUE_CAPACITY:50}
+  storage:
+    orphan-cleanup:
+      enabled: ${APP_STORAGE_ORPHAN_CLEANUP_ENABLED:false}
+      dry-run: ${APP_STORAGE_ORPHAN_CLEANUP_DRY_RUN:true}
+      initial-delay-ms: ${APP_STORAGE_ORPHAN_CLEANUP_INITIAL_DELAY_MS:600000}
+      fixed-delay-ms: ${APP_STORAGE_ORPHAN_CLEANUP_FIXED_DELAY_MS:86400000}
+      max-scan: ${APP_STORAGE_ORPHAN_CLEANUP_MAX_SCAN:10000}
+
+notification:
+  web-push:
+    public-key: ${WEB_PUSH_PUBLIC_KEY:}
+    private-key: ${WEB_PUSH_PRIVATE_KEY:}
+    subject: ${WEB_PUSH_SUBJECT:mailto:no-reply@fileinnout.local}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
 
 spring:
+  flyway:
+    enabled: ${SPRING_FLYWAY_ENABLED:false}
+    locations: classpath:db/migration
+    baseline-on-migrate: ${SPRING_FLYWAY_BASELINE_ON_MIGRATE:true}
+    validate-on-migrate: ${SPRING_FLYWAY_VALIDATE_ON_MIGRATE:true}
+    out-of-order: ${SPRING_FLYWAY_OUT_OF_ORDER:false}
   data:
     redis:
       host: ${REDIS_HOST:127.0.0.1}
@@ -103,10 +144,10 @@ spring:
   jpa:
     database-platform: org.hibernate.dialect.MariaDBDialect
     hibernate:
-      ddl-auto: update
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:validate}
     properties:
       hibernate:
-        format_sql: true
+        format_sql: ${HIBERNATE_FORMAT_SQL:false}
 
 minio:
   provider: ${STORAGE_PROVIDER:minio}
@@ -128,13 +169,8 @@ minio:
 
 logging:
   level:
-    org:
-      springframework:
-        security:
-          web:
-            FilterChainProxy: debug
-        web:
-          servlet:
-            DispatcherServlet: debug
-    org.hibernate.SQL: debug
-    org.hibernate.orm.jdbc.bind: trace
+    root: ${LOG_LEVEL_ROOT:INFO}
+    org.springframework.security: ${LOG_LEVEL_SECURITY:INFO}
+    org.springframework.web.servlet.DispatcherServlet: ${LOG_LEVEL_DISPATCHER:INFO}
+    org.hibernate.SQL: ${LOG_LEVEL_SQL:INFO}
+    org.hibernate.orm.jdbc.bind: ${LOG_LEVEL_SQL_BIND:INFO}

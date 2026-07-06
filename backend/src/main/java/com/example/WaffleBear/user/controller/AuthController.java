@@ -1,5 +1,6 @@
 package com.example.WaffleBear.user.controller;
 
+import com.example.WaffleBear.config.CookieResponseWriter;
 import com.example.WaffleBear.user.model.TokenDto;
 import com.example.WaffleBear.user.service.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -24,9 +25,7 @@ import java.util.List;
 public class AuthController {
 
     private final AuthService authService;
-
-    @Value("${app.secure-cookie}")
-    private boolean secureCookie;
+    private final CookieResponseWriter cookieResponseWriter;
 
     @Value("${app.admin-only:false}")
     private boolean adminOnly;
@@ -70,13 +69,7 @@ public class AuthController {
         TokenDto.AuthTokenResponse tokens = authService.reissue(refreshToken);
 
         response.setHeader("Authorization", "Bearer " + tokens.accessToken());
-
-        Cookie refreshCookie = new Cookie("refresh", tokens.refreshToken());
-        refreshCookie.setMaxAge(14 * 24 * 60 * 60);
-        refreshCookie.setHttpOnly(true);
-        refreshCookie.setPath("/");
-        refreshCookie.setSecure(secureCookie);
-        response.addCookie(refreshCookie);
+        cookieResponseWriter.addRefreshCookie(response, tokens.refreshToken());
 
         return ResponseEntity.ok().body("토큰 재발급 완료");
     }
@@ -98,13 +91,7 @@ public class AuthController {
         if (refreshToken != null) {
             authService.logout(refreshToken);
         }
-
-        Cookie refreshCookie = new Cookie("refresh", null);
-        refreshCookie.setMaxAge(0);
-        refreshCookie.setHttpOnly(true);
-        refreshCookie.setPath("/");
-        refreshCookie.setSecure(secureCookie);
-        response.addCookie(refreshCookie);
+        cookieResponseWriter.clearRefreshCookie(response);
 
         return ResponseEntity.ok().body("로그아웃 완료");
     }

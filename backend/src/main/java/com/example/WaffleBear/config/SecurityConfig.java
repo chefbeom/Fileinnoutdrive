@@ -2,7 +2,6 @@ package com.example.WaffleBear.config;
 
 import com.example.WaffleBear.config.Filter.JwtFilter;
 import com.example.WaffleBear.config.Filter.LoginFilter;
-
 import com.example.WaffleBear.config.oauth2.OAuth2AuthenticationSuccessHandler;
 import com.example.WaffleBear.config.oauth2.OAuth2AuthorizationRequestRepository;
 import com.example.WaffleBear.user.service.OAuth2UserService;
@@ -21,16 +20,23 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 @Configuration
 @RequiredArgsConstructor
-@EnableWebSecurity // Security 설정을 활성화
+@EnableWebSecurity
 public class SecurityConfig {
-    @Value("${app.frontend-url}")
-    private String frontendUrl;
+    @Value("${app.cors.allowed-origin-patterns:}")
+    private String allowedOriginPatterns;
+    @Value("${app.cors.allow-development-origin-patterns:false}")
+    private boolean allowDevelopmentOriginPatterns;
     @Value("${app.admin-only:false}")
     private boolean adminOnly;
+
+    @Value("${app.docs.public-openapi:false}")
+    private boolean publicOpenApi;
 
     private final AuthenticationConfiguration configuration;
     private final LoginFilter loginFilter;
@@ -61,45 +67,65 @@ public class SecurityConfig {
             });
         }
 
-        // SecurityConfig.java 내 인가 설정 수정
-        http.authorizeHttpRequests(auth -> auth
-                .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                .requestMatchers("/login", "/error").permitAll()
-                .requestMatchers("/auth/reissue", "/auth/logout", "/auth/oauth2/providers").permitAll()
-                .requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()
-                .requestMatchers("/user/signup", "/user/verify/**").permitAll()
-                .requestMatchers("/test/version").permitAll()
-                .requestMatchers("/ws-stomp/**").permitAll()
-                .requestMatchers("/administrator/**").hasAuthority("ROLE_ADMIN")
-                .anyRequest().authenticated()
-        );
+        http.authorizeHttpRequests(auth -> {
+            auth.requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                    .requestMatchers("/login", "/error").permitAll()
+                    .requestMatchers("/auth/reissue", "/auth/logout", "/auth/oauth2/providers").permitAll()
+                    .requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()
+                    .requestMatchers("/user/signup", "/user/verify/**").permitAll();
+            if (publicOpenApi) {
+                auth.requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll();
+            }
+
+            auth.requestMatchers("/ws-stomp/**").permitAll()
+                    .requestMatchers("/administrator/**").hasAuthority("ROLE_ADMIN")
+                    .anyRequest().authenticated();
+        });
 
         http.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
         http.addFilterBefore(loginFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
-    //호
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowCredentials(true);
-        configuration.setAllowedOriginPatterns(List.of(
-                frontendUrl,
-                "http://localhost:*",
-                "http://127.0.0.1:*",
-                "http://192.168.*:*",
-                "http://10.*:*",
-                "http://172.*:*"
-        ));
+        configuration.setAllowedOriginPatterns(resolveAllowedOriginPatterns());
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
-
-        // 핵심: 클라이언트(Axios)가 읽을 수 있도록 Authorization 헤더를 명시적으로 노출
         configuration.setExposedHeaders(List.of("Set-Cookie", "Authorization"));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
+    }
+
+    private List<String> resolveAllowedOriginPatterns() {
+        String rawPatterns = Objects.requireNonNullElse(allowedOriginPatterns, "");
+        List<String> patterns = Arrays.stream(rawPatterns.split(","))
+                .map(String::trim)
+                .filter(pattern -> !pattern.isBlank())
+                .distinct()
+                .toList();
+
+        validateAllowedOriginPatterns(patterns);
+        return patterns;
+    }
+
+    private void validateAllowedOriginPatterns(List<String> patterns) {
+        if (allowDevelopmentOriginPatterns) {
+            return;
+        }
+
+        List<String> wildcardPatterns = patterns.stream()
+                .filter(pattern -> pattern.contains("*"))
+                .toList();
+        if (!wildcardPatterns.isEmpty()) {
+            throw new IllegalStateException(
+                    "CORS wildcard origin patterns require app.cors.allow-development-origin-patterns=true: "
+                            + String.join(", ", wildcardPatterns)
+            );
+        }
     }
 }

@@ -41,6 +41,7 @@ out/
 keystore.p12
 *.p12
 *.bat
+!gradlew.bat
 backend-configmap.yaml
 values.private.yaml
 .env

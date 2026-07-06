@@ -5,18 +5,12 @@ import com.example.WaffleBear.chat.model.entity.ChatMessages;
 import com.example.WaffleBear.chat.model.entity.ChatParticipants;
 import com.example.WaffleBear.chat.model.entity.ChatRooms;
 import com.example.WaffleBear.chat.model.entity.MessageType;
-import com.example.WaffleBear.config.MinioProperties;
-import com.example.WaffleBear.config.MinioPresignedUrlService;
 import com.example.WaffleBear.config.sse.SseService;
 import com.example.WaffleBear.config.stomp.ClusteredStompPublisher;
 import com.example.WaffleBear.feater.FeaterService;
 import com.example.WaffleBear.notification.NotificationService;
 import com.example.WaffleBear.user.model.User;
 import com.example.WaffleBear.user.repository.UserRepository;
-import io.minio.GetPresignedObjectUrlArgs;
-import io.minio.MinioClient;
-import io.minio.PutObjectArgs;
-import io.minio.http.Method;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -30,7 +24,6 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -44,15 +37,7 @@ public class ChatMessageService {
     private final ChatRoomService chatRoomService;
     private final ClusteredStompPublisher stompPublisher;
     private final FeaterService featerService;
-    private final MinioClient minioClient;
-    private final MinioPresignedUrlService minioPresignedUrlService;
-    private final MinioProperties minioProperties;
-
-    private static final long MAX_IMAGE_SIZE = 5L * 1024 * 1024;
-    private static final long MAX_FILE_SIZE = 30L * 1024 * 1024;
-    private static final Set<String> IMAGE_TYPES = Set.of(
-            "image/png", "image/jpeg", "image/jpg"
-    );
+    private final ChatAttachmentStorageService chatAttachmentStorageService;
 
     @Transactional(readOnly = true)
     public ChatMessagesDto.PageRes getMessageList(Long roomIdx, Long userIdx, int page, int size) {
@@ -108,6 +93,7 @@ public class ChatMessageService {
 
     @Transactional
     public ChatMessagesDto.ListRes saveMessage(Long roomIdx, ChatMessagesDto.Send req, Long senderIdx) {
+        validateRoomMembership(roomIdx, senderIdx);
         ChatRooms room = chatRoomRepository.findByIdWithLock(roomIdx)
                 .orElseThrow(() -> new RuntimeException("방을 찾을 수 없습니다."));
         User user = userRepository.findById(senderIdx)
@@ -176,39 +162,13 @@ public class ChatMessageService {
     }
 
     public String uploadFile(Long roomIdx, MultipartFile file, Long userIdx) {
-        String contentType = file.getContentType();
-        boolean isImage = IMAGE_TYPES.contains(contentType);
+        validateRoomMembership(roomIdx, userIdx);
+        return chatAttachmentStorageService.uploadChatAttachment(roomIdx, userIdx, file);
+    }
 
-        if (isImage && file.getSize() > MAX_IMAGE_SIZE) {
-            throw new IllegalArgumentException("이미지는 5MB 이하만 업로드 가능합니다.");
-        }
-        if (!isImage && file.getSize() > MAX_FILE_SIZE) {
-            throw new IllegalArgumentException("파일은 30MB 이하만 업로드 가능합니다.");
-        }
-
-        try {
-            String objectKey = "chat/" + roomIdx + "/" + userIdx + "/"
-                    + System.currentTimeMillis() + "_" + file.getOriginalFilename();
-
-            minioClient.putObject(
-                    PutObjectArgs.builder()
-                            .bucket(minioProperties.getBucket_cloud())
-                            .object(objectKey)
-                            .stream(file.getInputStream(), file.getSize(), -1)
-                            .contentType(contentType)
-                            .build()
-            );
-
-            return minioPresignedUrlService.getPresignedObjectUrl(
-                    GetPresignedObjectUrlArgs.builder()
-                            .method(Method.GET)
-                            .bucket(minioProperties.getBucket_cloud())
-                            .object(objectKey)
-                            .expiry(60 * 60 * 24)
-                            .build()
-            );
-        } catch (Exception e) {
-            throw new RuntimeException("파일 업로드 실패: " + e.getMessage());
+    private void validateRoomMembership(Long roomIdx, Long userIdx) {
+        if (!participantsRepository.existsByChatRoomsIdxAndUsersIdx(roomIdx, userIdx)) {
+            throw new IllegalArgumentException("해당 채팅방 접근 권한이 없습니다.");
         }
     }
 

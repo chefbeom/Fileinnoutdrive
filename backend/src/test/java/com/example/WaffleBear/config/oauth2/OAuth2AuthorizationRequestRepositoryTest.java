@@ -1,13 +1,15 @@
 package com.example.WaffleBear.config.oauth2;
 
+import com.example.WaffleBear.config.CookieResponseWriter;
 import com.example.WaffleBear.utils.Aes256;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
-import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -17,8 +19,10 @@ class OAuth2AuthorizationRequestRepositoryTest {
     @BeforeEach
     void setUp() {
         new Aes256().setSecretKey("aessecretkey01234567891011121314");
-        repository = new OAuth2AuthorizationRequestRepository();
-        ReflectionTestUtils.setField(repository, "secureCookie", false);
+        CookieResponseWriter cookieResponseWriter = new CookieResponseWriter();
+        ReflectionTestUtils.setField(cookieResponseWriter, "secureCookie", false);
+        ReflectionTestUtils.setField(cookieResponseWriter, "sameSite", "Lax");
+        repository = new OAuth2AuthorizationRequestRepository(cookieResponseWriter);
     }
 
     @Test
@@ -33,12 +37,16 @@ class OAuth2AuthorizationRequestRepositoryTest {
         MockHttpServletResponse saveResponse = new MockHttpServletResponse();
         repository.saveAuthorizationRequest(authorizationRequest, new MockHttpServletRequest(), saveResponse);
 
-        Cookie storedCookie = saveResponse.getCookie("OAUTH2_REQUEST");
-        assertThat(storedCookie).isNotNull();
-        assertThat(storedCookie.isHttpOnly()).isTrue();
-        assertThat(storedCookie.getSecure()).isFalse();
-        assertThat(storedCookie.getMaxAge()).isEqualTo(300);
+        String storedCookieHeader = saveResponse.getHeader(HttpHeaders.SET_COOKIE);
+        assertThat(storedCookieHeader)
+                .contains("OAUTH2_REQUEST=")
+                .contains("Max-Age=300")
+                .contains("Path=/")
+                .contains("HttpOnly")
+                .contains("SameSite=Lax")
+                .doesNotContain("Secure");
 
+        Cookie storedCookie = cookieFromSetCookie(storedCookieHeader);
         MockHttpServletRequest callbackRequest = new MockHttpServletRequest();
         callbackRequest.setCookies(storedCookie);
 
@@ -52,7 +60,10 @@ class OAuth2AuthorizationRequestRepositoryTest {
 
         assertThat(removedRequest).isNotNull();
         assertThat(removedRequest.getState()).isEqualTo("state-123");
-        assertThat(removeResponse.getCookie("OAUTH2_REQUEST").getMaxAge()).isZero();
+        assertThat(removeResponse.getHeader(HttpHeaders.SET_COOKIE))
+                .contains("OAUTH2_REQUEST=")
+                .contains("Max-Age=0")
+                .contains("SameSite=Lax");
     }
 
     @Test
@@ -66,5 +77,11 @@ class OAuth2AuthorizationRequestRepositoryTest {
         request.setCookies(new Cookie("OAUTH2_REQUEST", "invalid-cookie-value"));
 
         assertThat(repository.loadAuthorizationRequest(request)).isNull();
+    }
+
+    private Cookie cookieFromSetCookie(String setCookie) {
+        String nameValue = setCookie.split(";", 2)[0];
+        String[] pair = nameValue.split("=", 2);
+        return new Cookie(pair[0], pair.length > 1 ? pair[1] : "");
     }
 }

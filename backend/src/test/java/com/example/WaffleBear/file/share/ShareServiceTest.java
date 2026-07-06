@@ -1,32 +1,47 @@
 package com.example.WaffleBear.file.share;
 
 import com.example.WaffleBear.common.exception.BaseException;
-import com.example.WaffleBear.config.MinioProperties;
-import com.example.WaffleBear.config.MinioPresignedUrlService;
 import com.example.WaffleBear.file.FileUpDownloadRepository;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
 import com.example.WaffleBear.file.service.StoragePlanService;
 import com.example.WaffleBear.file.share.model.FileShare;
+import com.example.WaffleBear.file.share.model.FileShareAuditAction;
 import com.example.WaffleBear.file.share.model.FileSharePermission;
 import com.example.WaffleBear.file.share.model.FileShareStatus;
 import com.example.WaffleBear.file.upload.UploadFolderService;
 import com.example.WaffleBear.notification.NotificationService;
 import com.example.WaffleBear.user.model.User;
 import com.example.WaffleBear.user.repository.UserRepository;
-import io.minio.MinioClient;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -44,13 +59,7 @@ class ShareServiceTest {
     private UserRepository userRepository;
 
     @Mock
-    private MinioClient minioClient;
-
-    @Mock
-    private MinioPresignedUrlService minioPresignedUrlService;
-
-    @Mock
-    private MinioProperties minioProperties;
+    private ShareFileObjectStorageService shareFileObjectStorageService;
 
     @Mock
     private StoragePlanService storagePlanService;
@@ -64,9 +73,68 @@ class ShareServiceTest {
     @Mock
     private ShareInheritanceService shareInheritanceService;
 
-    @InjectMocks
+    @Mock
+    private ShareAuditService shareAuditService;
+
+    @Mock
+    private ShareTreeStatusService shareTreeStatusService;
+
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private TransactionTemplate transactionTemplate;
+
+    private ShareResponseMapper shareResponseMapper;
+
+    private ShareFileAccessService shareFileAccessService;
+
     private ShareService shareService;
 
+    @BeforeEach
+    void runTransactionTemplateCallbacks() {
+        shareResponseMapper = new ShareResponseMapper(shareFileObjectStorageService);
+        shareFileAccessService = new ShareFileAccessService(
+                fileUpDownloadRepository,
+                shareRepository,
+                shareFileObjectStorageService,
+                uploadFolderService,
+                shareInheritanceService,
+                shareAuditService,
+                shareResponseMapper,
+                passwordEncoder,
+                transactionTemplate
+        );
+        shareService = new ShareService(
+                fileUpDownloadRepository,
+                shareRepository,
+                userRepository,
+                storagePlanService,
+                notificationService,
+                shareAuditService,
+                shareTreeStatusService,
+                shareResponseMapper,
+                shareFileAccessService,
+                passwordEncoder
+        );
+        lenient().when(shareFileObjectStorageService.presignedUrlExpirySeconds()).thenReturn(300);
+        lenient().when(shareFileObjectStorageService.generateDownloadUrl(anyString()))
+                .thenReturn("http://download.example/report.txt");
+        lenient().when(shareFileObjectStorageService.generateAttachmentDownloadUrl(anyString(), anyString(), anyString()))
+                .thenReturn("http://download.example/report.txt");
+        lenient().when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+            TransactionCallback<?> callback = invocation.getArgument(0);
+            return callback.doInTransaction(new SimpleTransactionStatus());
+        });
+    }
+
+    @AfterEach
+    void clearTransactionSynchronization() {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+        TransactionSynchronizationManager.setActualTransactionActive(false);
+    }
     @Test
     void cancelAllSharesRevokesLockedChildrenInsideSharedFolder() {
         User owner = user(1L, "owner@example.com");
@@ -236,32 +304,110 @@ class ShareServiceTest {
     }
 
     @Test
-    void acceptSharedFolderAcceptsChildSharesTogether() {
+    void acceptSharedFolderDelegatesTreeStatusChange() {
         User owner = user(1L, "owner@example.com");
         User recipient = user(2L, "recipient@example.com");
         FileInfo folder = folder(10L, owner, null, "Team", false);
-        FileInfo child = file(11L, owner, folder, "a.txt", false);
         FileShare folderShare = share(folder, owner, recipient, FileSharePermission.WRITE, FileShareStatus.PENDING);
-        FileShare childShare = share(child, owner, recipient, FileSharePermission.WRITE, FileShareStatus.PENDING);
 
         when(shareRepository.findByFile_IdxAndRecipient_Idx(folder.getIdx(), recipient.getIdx()))
-                .thenReturn(Optional.of(folderShare), Optional.of(folderShare));
-        when(shareRepository.findByFile_IdxAndRecipient_Idx(child.getIdx(), recipient.getIdx()))
-                .thenReturn(Optional.of(childShare));
-        when(fileUpDownloadRepository.findAllByUser_Idx(owner.getIdx()))
-                .thenReturn(List.of(folder, child));
+                .thenReturn(Optional.of(folderShare));
+        when(shareTreeStatusService.changeTreeStatus(
+                folderShare,
+                FileShareStatus.ACCEPTED,
+                recipient.getIdx(),
+                FileShareAuditAction.ACCEPTED
+        )).thenReturn(2);
 
         var result = shareService.acceptSharedFile(recipient.getIdx(), folder.getIdx());
 
-        ArgumentCaptor<List<FileShare>> changedCaptor = ArgumentCaptor.forClass(List.class);
-        verify(shareRepository).saveAll(changedCaptor.capture());
-
         assertThat(result.getAffectedCount()).isEqualTo(2);
-        assertThat(folderShare.getEffectiveStatus()).isEqualTo(FileShareStatus.ACCEPTED);
-        assertThat(childShare.getEffectiveStatus()).isEqualTo(FileShareStatus.ACCEPTED);
-        assertThat(changedCaptor.getValue()).containsExactly(folderShare, childShare);
+        verify(shareTreeStatusService).changeTreeStatus(
+                folderShare,
+                FileShareStatus.ACCEPTED,
+                recipient.getIdx(),
+                FileShareAuditAction.ACCEPTED
+        );
     }
 
+
+    @Test
+    void shareFilesStoresExpirationAndDownloadLimit() {
+        User owner = user(1L, "owner@example.com");
+        User recipient = user(2L, "recipient@example.com");
+        FileInfo file = file(10L, owner, null, "report.txt", false);
+        LocalDateTime expiresAt = LocalDateTime.now().plusDays(1);
+
+        when(storagePlanService.resolveQuota(owner.getIdx())).thenReturn(shareEnabledQuota());
+        when(userRepository.findByEmail(recipient.getEmail())).thenReturn(Optional.of(recipient));
+        when(fileUpDownloadRepository.findByIdxAndUser_Idx(file.getIdx(), owner.getIdx()))
+                .thenReturn(Optional.of(file));
+        when(fileUpDownloadRepository.findAllByUser_Idx(owner.getIdx()))
+                .thenReturn(List.of(file));
+        when(shareRepository.findByFile_IdxAndRecipient_Idx(file.getIdx(), recipient.getIdx()))
+                .thenReturn(Optional.empty());
+
+        var result = shareService.shareFiles(
+                owner.getIdx(),
+                List.of(file.getIdx()),
+                recipient.getEmail(),
+                "DOWNLOAD",
+                null,
+                expiresAt,
+                2
+        );
+
+        ArgumentCaptor<FileShare> shareCaptor = ArgumentCaptor.forClass(FileShare.class);
+        verify(shareRepository).save(shareCaptor.capture());
+        FileShare savedShare = shareCaptor.getValue();
+
+        assertThat(result.getAffectedCount()).isEqualTo(1);
+        assertThat(savedShare.getExpiresAt()).isEqualTo(expiresAt);
+        assertThat(savedShare.getDownloadLimit()).isEqualTo(2);
+        assertThat(savedShare.getDownloadCount()).isZero();
+        verify(shareAuditService).record(savedShare, owner.getIdx(), FileShareAuditAction.CREATED);
+    }
+
+    @Test
+    void shareFilesStoresPasswordHash() {
+        User owner = user(1L, "owner@example.com");
+        User recipient = user(2L, "recipient@example.com");
+        FileInfo file = file(10L, owner, null, "report.txt", false);
+
+        when(storagePlanService.resolveQuota(owner.getIdx())).thenReturn(shareEnabledQuota());
+        when(userRepository.findByEmail(recipient.getEmail())).thenReturn(Optional.of(recipient));
+        when(fileUpDownloadRepository.findByIdxAndUser_Idx(file.getIdx(), owner.getIdx()))
+                .thenReturn(Optional.of(file));
+        when(fileUpDownloadRepository.findAllByUser_Idx(owner.getIdx()))
+                .thenReturn(List.of(file));
+        when(shareRepository.findByFile_IdxAndRecipient_Idx(file.getIdx(), recipient.getIdx()))
+                .thenReturn(Optional.empty());
+        when(passwordEncoder.encode("secret")).thenReturn("{noop}secret");
+
+        var result = shareService.shareFiles(
+                owner.getIdx(),
+                List.of(file.getIdx()),
+                recipient.getEmail(),
+                "DOWNLOAD",
+                null,
+                null,
+                null,
+                " secret "
+        );
+
+        ArgumentCaptor<FileShare> shareCaptor = ArgumentCaptor.forClass(FileShare.class);
+        verify(shareRepository).save(shareCaptor.capture());
+        FileShare savedShare = shareCaptor.getValue();
+
+        assertThat(result.getAffectedCount()).isEqualTo(1);
+        assertThat(savedShare.getPasswordHash()).isEqualTo("{noop}secret");
+        assertThat(savedShare.isPasswordProtected()).isTrue();
+    }
+
+    private void startTransactionSynchronization() {
+        TransactionSynchronizationManager.initSynchronization();
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+    }
     private static User user(Long idx, String email) {
         return User.builder()
                 .idx(idx)
@@ -296,6 +442,8 @@ class ShareServiceTest {
                 .fileOriginName(name)
                 .fileFormat("txt")
                 .fileSaveName(name)
+                .fileSavePath(owner.getIdx() + "/" + name)
+                .fileSize(128L)
                 .lockedFile(locked)
                 .sharedFile(true)
                 .trashed(false)

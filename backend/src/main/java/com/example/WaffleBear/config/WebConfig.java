@@ -14,9 +14,8 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        // 채팅방 상세 페이지나 관련 API 호출 시 권한 체크
-        // 현재는 /chat/room/{id} 경로에 대해 적용
+        // 채팅방 상세 페이지 관련 API 호출 권한을 검사한다.
         registry.addInterceptor(checkRoomAuthInterceptor)
-                .addPathPatterns("/chat/{roomidx}/**");
+                .addPathPatterns("/chat/{id}/**");
     }
 }

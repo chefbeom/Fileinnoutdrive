@@ -9,6 +9,8 @@ import nl.martijndwars.webpush.PushService;
 import nl.martijndwars.webpush.Subscription;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.jose4j.lang.JoseException;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +28,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
 @Service
+@Slf4j
 public class NotificationService {
 
     private final NotificationRepository notificationRepository;
@@ -36,7 +39,10 @@ public class NotificationService {
     public NotificationService(
             NotificationRepository notificationRepository,
             NotificationListRepository notificationListRepository,
-            SseService sseService
+            SseService sseService,
+            @Value("${notification.web-push.public-key:}") String publicKey,
+            @Value("${notification.web-push.private-key:}") String privateKey,
+            @Value("${notification.web-push.subject:mailto:no-reply@fileinnout.local}") String subject
     ) throws NoSuchAlgorithmException, InvalidKeySpecException, NoSuchProviderException, InvalidKeyException {
         this.notificationRepository = notificationRepository;
         this.notificationListRepository = notificationListRepository;
@@ -46,10 +52,17 @@ public class NotificationService {
             Security.addProvider(new BouncyCastleProvider());
         }
 
-        this.pushService = new PushService();
-        this.pushService.setPublicKey("BLHgfPga02L2u89uc4xjhbUFTy_U04rQCjGq7o24oxtqfVmAPHTxOmp6xndSHZtGQpmt7gqTFdMXco2gRNP7_p8");
-        this.pushService.setPrivateKey("pWhOI-mTyOyx5hogOmKRiYHDCtm_IMpnz1lzWNdMfKU");
-        this.pushService.setSubject("mailto:no-reply@fileinnout.local");
+        if (!hasText(publicKey) || !hasText(privateKey)) {
+            this.pushService = null;
+            log.warn("Web push is disabled because VAPID keys are not configured.");
+            return;
+        }
+
+        PushService configuredPushService = new PushService();
+        configuredPushService.setPublicKey(publicKey);
+        configuredPushService.setPrivateKey(privateKey);
+        configuredPushService.setSubject(hasText(subject) ? subject : "mailto:no-reply@fileinnout.local");
+        this.pushService = configuredPushService;
     }
 
     @Transactional
@@ -79,6 +92,10 @@ public class NotificationService {
 
     public void send(NotificationDto.Send dto)
             throws GeneralSecurityException, JoseException, IOException, ExecutionException, InterruptedException {
+        if (pushService == null) {
+            throw new IllegalStateException("Web push is not configured.");
+        }
+
         NotificationEntity entity = notificationRepository.findById(dto.idx()).orElseThrow();
         Subscription.Keys keys = new Subscription.Keys(entity.getP256dh(), entity.getAuth());
         Subscription subscription = new Subscription(entity.getEndpoint(), keys);
@@ -222,6 +239,11 @@ public class NotificationService {
 
     @Async
     private void sendPayloadToUser(Long receiverUserIdx, NotificationDto.Payload payload) {
+        if (pushService == null) {
+            log.debug("Skipping web push delivery because VAPID keys are not configured. receiverUserIdx={}", receiverUserIdx);
+            return;
+        }
+
         Map<String, NotificationEntity> uniqueSubscriptions = new LinkedHashMap<>();
         notificationRepository.findByUserIdxAndIsActiveTrue(receiverUserIdx).forEach(entity ->
                 uniqueSubscriptions.putIfAbsent(entity.getEndpoint(), entity)
@@ -234,8 +256,12 @@ public class NotificationService {
                 Notification notification = new Notification(subscription, payload.toString());
                 pushService.send(notification);
             } catch (Exception exception) {
-                exception.printStackTrace();
+                log.warn("Web push delivery failed. receiverUserIdx={}, endpoint={}", receiverUserIdx, entity.getEndpoint(), exception);
             }
         });
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

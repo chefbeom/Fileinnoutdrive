@@ -29,8 +29,23 @@ public class RefreshToken {
     @Column(nullable = false)
     private LocalDateTime expiryDate;
 
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    public void prePersist() {
+        LocalDateTime now = LocalDateTime.now();
+        if (createdAt == null) {
+            createdAt = now;
+        }
+        if (updatedAt == null) {
+            updatedAt = now;
+        }
+    }
+
     public void updateToken(String token, LocalDateTime expiryDate) {
         this.token = token;
         this.expiryDate = expiryDate;
+        this.updatedAt = LocalDateTime.now();
     }
 }

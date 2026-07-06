@@ -1,12 +1,12 @@
 package com.example.WaffleBear.config.oauth2;
 
-
+import com.example.WaffleBear.config.CookieResponseWriter;
 import com.example.WaffleBear.utils.Aes256;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.SerializationUtils;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.client.web.AuthorizationRequestRepository;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.stereotype.Component;
@@ -14,14 +14,13 @@ import org.springframework.stereotype.Component;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
-
 @Component
+@RequiredArgsConstructor
 public class OAuth2AuthorizationRequestRepository implements AuthorizationRequestRepository<OAuth2AuthorizationRequest> {
     private static final String OAUTH2_REQUEST_COOKIE_NAME = "OAUTH2_REQUEST";
     private static final int OAUTH2_REQUEST_COOKIE_MAX_AGE_SECONDS = (int) Duration.ofMinutes(5).toSeconds();
 
-    @Value("${app.secure-cookie:false}")
-    private boolean secureCookie;
+    private final CookieResponseWriter cookieResponseWriter;
 
     @Override
     public OAuth2AuthorizationRequest loadAuthorizationRequest(HttpServletRequest request) {
@@ -46,13 +45,9 @@ public class OAuth2AuthorizationRequestRepository implements AuthorizationReques
             return;
         }
 
-        Cookie cookie = new Cookie(OAUTH2_REQUEST_COOKIE_NAME,
-                Aes256.encrypt(SerializationUtils.serialize(authorizationRequest)));
-        cookie.setPath("/");
-        cookie.setHttpOnly(true);
-        cookie.setSecure(secureCookie);
-        cookie.setMaxAge(OAUTH2_REQUEST_COOKIE_MAX_AGE_SECONDS);
-        response.addCookie(cookie);
+        cookieResponseWriter.addOAuth2RequestCookie(response,
+                Aes256.encrypt(SerializationUtils.serialize(authorizationRequest)),
+                OAUTH2_REQUEST_COOKIE_MAX_AGE_SECONDS);
     }
 
     @Override
@@ -77,11 +72,6 @@ public class OAuth2AuthorizationRequestRepository implements AuthorizationReques
     }
 
     private void clearAuthorizationRequestCookie(HttpServletResponse response) {
-        Cookie cookie = new Cookie(OAUTH2_REQUEST_COOKIE_NAME, "");
-        cookie.setPath("/");
-        cookie.setHttpOnly(true);
-        cookie.setSecure(secureCookie);
-        cookie.setMaxAge(0);
-        response.addCookie(cookie);
+        cookieResponseWriter.clearOAuth2RequestCookie(response);
     }
 }

@@ -87,9 +87,10 @@ public class ChatRoomService {
         }
 
     @Transactional
-    public void inviteUsersByEmail(Long roomId, List<String> emails) {
+    public void inviteUsersByEmail(Long roomId, Long actorUserIdx, List<String> emails) {
         ChatRooms room = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new IllegalArgumentException("방이 존재하지 않습니다."));
+        validateRoomMembership(roomId, actorUserIdx);
 
         // 1. DB에서 이메일에 해당하는 유저들을 한꺼번에 가져옴 (쿼리 1번)
         List<User> foundUsers = userRepository.findAllByEmailIn(emails);

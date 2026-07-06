@@ -112,6 +112,28 @@ public class PostService {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // 실시간 편집 연결 권한 확인
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public PostDto.RealtimeAuthorizeRes authorizeRealtime(Long workspaceIdx, Long userIdx, boolean requireWrite) {
+        if (workspaceIdx == null || userIdx == null) {
+            throw new BaseException(REQUEST_ERROR);
+        }
+
+        UserPost relation = upr.findByUser_IdxAndWorkspace_Idx(userIdx, workspaceIdx)
+                .orElseThrow(() -> new BaseException(WORKSPACE_ACCESS_DENIED));
+        AccessRole accessRole = relation.getLevel() == null ? AccessRole.READ : relation.getLevel();
+        boolean writable = accessRole == AccessRole.WRITE || accessRole == AccessRole.ADMIN;
+
+        if (requireWrite && !writable) {
+            throw new BaseException(WORKSPACE_ACCESS_DENIED);
+        }
+
+        return new PostDto.RealtimeAuthorizeRes(workspaceIdx, accessRole, writable);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // UUID로 조회
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -188,6 +210,10 @@ public class PostService {
 
         if (!post.getType()) {
             throw new BaseException(WORKSPACE_SHARE_NOT_ALLOWED);
+        }
+
+        if (email != null) {
+            requireWorkspaceAdmin(user != null ? user.getIdx() : null, post.getIdx());
         }
 
         // 알림 발송 (이메일이 있을 때)
@@ -288,6 +314,10 @@ public class PostService {
     public BaseResponseStatus isShared(Long postIdx, Long checkUser, PostDto.ReqType dto) {
         UserPost result = upr.findByUser_IdxAndWorkspace_Idx(checkUser, postIdx)
                 .orElseThrow(() -> new BaseException(WORKSPACE_NOT_FOUND));
+
+        if (!result.getLevel().equals(AccessRole.ADMIN)) {
+            throw new BaseException(ADMIN_ONLY_ACTION);
+        }
 
         result.getWorkspace().typeUpdate(dto.type(), dto.status());
         pr.save(result.getWorkspace());
@@ -445,6 +475,18 @@ public class PostService {
             return AccessRole.READ;
         }
         return AccessRole.WRITE;
+    }
+
+    private void requireWorkspaceAdmin(Long userIdx, Long postIdx) {
+        if (userIdx == null || postIdx == null) {
+            throw new BaseException(WORKSPACE_ACCESS_DENIED);
+        }
+
+        UserPost relation = upr.findByUser_IdxAndWorkspace_Idx(userIdx, postIdx)
+                .orElseThrow(() -> new BaseException(WORKSPACE_ACCESS_DENIED));
+        if (!relation.getLevel().equals(AccessRole.ADMIN)) {
+            throw new BaseException(ADMIN_ONLY_ACTION);
+        }
     }
 
     @Transactional(readOnly = true)

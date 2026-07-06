@@ -15,8 +15,8 @@ public class BaseResponse<T> {
     private String message;
     private T result;
 
-    public static <T> BaseResponse success(T result) {
-        return new BaseResponse(
+    public static <T> BaseResponse<T> success(T result) {
+        return new BaseResponse<>(
                 SUCCESS.isSuccess(),
                 SUCCESS.getCode(),
                 SUCCESS.getMessage(),
@@ -24,8 +24,8 @@ public class BaseResponse<T> {
         );
     }
 
-    public static <T> BaseResponse fail(BaseResponseStatus status) {
-        return new BaseResponse(
+    public static <T> BaseResponse<T> fail(BaseResponseStatus status) {
+        return new BaseResponse<>(
                 status.isSuccess(),
                 status.getCode(),
                 status.getMessage(),
@@ -33,8 +33,8 @@ public class BaseResponse<T> {
         );
     }
 
-    public static <T> BaseResponse fail(BaseResponseStatus status, T result) {
-        return new BaseResponse(
+    public static <T> BaseResponse<T> fail(BaseResponseStatus status, T result) {
+        return new BaseResponse<>(
                 status.isSuccess(),
                 status.getCode(),
                 status.getMessage(),

@@ -1,5 +1,6 @@
 package com.example.WaffleBear.config.Filter;
 
+import com.example.WaffleBear.config.CookieResponseWriter;
 import com.example.WaffleBear.user.model.AuthUserDetails;
 import com.example.WaffleBear.user.model.TokenDto;
 import com.example.WaffleBear.user.model.UserDto;
@@ -7,7 +8,6 @@ import com.example.WaffleBear.user.service.AuthService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,19 +25,19 @@ import java.util.Map;
 public class LoginFilter extends UsernamePasswordAuthenticationFilter {
     private final AuthenticationManager authenticationManager;
     private final AuthService authService;
+    private final CookieResponseWriter cookieResponseWriter;
     @Value("${app.admin-only:false}")
     private boolean adminOnly;
 
-    @Value("#{'${app.secure-cookie:false}' == '' ? false : '${app.secure-cookie:false}'}")
-    private boolean secureCookie; // 생성자 파라미터가 아니라 필드에 직접!
-
     public LoginFilter(
             AuthenticationManager authenticationManager,
-            AuthService authService) {
+            AuthService authService,
+            CookieResponseWriter cookieResponseWriter) {
 
         super(authenticationManager);
         this.authenticationManager = authenticationManager;
         this.authService = authService;
+        this.cookieResponseWriter = cookieResponseWriter;
     }
 
     @Override
@@ -66,13 +66,7 @@ public class LoginFilter extends UsernamePasswordAuthenticationFilter {
         );
 
         response.setHeader("Authorization", "Bearer " + tokens.accessToken());
-
-        Cookie refreshCookie = new Cookie("refresh", tokens.refreshToken());
-        refreshCookie.setMaxAge(14 * 24 * 60 * 60);
-        refreshCookie.setHttpOnly(true);
-        refreshCookie.setPath("/");
-        refreshCookie.setSecure(secureCookie);
-        response.addCookie(refreshCookie);
+        cookieResponseWriter.addRefreshCookie(response, tokens.refreshToken());
 
         response.setContentType("application/json;charset=UTF-8");
         new ObjectMapper().writeValue(response.getWriter(), Map.of(

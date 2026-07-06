@@ -82,6 +82,13 @@ public class PostDto {
         }
     }
 
+    public record RealtimeAuthorizeRes(
+            Long workspaceIdx,
+            AccessRole accessRole,
+            boolean writable
+    ) {
+    }
+
     public record ReqType(
             Boolean type,
             isShare status

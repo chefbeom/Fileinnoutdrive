@@ -20,15 +20,17 @@ Each runnable Groovy file is self-contained:
 
 ## Shared properties
 
-Set these as nGrinder parameters or JVM system properties:
+Set these as nGrinder parameters, JVM system properties, or environment variables. Do not commit real credentials.
 
 - `baseUrl`
 - `loginEmail`
-- `loginPassword`
+- `loginPassword` or `NGRINDER_LOGIN_PASSWORD`
 - `adminLoginEmail`
 - `adminLoginPassword`
 - `gameLoginEmail`
 - `gameLoginPassword`
+
+Password values have no committed defaults. If a script needs login credentials, pass them explicitly before running the test.
 
 Optional endpoint-specific properties:
 

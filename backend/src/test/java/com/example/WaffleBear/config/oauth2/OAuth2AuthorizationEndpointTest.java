@@ -10,7 +10,6 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -35,6 +34,7 @@ class OAuth2AuthorizationEndpointTest {
         mockMvc.perform(get("/api/oauth2/authorization/{provider}", provider).contextPath("/api"))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().string("Location", containsString(expectedHost)))
-                .andExpect(cookie().exists("OAUTH2_REQUEST"));
+                .andExpect(header().string("Set-Cookie", containsString("OAUTH2_REQUEST=")))
+                .andExpect(header().string("Set-Cookie", containsString("SameSite=Lax")));
     }
 }

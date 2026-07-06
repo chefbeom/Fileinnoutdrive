@@ -1,0 +1,25 @@
+app:
+  secure-cookie: ${APP_SECURE_COOKIE:true}
+  cookie:
+    same-site: ${APP_COOKIE_SAME_SITE:Lax}
+  cors:
+    allowed-origin-patterns: ${APP_CORS_ALLOWED_ORIGIN_PATTERNS:}
+    allow-development-origin-patterns: ${APP_CORS_ALLOW_DEVELOPMENT_ORIGIN_PATTERNS:false}
+  docs:
+    public-openapi: ${APP_DOCS_PUBLIC_OPENAPI:false}
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:validate}
+    properties:
+      hibernate:
+        format_sql: ${HIBERNATE_FORMAT_SQL:false}
+
+logging:
+  level:
+    root: ${LOG_LEVEL_ROOT:INFO}
+    org.springframework.security: ${LOG_LEVEL_SECURITY:WARN}
+    org.springframework.web.servlet.DispatcherServlet: ${LOG_LEVEL_DISPATCHER:WARN}
+    org.hibernate.SQL: ${LOG_LEVEL_SQL:WARN}
+    org.hibernate.orm.jdbc.bind: ${LOG_LEVEL_SQL_BIND:WARN}

@@ -5,34 +5,24 @@ import com.example.WaffleBear.administrator.storage.DataTransferSource;
 import com.example.WaffleBear.administrator.storage.DataTransferStatus;
 import com.example.WaffleBear.common.exception.BaseException;
 import com.example.WaffleBear.common.model.BaseResponseStatus;
-import com.example.WaffleBear.config.MinioProperties;
-import com.example.WaffleBear.config.MinioPresignedUrlService;
 import com.example.WaffleBear.file.FileUpDownloadRepository;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
 import com.example.WaffleBear.file.service.StoragePlanService;
+import com.example.WaffleBear.file.version.FileVersionLifecycleService;
+import com.example.WaffleBear.file.version.FileVersionService;
 import com.example.WaffleBear.file.upload.dto.UploadDto;
 import com.example.WaffleBear.user.model.User;
-import io.minio.ComposeObjectArgs;
-import io.minio.ComposeSource;
-import io.minio.GetPresignedObjectUrlArgs;
-import io.minio.MinioClient;
-import io.minio.RemoveObjectsArgs;
-import io.minio.Result;
-import io.minio.StatObjectArgs;
-import io.minio.http.Method;
-import io.minio.messages.DeleteObject;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @RequiredArgsConstructor
@@ -43,14 +33,22 @@ public class UploadService {
     private static final long MIN_FINAL_PARTITION_SIZE_BYTES = 10L * 1024 * 1024;
     private static final long RESERVATION_GRACE_SECONDS = 5L * 60L;
     private final FileUpDownloadRepository fileUpDownloadRepository;
-    private final MinioClient minioClient;
-    private final MinioPresignedUrlService minioPresignedUrlService;
-    private final MinioProperties minioProperties;
+    private final UploadObjectStorageService uploadObjectStorageService;
     private final StoragePlanService storagePlanService;
     private final UploadFolderService uploadFolderService;
     private final StorageAnalyticsService storageAnalyticsService;
-    private final Object uploadReservationMonitor = new Object();
-    private final Map<String, UploadReservation> uploadReservations = new ConcurrentHashMap<>();
+    private final UploadReservationStore uploadReservationStore;
+    private final FileVersionService fileVersionService;
+    private final FileVersionLifecycleService fileVersionLifecycleService;
+    private final TransactionTemplate transactionTemplate;
+
+    private record CompleteUploadPlan(
+            Optional<FileInfo> existingFile,
+            Long replaceFileId,
+            String replacedObjectKey,
+            long replacedBytes
+    ) {
+    }
 
     // 해당 메서드 내에서 DB작업이 날 경우 전부 성공할 경우만 반영, 중간에 하나라도 실패시 롤백
     @Transactional
@@ -73,17 +71,8 @@ public class UploadService {
             throw BaseException.from(BaseResponseStatus.FILE_COUNT_WRONG);
         }
 
-        // 모든 파일 크기, 이름, 사이즈, 널인지, 이름에 이상있는지 등을 확인
-        long requiredBytes = 0L;
         for (UploadDto.InitReq request : requests) {
-            //
             validate(request, storageQuota.maxUploadFileBytes());
-            long requestedSize = Math.max(0L, request.getFileSize() == null ? 0L : request.getFileSize());
-            long replaceExistingSize = resolveReplaceTarget(userIdx, request.getReplaceFileId())
-                    .map(FileInfo::getFileSize)
-                    .map(size -> Math.max(0L, size == null ? 0L : size))
-                    .orElse(0L);
-            requiredBytes += Math.max(0L, requestedSize - replaceExistingSize);
         }
 
         // 업로드할 파일을 위한 리스트 생성
@@ -94,10 +83,7 @@ public class UploadService {
         for (UploadDto.InitReq request : requests) {
             // 파일 업로드를 시작하기 위한 초기 응답을 생성, presigned URL을 생성
             long requestedSize = Math.max(0L, request.getFileSize() == null ? 0L : request.getFileSize());
-            long replaceExistingSize = resolveReplaceTarget(userIdx, request.getReplaceFileId())
-                    .map(FileInfo::getFileSize)
-                    .map(size -> Math.max(0L, size == null ? 0L : size))
-                    .orElse(0L);
+            long replaceExistingSize = 0L;
             List<UploadDto.ChunkRes> initResponses = buildInitResponses(userIdx, request);
             // 지금까지 문제가 없었으므로 해당 객체를 리스트에 저장
             responses.addAll(initResponses);
@@ -117,38 +103,29 @@ public class UploadService {
             }
         }
 
-        // 동기화, uploadReservationMonitor 객체를 기준으로 동기화(lock) 걸기, 이유: 저장 용량(quota) 계산이 동시에 실행되면 데이터가 꼬일 수 있기 때문
-        synchronized (uploadReservationMonitor) {
-            // 시간이 지나 만료된 업로드 용량 예약을 자동으로 삭제하기
-            cleanupExpiredUploadReservations();
-            //
-            ensureWithinStorageQuota(userIdx, requiredBytes, null);
-            pendingReservations.forEach(reservation -> reserveUploadQuota(userIdx, reservation.finalObjectKey(), reservation.fileSize()));
-        }
+        reservePendingUploadQuota(userIdx, storageQuota, pendingReservations);
 
         return responses;
     }
 
-    @Transactional
     public UploadDto.CompleteRes complete(Long userIdx, UploadDto.CompleteReq request) {
         validateUser(userIdx);
         validateCompleteRequest(request);
 
-        String fileOriginName = normalizeOriginName(request.getFileOriginName());
-        String fileFormat = normalizeFormat(request.getFileFormat(), fileOriginName);
-        String finalObjectKey = normalizeOwnedObjectKey(userIdx, request.getFinalObjectKey());
-        List<String> chunkObjectKeys = normalizeOwnedObjectKeys(userIdx, request.getChunkObjectKeys());
+        String fileOriginName = UploadObjectRules.normalizeOriginName(request.getFileOriginName());
+        String fileFormat = UploadObjectRules.normalizeFormat(request.getFileFormat(), fileOriginName);
+        String finalObjectKey = UploadObjectRules.normalizeOwnedObjectKey(userIdx, request.getFinalObjectKey());
+        List<String> chunkObjectKeys = UploadObjectRules.normalizeOwnedObjectKeys(userIdx, request.getChunkObjectKeys());
         long expectedFileSize = Math.max(0L, request.getFileSize() == null ? 0L : request.getFileSize());
-        FileInfo replaceTarget = resolveReplaceTarget(userIdx, request.getReplaceFileId()).orElse(null);
-        String replacedObjectKey = replaceTarget != null ? replaceTarget.getFileSavePath() : null;
-        long replacedBytes = replaceTarget != null ? Math.max(0L, replaceTarget.getFileSize() == null ? 0L : replaceTarget.getFileSize()) : 0L;
 
         cleanupExpiredUploadReservations();
 
-        Optional<FileInfo> existing = fileUpDownloadRepository.findByUser_IdxAndFileSavePath(userIdx, finalObjectKey);
-        if (existing.isPresent()) {
+        CompleteUploadPlan uploadPlan = transactionTemplate.execute(status ->
+                prepareCompleteUpload(userIdx, finalObjectKey, request.getReplaceFileId())
+        );
+        if (uploadPlan != null && uploadPlan.existingFile().isPresent()) {
             releaseUploadQuota(finalObjectKey);
-            FileInfo entity = existing.get();
+            FileInfo entity = uploadPlan.existingFile().get();
             return UploadDto.CompleteRes.builder()
                     .fileOriginName(entity.getFileOriginName())
                     .fileSaveName(entity.getFileSaveName())
@@ -158,25 +135,41 @@ public class UploadService {
         }
 
         if (chunkObjectKeys.isEmpty()) {
-            ensureUploadedObjectExists(finalObjectKey);
+            uploadObjectStorageService.ensureUploadedObjectExists(finalObjectKey);
         } else {
-            ensureAllUploaded(chunkObjectKeys);
-            if (!objectExists(finalObjectKey)) {
-                composeFinalObject(finalObjectKey, chunkObjectKeys);
+            uploadObjectStorageService.ensureAllUploaded(chunkObjectKeys);
+            if (!uploadObjectStorageService.objectExists(finalObjectKey)) {
+                uploadObjectStorageService.composeFinalObject(finalObjectKey, chunkObjectKeys);
             }
-            ensureUploadedObjectExists(finalObjectKey);
+            uploadObjectStorageService.ensureUploadedObjectExists(finalObjectKey);
         }
 
-        long actualFileSize = resolveCompletedObjectSize(finalObjectKey, expectedFileSize);
-        ensureWithinStorageQuota(userIdx, Math.max(0L, actualFileSize - replacedBytes), finalObjectKey);
-
-        saveFinalFileInfo(userIdx, request, fileOriginName, fileFormat, actualFileSize, finalObjectKey);
+        long actualFileSize;
+        try {
+            actualFileSize = uploadObjectStorageService.resolveCompletedObjectSize(finalObjectKey, expectedFileSize);
+            long storedFileSize = actualFileSize;
+            transactionTemplate.execute(status -> {
+                persistCompletedUpload(
+                        userIdx,
+                        request,
+                        fileOriginName,
+                        fileFormat,
+                        storedFileSize,
+                        finalObjectKey,
+                        chunkObjectKeys,
+                        uploadPlan
+                );
+                return null;
+            });
+        } catch (RuntimeException exception) {
+            UploadObjectCleanupScheduler.deleteQuietly(uploadObjectStorageService, List.of(finalObjectKey));
+            UploadObjectCleanupScheduler.deleteQuietly(uploadObjectStorageService, chunkObjectKeys);
+            releaseUploadQuota(finalObjectKey);
+            throw exception;
+        }
         releaseUploadQuota(finalObjectKey);
-        deleteObjectKeys(chunkObjectKeys);
-        deleteReplacedObject(replacedObjectKey, finalObjectKey);
-        storageAnalyticsService.recordIngress(
+        recordDriveIngressQuietly(
                 userIdx,
-                DataTransferSource.DRIVE_UPLOAD,
                 DataTransferStatus.COMPLETED,
                 actualFileSize,
                 finalObjectKey,
@@ -185,20 +178,62 @@ public class UploadService {
 
         return UploadDto.CompleteRes.builder()
                 .fileOriginName(fileOriginName)
-                .fileSaveName(extractFileSaveName(finalObjectKey))
+                .fileSaveName(UploadObjectRules.extractFileSaveName(finalObjectKey))
                 .fileFormat(fileFormat)
                 .finalObjectKey(finalObjectKey)
                 .build();
     }
 
-    @Transactional
+    private CompleteUploadPlan prepareCompleteUpload(Long userIdx, String finalObjectKey, Long replaceFileId) {
+        Optional<FileInfo> existing = fileUpDownloadRepository.findByUser_IdxAndFileSavePath(userIdx, finalObjectKey);
+        if (existing.isPresent()) {
+            return new CompleteUploadPlan(existing, null, null, 0L);
+        }
+
+        FileInfo replaceTarget = resolveReplaceTarget(userIdx, replaceFileId).orElse(null);
+        String replacedObjectKey = replaceTarget != null ? replaceTarget.getFileSavePath() : null;
+        long replacedBytes = replaceTarget != null
+                ? Math.max(0L, replaceTarget.getFileSize() == null ? 0L : replaceTarget.getFileSize())
+                : 0L;
+        return new CompleteUploadPlan(Optional.empty(), replaceFileId, replacedObjectKey, replacedBytes);
+    }
+
+    private void persistCompletedUpload(
+            Long userIdx,
+            UploadDto.CompleteReq request,
+            String fileOriginName,
+            String fileFormat,
+            long actualFileSize,
+            String finalObjectKey,
+            List<String> chunkObjectKeys,
+            CompleteUploadPlan uploadPlan
+    ) {
+        CompleteUploadPlan safePlan = uploadPlan == null
+                ? new CompleteUploadPlan(Optional.empty(), null, null, 0L)
+                : uploadPlan;
+        UploadObjectCleanupScheduler.deleteAfterRollback(uploadObjectStorageService, List.of(finalObjectKey));
+        UploadObjectCleanupScheduler.deleteAfterRollback(uploadObjectStorageService, chunkObjectKeys);
+        ensureWithinStorageQuota(userIdx, Math.max(0L, actualFileSize - safePlan.replacedBytes()), finalObjectKey);
+
+        if (safePlan.replaceFileId() != null) {
+            FileInfo replaceTarget = resolveReplaceTarget(userIdx, safePlan.replaceFileId())
+                    .orElseThrow(() -> BaseException.from(BaseResponseStatus.REQUEST_ERROR));
+            fileVersionService.snapshotCurrent(replaceTarget);
+        }
+        saveFinalFileInfo(userIdx, request, fileOriginName, fileFormat, actualFileSize, finalObjectKey);
+        UploadObjectCleanupScheduler.deleteAfterCommit(uploadObjectStorageService, chunkObjectKeys);
+        if (safePlan.replaceFileId() != null) {
+            deleteReplacedObjectAfterCommit(safePlan.replacedObjectKey(), finalObjectKey);
+        }
+    }
+
     public UploadDto.ActionRes abort(Long userIdx, UploadDto.AbortReq request) {
         validateUser(userIdx);
         cleanupExpiredUploadReservations();
 
         List<String> cleanupTargets = normalizeAbortTargets(userIdx, request);
         recordAbortedUploadBytes(userIdx, cleanupTargets, request != null ? request.getFinalObjectKey() : null);
-        deleteObjectKeys(cleanupTargets);
+        uploadObjectStorageService.deleteObjectKeys(cleanupTargets);
         releaseUploadQuota(request != null ? request.getFinalObjectKey() : null);
 
         return UploadDto.ActionRes.builder()
@@ -212,18 +247,19 @@ public class UploadService {
     }
 
     public long getPendingReservedBytes() {
-        cleanupExpiredUploadReservations();
-        return uploadReservations.values().stream()
-                .mapToLong(UploadReservation::reservedBytes)
-                .sum();
+        try {
+            return uploadReservationStore.totalReservedBytes();
+        } catch (RuntimeException ignored) {
+            return 0L;
+        }
     }
 
     // 업로드를 요청한 사용자의 ID(userIdx)와, 프론트에서 보낸 업로드 초기 요청 정보(request)를 받아서, 업로드용 응답 목록(List<ChunkRes>)을 만드는 메서드
     private List<UploadDto.ChunkRes> buildInitResponses(Long userIdx, UploadDto.InitReq request) {
         // 파일 원본이름 가져오기
-        String fileOriginName = normalizeOriginName(request.getFileOriginName());
+        String fileOriginName = UploadObjectRules.normalizeOriginName(request.getFileOriginName());
         // 파일 포멧 가져오기
-        String fileFormat = normalizeFormat(request.getFileFormat(), fileOriginName);
+        String fileFormat = UploadObjectRules.normalizeFormat(request.getFileFormat(), fileOriginName);
         // 파일 경로 정리해서 가져오기(공백제거)
         String relativePath = normalizeRelativePath(request.getRelativePath(), fileOriginName);
         //
@@ -252,8 +288,8 @@ public class UploadService {
                     .parentId(parentId)
                     .relativePath(relativePath)
                     .lastModified(lastModified)
-                    .presignedUploadUrl(generatePresignedUploadUrl(objectKey))
-                    .presignedUrlExpiresIn(minioProperties.getPresignedUrlExpirySeconds())
+                    .presignedUploadUrl(uploadObjectStorageService.generatePresignedUploadUrl(objectKey))
+                    .presignedUrlExpiresIn(uploadObjectStorageService.getPresignedUrlExpirySeconds())
                     .objectKey(objectKey)
                     .finalObjectKey(finalObjectKey)
                     .partitionIndex(index + 1)
@@ -333,51 +369,55 @@ public class UploadService {
 
     private long resolveUsedStorageBytes(Long userIdx) {
         Long usedBytes = fileUpDownloadRepository.sumStoredFileBytesByUser(userIdx, FileNodeType.FILE);
-        return Math.max(0L, usedBytes == null ? 0L : usedBytes);
+        return Math.max(0L, usedBytes == null ? 0L : usedBytes) + fileVersionLifecycleService.sumStoredVersionBytes(userIdx);
     }
 
     private long resolveReservedStorageBytes(Long userIdx, String ignoredReservationKey) {
-        cleanupExpiredUploadReservations();
-
-        return uploadReservations.entrySet().stream()
-                .filter(entry -> !Objects.equals(entry.getKey(), ignoredReservationKey))
-                .map(Map.Entry::getValue)
-                .filter(reservation -> Objects.equals(reservation.userIdx(), userIdx))
-                .mapToLong(UploadReservation::reservedBytes)
-                .sum();
+        return uploadReservationStore.reservedBytes(userIdx, ignoredReservationKey);
     }
 
-    private void reserveUploadQuota(Long userIdx, String finalObjectKey, long fileSize) {
-        if (finalObjectKey == null || finalObjectKey.isBlank() || fileSize <= 0) {
+    private void reservePendingUploadQuota(
+            Long userIdx,
+            StoragePlanService.StorageQuota storageQuota,
+            List<PendingUploadReservation> pendingReservations
+    ) {
+        if (pendingReservations == null || pendingReservations.isEmpty()) {
             return;
         }
 
-        uploadReservations.put(finalObjectKey, new UploadReservation(
+        List<UploadReservationStore.ReservationCandidate> candidates = pendingReservations.stream()
+                .filter(Objects::nonNull)
+                .map(reservation -> new UploadReservationStore.ReservationCandidate(
+                        reservation.finalObjectKey(),
+                        reservation.fileSize()
+                ))
+                .toList();
+        long expiresAtMillis = System.currentTimeMillis()
+                + ((long) uploadObjectStorageService.getPresignedUrlExpirySeconds() + RESERVATION_GRACE_SECONDS) * 1000L;
+        long usedBytes = resolveUsedStorageBytes(userIdx);
+        boolean reserved = uploadReservationStore.reserve(
                 userIdx,
-                fileSize,
-                System.currentTimeMillis() + ((long) minioProperties.getPresignedUrlExpirySeconds() + RESERVATION_GRACE_SECONDS) * 1000L
-        ));
+                storageQuota.totalQuotaBytes(),
+                usedBytes,
+                candidates,
+                expiresAtMillis
+        );
+
+        if (!reserved) {
+            throw BaseException.from(BaseResponseStatus.STORAGE_QUOTA_EXCEEDED);
+        }
     }
 
     private void releaseUploadQuota(String finalObjectKey) {
-        if (finalObjectKey == null || finalObjectKey.isBlank()) {
-            return;
+        try {
+            uploadReservationStore.release(finalObjectKey);
+        } catch (RuntimeException ignored) {
         }
-
-        uploadReservations.remove(finalObjectKey.trim());
     }
 
-    // 업로드 예약 목록에서 "만료된 예약"을 삭제하는 메서드
     private void cleanupExpiredUploadReservations() {
-        // 현재 시간을 밀리초(ms) 단위로 가져온다
-        long now = System.currentTimeMillis();
-        // 업로드 예약 정보를 저장하는 Map 참고로 final이어도 Map 안의 데이터는 변경할 수 있다.
-        // final은 객체 내부 데이터가 아니라 참조(레퍼런스)를 고정한다.
-
-        // 예약 목록을 검사해서 만료시간 <= 현재시간인 예약을 모두 삭제, 즉 시간이 지나 만료된 업로드 용량 예약을 자동으로 삭제하는 코드다.
-        uploadReservations.entrySet().removeIf(entry -> entry.getValue().expiresAtMillis() <= now);
+        uploadReservationStore.cleanupExpiredReservations();
     }
-
     private int calculatePartitionCount(long fileSize) {
         if (fileSize <= PARTITION_SIZE_BYTES) {
             return 1;
@@ -406,36 +446,6 @@ public class UploadService {
                 + String.format("%05d", partitionCount)
                 + "."
                 + fileFormat;
-    }
-
-    private String normalizeOriginName(String originName) {
-        String normalized = originName == null ? "" : originName.trim();
-        if (normalized.isEmpty()) {
-            throw BaseException.from(BaseResponseStatus.FILE_NAME_WRONG);
-        }
-        return normalized;
-    }
-
-    private String normalizeFormat(String rawFormat, String originName) {
-        String format = rawFormat;
-        if (format == null || format.isBlank()) {
-            int idx = originName.lastIndexOf('.');
-            if (idx <= 0 || idx >= originName.length() - 1) {
-                throw BaseException.from(BaseResponseStatus.FILE_FORMAT_NOTHING);
-            }
-            format = originName.substring(idx + 1);
-        }
-
-        format = format.trim();
-        if (format.startsWith(".")) {
-            format = format.substring(1);
-        }
-
-        if (format.isEmpty() || format.length() > 20 || !format.matches("^[A-Za-z0-9]+$")) {
-            throw BaseException.from(BaseResponseStatus.FILE_FORMAT_WRONG);
-        }
-
-        return format.toLowerCase();
     }
 
     private String normalizeContentType(String contentType) {
@@ -467,28 +477,6 @@ public class UploadService {
         return parentId == null || parentId <= 0 ? null : parentId;
     }
 
-    private String normalizeOwnedObjectKey(Long userIdx, String objectKey) {
-        String normalized = objectKey == null ? "" : objectKey.trim();
-        if (normalized.isEmpty() || !normalized.startsWith(userIdx + "/")) {
-            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
-        }
-        return normalized;
-    }
-
-    private List<String> normalizeOwnedObjectKeys(Long userIdx, List<String> objectKeys) {
-        if (objectKeys == null) {
-            return List.of();
-        }
-
-        return objectKeys.stream()
-                .filter(Objects::nonNull)
-                .map(String::trim)
-                .filter(value -> !value.isBlank())
-                .map(value -> normalizeOwnedObjectKey(userIdx, value))
-                .distinct()
-                .toList();
-    }
-
     private List<String> normalizeAbortTargets(Long userIdx, UploadDto.AbortReq request) {
         if (request == null) {
             return List.of();
@@ -496,110 +484,15 @@ public class UploadService {
 
         List<String> cleanupTargets = new ArrayList<>();
         if (request.getFinalObjectKey() != null && !request.getFinalObjectKey().isBlank()) {
-            String finalObjectKey = normalizeOwnedObjectKey(userIdx, request.getFinalObjectKey());
+            String finalObjectKey = UploadObjectRules.normalizeOwnedObjectKey(userIdx, request.getFinalObjectKey());
             boolean persistedFile = fileUpDownloadRepository.findByUser_IdxAndFileSavePath(userIdx, finalObjectKey).isPresent();
             if (!persistedFile) {
                 cleanupTargets.add(finalObjectKey);
             }
         }
 
-        cleanupTargets.addAll(normalizeOwnedObjectKeys(userIdx, request.getChunkObjectKeys()));
+        cleanupTargets.addAll(UploadObjectRules.normalizeOwnedObjectKeys(userIdx, request.getChunkObjectKeys()));
         return cleanupTargets.stream().distinct().toList();
-    }
-
-    private String generatePresignedUploadUrl(String objectKey) {
-        try {
-            return minioPresignedUrlService.getPresignedObjectUrl(
-                    GetPresignedObjectUrlArgs.builder()
-                            .method(Method.PUT)
-                            .bucket(minioProperties.getBucket_cloud())
-                            .object(objectKey)
-                            .expiry(minioProperties.getPresignedUrlExpirySeconds())
-                            .build()
-            );
-        } catch (Exception e) {
-            throw BaseException.from(BaseResponseStatus.FILE_UPLOADURL_FAIL);
-        }
-    }
-
-    private boolean objectExists(String objectKey) {
-        try {
-            minioClient.statObject(
-                    StatObjectArgs.builder()
-                            .bucket(minioProperties.getBucket_cloud())
-                            .object(objectKey)
-                            .build()
-            );
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    private void ensureUploadedObjectExists(String objectKey) {
-        if (!objectExists(objectKey)) {
-            throw BaseException.from(BaseResponseStatus.FILE_UPLOADURL_FAIL);
-        }
-    }
-
-    private void ensureAllUploaded(List<String> chunkObjectKeys) {
-        boolean missingChunk = chunkObjectKeys.stream().anyMatch(objectKey -> !objectExists(objectKey));
-        if (missingChunk) {
-            throw BaseException.from(BaseResponseStatus.FILE_UPLOADURL_FAIL);
-        }
-    }
-
-    private void composeFinalObject(String finalObjectKey, List<String> chunkObjectKeys) {
-        try {
-            List<ComposeSource> sources = chunkObjectKeys.stream()
-                    .map(objectKey -> ComposeSource.builder()
-                            .bucket(minioProperties.getBucket_cloud())
-                            .object(objectKey)
-                            .build())
-                    .toList();
-
-            minioClient.composeObject(
-                    ComposeObjectArgs.builder()
-                            .bucket(minioProperties.getBucket_cloud())
-                            .object(finalObjectKey)
-                            .sources(sources)
-                            .build()
-            );
-        } catch (Exception e) {
-            throw BaseException.from(BaseResponseStatus.FILE_UPLOADURL_FAIL);
-        }
-    }
-
-    private void deleteObjectKeys(List<String> objectKeys) {
-        if (objectKeys == null || objectKeys.isEmpty()) {
-            return;
-        }
-
-        try {
-            List<DeleteObject> deleteTargets = objectKeys.stream()
-                    .filter(Objects::nonNull)
-                    .map(String::trim)
-                    .filter(key -> !key.isBlank())
-                    .distinct()
-                    .map(DeleteObject::new)
-                    .toList();
-
-            if (deleteTargets.isEmpty()) {
-                return;
-            }
-
-            Iterable<Result<io.minio.messages.DeleteError>> results = minioClient.removeObjects(
-                    RemoveObjectsArgs.builder()
-                            .bucket(minioProperties.getBucket_cloud())
-                            .objects(deleteTargets)
-                            .build()
-            );
-
-            for (Result<io.minio.messages.DeleteError> result : results) {
-                result.get();
-            }
-        } catch (Exception ignored) {
-        }
     }
 
     private FileInfo saveFinalFileInfo(
@@ -632,29 +525,21 @@ public class UploadService {
         return Optional.of(target);
     }
 
-    private void deleteReplacedObject(String replacedObjectKey, String finalObjectKey) {
+    private void deleteReplacedObjectAfterCommit(String replacedObjectKey, String finalObjectKey) {
         if (replacedObjectKey == null || replacedObjectKey.isBlank() || Objects.equals(replacedObjectKey, finalObjectKey)) {
             return;
         }
-        deleteObjectKeys(List.of(replacedObjectKey));
+        UploadObjectCleanupScheduler.deleteAfterCommit(uploadObjectStorageService, List.of(replacedObjectKey));
     }
 
-    private String extractFileSaveName(String finalObjectKey) {
-        int separatorIndex = finalObjectKey.lastIndexOf('/');
-        if (separatorIndex < 0 || separatorIndex >= finalObjectKey.length() - 1) {
-            return finalObjectKey;
-        }
-        return finalObjectKey.substring(separatorIndex + 1);
-    }
     private void recordAbortedUploadBytes(Long userIdx, List<String> objectKeys, String finalObjectKey) {
-        long uploadedBytes = sumExistingObjectSizes(objectKeys);
+        long uploadedBytes = uploadObjectStorageService.sumExistingObjectSizes(objectKeys);
         if (uploadedBytes <= 0L) {
             return;
         }
 
-        storageAnalyticsService.recordIngress(
+        recordDriveIngressQuietly(
                 userIdx,
-                DataTransferSource.DRIVE_UPLOAD,
                 DataTransferStatus.ABORTED,
                 uploadedBytes,
                 finalObjectKey,
@@ -662,52 +547,27 @@ public class UploadService {
         );
     }
 
-    private long sumExistingObjectSizes(List<String> objectKeys) {
-        if (objectKeys == null || objectKeys.isEmpty()) {
-            return 0L;
-        }
-
-        return objectKeys.stream()
-                .filter(Objects::nonNull)
-                .map(String::trim)
-                .filter(value -> !value.isBlank())
-                .distinct()
-                .mapToLong(this::statObjectSize)
-                .sum();
-    }
-
-    private long statObjectSize(String objectKey) {
-        if (objectKey == null || objectKey.isBlank()) {
-            return 0L;
-        }
-
+    private void recordDriveIngressQuietly(
+            Long userIdx,
+            DataTransferStatus status,
+            long bytes,
+            String objectKey,
+            String referenceLabel
+    ) {
         try {
-            return Math.max(0L, minioClient.statObject(
-                    StatObjectArgs.builder()
-                            .bucket(minioProperties.getBucket_cloud())
-                            .object(objectKey)
-                            .build()
-            ).size());
-        } catch (Exception exception) {
-            return 0L;
+            storageAnalyticsService.recordIngress(
+                    userIdx,
+                    DataTransferSource.DRIVE_UPLOAD,
+                    status,
+                    bytes,
+                    objectKey,
+                    referenceLabel
+            );
+        } catch (RuntimeException ignored) {
         }
-    }
-
-
-    // 업로드 예정 파일의 용량 예약 정보를 저장하는 레코드임
-    // finalObjectKey = 최종 저장될 파일의 object key(MinIO저장 경로) ,fileSize = 해당 파일의 크기
-    // 용도는 "이 파일이 업로드될 예정이니 이 용량을 예약해 두자" 라는 의미
-    private long resolveCompletedObjectSize(String finalObjectKey, long expectedFileSize) {
-        long actualFileSize = statObjectSize(finalObjectKey);
-        if (actualFileSize > 0L) {
-            return actualFileSize;
-        }
-        return Math.max(0L, expectedFileSize);
     }
 
     private record PendingUploadReservation(String finalObjectKey, long fileSize) {
     }
 
-    private record UploadReservation(Long userIdx, long reservedBytes, long expiresAtMillis) {
-    }
 }

@@ -64,6 +64,12 @@ public class ShareController {
         return ResponseEntity.ok(shareService.sentSharedFileList(userDetails != null ? userDetails.getIdx() : 0L));
     }
 
+    @GetMapping("/audit")
+    @Operation(summary = "List share audit logs", description = "Returns recent share audit events for the current user.")
+    public ResponseEntity<List<ShareDto.ShareAuditRes>> shareAuditList(
+            @AuthenticationPrincipal AuthUserDetails userDetails) {
+        return ResponseEntity.ok(shareService.shareAuditList(userDetails != null ? userDetails.getIdx() : 0L));
+    }
     @GetMapping("/{fileIdx}")
     @Operation(summary = "Get share info", description = "Returns current share targets for a specific file.")
     public ResponseEntity<List<ShareDto.ShareInfoRes>> getShareInfo(
@@ -82,7 +88,10 @@ public class ShareController {
                 request != null ? request.fileIdxList() : null,
                 request != null ? request.recipientEmail() : null,
                 request != null ? request.permission() : null,
-                request != null ? request.permissions() : null
+                request != null ? request.permissions() : null,
+                request != null ? request.expiresAt() : null,
+                request != null ? request.downloadLimit() : null,
+                request != null ? request.sharePassword() : null
         ));
     }
 
@@ -179,7 +188,8 @@ public class ShareController {
         return ResponseEntity.ok(shareService.saveSharedFileToDrive(
                 userDetails != null ? userDetails.getIdx() : 0L,
                 fileIdx,
-                request != null ? request.parentId() : null
+                request != null ? request.parentId() : null,
+                request != null ? request.sharePassword() : null
         ));
     }
 
@@ -187,10 +197,12 @@ public class ShareController {
     @Operation(summary = "Preview shared text file", description = "Returns a text preview for a received shared file.")
     public ResponseEntity<FileInfoDto.TextPreviewRes> getSharedTextPreview(
             @AuthenticationPrincipal AuthUserDetails userDetails,
-            @PathVariable Long fileIdx) {
+            @PathVariable Long fileIdx,
+            @RequestHeader(value = "X-FileInNOut-Share-Password", required = false) String sharePasswordHeader) {
         return ResponseEntity.ok(shareService.getSharedTextPreview(
                 userDetails != null ? userDetails.getIdx() : 0L,
-                fileIdx
+                fileIdx,
+                sharePasswordHeader
         ));
     }
 
@@ -198,10 +210,11 @@ public class ShareController {
     @Operation(summary = "Download shared file", description = "Downloads a received shared file through the backend.")
     public ResponseEntity<byte[]> downloadSharedFile(
             @AuthenticationPrincipal AuthUserDetails userDetails,
-            @PathVariable Long fileIdx
+            @PathVariable Long fileIdx,
+            @RequestHeader(value = "X-FileInNOut-Share-Password", required = false) String sharePasswordHeader
     ) {
         return buildDownloadResponse(
-                shareService.downloadSharedFile(userDetails != null ? userDetails.getIdx() : 0L, fileIdx)
+                shareService.downloadSharedFile(userDetails != null ? userDetails.getIdx() : 0L, fileIdx, sharePasswordHeader)
         );
     }
 
@@ -209,10 +222,11 @@ public class ShareController {
     @Operation(summary = "Get shared download link", description = "Returns an attachment-oriented presigned URL for a shared file.")
     public ResponseEntity<FileCommonDto.FileDownloadUrlRes> getSharedDownloadLink(
             @AuthenticationPrincipal AuthUserDetails userDetails,
-            @PathVariable Long fileIdx
+            @PathVariable Long fileIdx,
+            @RequestHeader(value = "X-FileInNOut-Share-Password", required = false) String sharePasswordHeader
     ) {
         return ResponseEntity.ok(new FileCommonDto.FileDownloadUrlRes(
-                shareService.getSharedFileDownloadUrl(userDetails != null ? userDetails.getIdx() : 0L, fileIdx)
+                shareService.getSharedFileDownloadUrl(userDetails != null ? userDetails.getIdx() : 0L, fileIdx, sharePasswordHeader)
         ));
     }
 
