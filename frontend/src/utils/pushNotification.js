@@ -9,10 +9,15 @@ export const registerPushNotification = async () => {
 
   registerPushNotificationPromise = (async () => {
     try {
-      await postApi.subscribeWebPush()
-      console.log('푸시 알림 등록 성공')
+      const result = await postApi.subscribeWebPush()
+      if (!result) {
+        console.info('Web push registration skipped.')
+        return null
+      }
+      console.info('Web push registration completed.')
+      return result
     } catch (error) {
-      console.error('푸시 알림 등록 실패:', error)
+      console.error('Web push registration failed:', error)
       throw error
     } finally {
       registerPushNotificationPromise = null

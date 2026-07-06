@@ -151,22 +151,6 @@ const router = createRouter({
 
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
-  
-  // Restore OAuth callback tokens before protected-route checks.
-  const tokenFromUrl = to.query.accessToken || to.query.token
-  const accessTokenFromUrl = Array.isArray(tokenFromUrl) ? tokenFromUrl[0] : tokenFromUrl
-  if (accessTokenFromUrl) {
-    authStore.login(accessTokenFromUrl)
-    const cleanQuery = { ...to.query }
-    delete cleanQuery.accessToken
-    delete cleanQuery.token
-    return next({
-      path: to.path,
-      query: cleanQuery,
-      hash: to.hash,
-      replace: true,
-    })
-  }
 
   // Protected routes try refresh-token based session restore before redirecting.
   const needsSession = Boolean(to.meta.requiresAuth || to.meta.requiresAdmin)
@@ -228,8 +212,7 @@ router.beforeEach(async (to, from, next) => {
 const fetchWorkspaceData = async (to, next) => {
   try {
     const result = await loadpost.read_post(to.params.id);
-    console.log('라우터 가드에서 받은 데이터:', result);
-
+    if (import.meta.env.DEV) console.debug('라우터 가드에서 받은 데이터:', result);
     if (result && result.title !== undefined) {
       to.meta.initialData = {
         idx: result.idx,

@@ -47,9 +47,11 @@
 import { ref, onMounted, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import postApi from '@/api/postApi.js';
+import { useAuthStore } from '@/stores/useAuthStore.js';
 
 const route = useRoute();
 const router = useRouter();
+const authStore = useAuthStore();
 
 const status = ref('loading');
 const message = ref('');
@@ -63,9 +65,9 @@ onMounted(async () => {
   const type = route.query.type; 
   requestType.value = type;
   
-  const accessToken = localStorage.getItem('ACCESS_TOKEN');
+  const hasSession = await authStore.ensureSession();
 
-  if (!accessToken) {
+  if (!hasSession) {
     status.value = 'error';
     errorMessage.value = '로그인이 필요한 서비스입니다. 로그인 후 이메일의 링크를 다시 클릭해주세요.';
     return;

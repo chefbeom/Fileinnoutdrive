@@ -1,0 +1,405 @@
+.workspace-calendar-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.workspace-calendar-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.workspace-calendar-filters button {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.64);
+  color: #64748b;
+  cursor: pointer;
+  padding: 7px 5px;
+  text-align: center;
+}
+
+.workspace-calendar-filters button span,
+.workspace-calendar-filters button strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-calendar-filters button span {
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.workspace-calendar-filters button strong {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.workspace-calendar-filter--active {
+  border-color: rgba(37, 99, 235, 0.35) !important;
+  background: rgba(37, 99, 235, 0.1) !important;
+  color: #1d4ed8 !important;
+}
+
+.workspace-calendar-groups {
+  display: grid;
+  gap: 10px;
+}
+
+.workspace-calendar-group {
+  display: grid;
+  gap: 7px;
+  border-left: 2px solid rgba(37, 99, 235, 0.28);
+  padding-left: 9px;
+}
+
+.workspace-calendar-group--overdue {
+  border-left-color: rgba(220, 38, 38, 0.42);
+}
+
+.workspace-calendar-group__header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.workspace-calendar-group__header strong {
+  display: inline-flex;
+  min-width: 24px;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.12);
+  color: #475569;
+  padding: 2px 7px;
+  font-size: 10px;
+}
+
+.workspace-calendar-item {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.64);
+  padding: 8px;
+}
+
+.workspace-calendar-item:hover,
+.workspace-calendar-item:focus-within {
+  border-color: rgba(37, 99, 235, 0.28);
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.workspace-calendar-item--overdue {
+  border-color: rgba(220, 38, 38, 0.28);
+  background: rgba(254, 242, 242, 0.78);
+}
+
+.workspace-calendar-item--done {
+  opacity: 0.68;
+}
+
+.workspace-calendar-item__toggle,
+.workspace-calendar-item__icon {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 9px;
+  background: rgba(100, 116, 139, 0.12);
+  color: #475569;
+  font-size: 12px;
+}
+
+.workspace-calendar-item__toggle {
+  cursor: pointer;
+}
+
+.workspace-calendar-item__toggle:hover,
+.workspace-calendar-item__toggle:focus-visible {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  outline: none;
+}
+
+.workspace-calendar-item__toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.workspace-calendar-item__main {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) 14px;
+  align-items: start;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: var(--editor-text);
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.workspace-calendar-item__body {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.workspace-calendar-item__body strong,
+.workspace-calendar-item__body small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-calendar-item__body strong {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.workspace-calendar-item--done .workspace-calendar-item__body strong {
+  text-decoration: line-through;
+}
+
+.workspace-calendar-item__body small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.workspace-calendar-item__meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.workspace-calendar-item__meta > span:not(.workspace-property-badge) {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.12);
+  color: #475569;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.workspace-calendar-item__main > i {
+  color: #94a3b8;
+  font-size: 11px;
+  margin-top: 8px;
+}
+
+.workspace-inbox-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.workspace-inbox-filters {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.workspace-inbox-filters button {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.64);
+  color: #64748b;
+  cursor: pointer;
+  padding: 7px 5px;
+  text-align: center;
+}
+
+.workspace-inbox-filters button span,
+.workspace-inbox-filters button strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-inbox-filters button span {
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.workspace-inbox-filters button strong {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.workspace-inbox-filter--active {
+  border-color: rgba(37, 99, 235, 0.35) !important;
+  background: rgba(37, 99, 235, 0.1) !important;
+  color: #1d4ed8 !important;
+}
+
+.workspace-inbox-list {
+  display: grid;
+  gap: 8px;
+}
+
+.workspace-inbox-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.62);
+  padding: 8px;
+}
+
+.workspace-inbox-item:hover,
+.workspace-inbox-item:focus-within {
+  border-color: rgba(37, 99, 235, 0.28);
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.workspace-inbox-item--mine {
+  border-color: rgba(37, 99, 235, 0.28);
+}
+
+.workspace-inbox-item--overdue {
+  border-color: rgba(220, 38, 38, 0.28);
+  background: rgba(254, 242, 242, 0.78);
+}
+
+.workspace-inbox-item--done {
+  opacity: 0.68;
+}
+
+.workspace-inbox-item__main {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) 14px;
+  align-items: start;
+  gap: 9px;
+  border: none;
+  background: transparent;
+  color: var(--editor-text);
+  cursor: pointer;
+  padding: 1px;
+  text-align: left;
+}
+
+.workspace-inbox-item__toggle {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 9px;
+  background: rgba(100, 116, 139, 0.12);
+  color: #475569;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.workspace-inbox-item__toggle:hover,
+.workspace-inbox-item__toggle:focus-visible {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  outline: none;
+}
+
+.workspace-inbox-item__toggle:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.workspace-inbox-item--done .workspace-inbox-item__toggle {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+}
+
+.workspace-inbox-item--overdue .workspace-inbox-item__toggle {
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
+}
+
+.workspace-inbox-item__body {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.workspace-inbox-item__body strong,
+.workspace-inbox-item__body small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-inbox-item__body strong {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.workspace-inbox-item--done .workspace-inbox-item__body strong {
+  text-decoration: line-through;
+}
+
+.workspace-inbox-item__body small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.workspace-inbox-item__meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.workspace-inbox-item__meta span {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.12);
+  color: #475569;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.workspace-inbox-item__meta--danger {
+  background: rgba(220, 38, 38, 0.12) !important;
+  color: #b91c1c !important;
+}
+
+.workspace-inbox-item__main > i {
+  color: #94a3b8;
+  font-size: 11px;
+  margin-top: 8px;
+}
+

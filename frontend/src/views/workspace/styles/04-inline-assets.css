@@ -1,0 +1,203 @@
+.asset-action-btn {
+  padding: 9px 14px;
+  background: #2563eb;
+  color: white;
+  border-radius: 10px;
+  cursor: pointer;
+  border: none;
+  font-weight: 700;
+  z-index: 10;
+}
+
+.asset-action-btn:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.asset-action-btn--secondary { background: #0f172a; }
+.workspace-assets {
+  padding: 20px;
+  border-bottom: 1px solid var(--editor-border);
+}
+
+.workspace-assets__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.workspace-assets__summary,
+.workspace-assets__hint {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.workspace-assets__summary--plain,
+.workspace-assets__hint--plain { display: block; }
+
+.workspace-assets__summary:not(.workspace-assets__summary--plain) { display: none; }
+
+.workspace-assets__hint:not(.workspace-assets__hint--plain) { font-size: 0; }
+.workspace-assets__hint:not(.workspace-assets__hint--plain)::before {
+  content: "처음 파일을 추가하면 워크스페이스가 먼저 저장됩니다.";
+  font-size: 13px;
+}
+
+.workspace-assets__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.workspace-assets__actions .asset-action-btn:first-of-type { display: none; }
+
+.workspace-assets__actions .asset-action-btn--secondary { font-size: 0; }
+.workspace-assets__actions .asset-action-btn--secondary::after {
+  content: "파일 추가";
+  font-size: 14px;
+}
+
+.workspace-assets__error {
+  margin-top: 12px;
+  color: #dc2626;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.workspace-assets__loading,
+.workspace-assets__empty {
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px dashed var(--editor-border);
+  border-radius: 14px;
+  font-size: 13px;
+  color: #64748b;
+  text-align: center;
+}
+
+.workspace-assets__group,
+.workspace-assets__empty { display: none; }
+
+
+.workspace-assets__loading { font-size: 0; }
+.workspace-assets__loading::before {
+  content: "첨부 파일을 불러오는 중입니다...";
+  font-size: 13px;
+}
+
+.workspace-assets__group-header {
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.workspace-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.workspace-image-card,
+.workspace-file-card-wrap { position: relative; }
+
+.workspace-image-card {
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid var(--editor-border);
+  background: color-mix(in srgb, var(--editor-bg) 96%, #eff6ff 4%);
+}
+
+.workspace-image-card__preview {
+  display: block;
+  aspect-ratio: 16 / 11;
+  overflow: hidden;
+}
+
+.workspace-image-card__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.workspace-image-card__meta,
+.workspace-file-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+}
+
+.workspace-image-card__meta strong,
+.workspace-file-card__meta strong {
+  font-size: 13px;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.workspace-image-card__meta span,
+.workspace-file-card__meta span {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.workspace-file-list { display: grid; gap: 12px; }
+
+.workspace-file-card {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+  border: 1px solid var(--editor-border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--editor-bg) 97%, #f8fafc 3%);
+  padding: 12px 14px;
+  cursor: pointer;
+}
+
+.workspace-file-card__icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(37, 99, 235, 0.12);
+  color: #2563eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 18px;
+}
+
+.asset-remove-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(15, 23, 42, 0.72);
+  color: white;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.asset-remove-btn--file { top: 12px; right: 12px; }
+.asset-remove-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 900px) {
+  .workspace-assets__header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workspace-assets__actions {
+    justify-content: flex-start;
+  }
+}

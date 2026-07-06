@@ -2,11 +2,28 @@
 import { computed, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { updateSettingsProfile, uploadSettingsProfileImage } from "@/api/featerApi.js";
-import { STORAGE_ADDON_PRODUCTS, findMembershipProduct, formatKrw } from "@/constants/billingProducts.js";
+import { STORAGE_ADDON_PRODUCTS, formatKrw } from "@/constants/billingProducts.js";
 import { useAuthStore } from "@/stores/useAuthStore.js";
 import { useFileStore } from "@/stores/useFileStore.js";
 import { formatBytes } from "@/utils/formatBytes.js";
 import GroupManagerPanel from "@/components/group/GroupManagerPanel.vue";
+import {
+  GROUP_SECTIONS as groupSections,
+  LOCALE_OPTIONS as localeOptions,
+  PROFILE_TABS as tabs,
+  REGION_OPTIONS as regionOptions,
+  buildProfileImageFeedback,
+  buildProfileUpdatePayload,
+  buildSavedAuthUser,
+  createDefaultProfileForm,
+  formatProfileDate as formatDate,
+  getProfileErrorMessage,
+  getProfileInitials,
+  getProfileMembershipProduct,
+  getStorageUsageWidth,
+  toProfileForm,
+  validateProfileImageFile,
+} from "./profileModalViewModel.js";
 
 const props = defineProps({
   isOpen: {
@@ -39,97 +56,12 @@ const saveError = ref("");
 const imageFeedback = ref("");
 const profileImageInput = ref(null);
 
-const tabs = [
-  { id: "group", label: "그룹", icon: "fa-solid fa-user-group" },
-  { id: "profile", label: "프로필", icon: "fa-solid fa-circle-user" },
-  { id: "security", label: "보안", icon: "fa-solid fa-shield-halved" },
-  { id: "notification", label: "알림", icon: "fa-solid fa-bell" },
-  { id: "language", label: "언어", icon: "fa-solid fa-globe" },
-  { id: "billing", label: "결제", icon: "fa-solid fa-wallet" },
-];
-
-const groupSections = [
-  { id: "requests", label: "요청 현황" },
-  { id: "invite", label: "새 연결 초대" },
-  { id: "create", label: "새 그룹 만들기" },
-  { id: "manage", label: "그룹 관리" },
-];
-
-const localeOptions = [
-  { code: "KO", label: "한국어" },
-  { code: "EN", label: "English" },
-  { code: "JA", label: "日本語" },
-];
-
-const regionOptions = [
-  { code: "KR", label: "대한민국" },
-  { code: "US", label: "United States" },
-  { code: "JP", label: "Japan" },
-];
-
-const resolveMembershipLabel = (membershipCode) => {
-  switch (String(membershipCode || "FREE").toUpperCase()) {
-    case "PLUS":
-      return "플러스 멤버십";
-    case "PREMIUM":
-      return "프리미엄 멤버십";
-    default:
-      return "기본 멤버십";
-  }
-};
-
-const createDefaultProfileForm = () => ({
-  displayName: "",
-  email: "",
-  role: "ROLE_USER",
-  localeCode: "KO",
-  regionCode: "KR",
-  marketingOptIn: true,
-  privateProfile: false,
-  emailNotification: true,
-  securityNotification: true,
-  profileImageUrl: "",
-  membershipCode: "FREE",
-  membershipLabel: "기본 멤버십",
-  storagePlanLabel: "기본 20GB",
-  storageQuotaBytes: 0,
-  storageBaseQuotaBytes: 0,
-  storageAddonBytes: 0,
-  joinedAt: null,
-  updatedAt: null,
-  emailVerified: false,
-});
 
 const profileForm = ref(createDefaultProfileForm());
 
 const syncForm = (profile) => {
   if (!profile) return;
-
-  const membershipCode = profile.membershipCode || "FREE";
-  const membershipProduct = findMembershipProduct(membershipCode);
-
-  profileForm.value = {
-    ...createDefaultProfileForm(),
-    displayName: profile.displayName || authStore.user?.name || "사용자",
-    email: profile.email || authStore.user?.email || "",
-    role: profile.role || authStore.user?.role || "ROLE_USER",
-    localeCode: profile.localeCode || "KO",
-    regionCode: profile.regionCode || "KR",
-    marketingOptIn: Boolean(profile.marketingOptIn),
-    privateProfile: Boolean(profile.privateProfile),
-    emailNotification: Boolean(profile.emailNotification),
-    securityNotification: Boolean(profile.securityNotification),
-    profileImageUrl: profile.profileImageUrl || "",
-    membershipCode,
-    membershipLabel: profile.membershipLabel || resolveMembershipLabel(membershipCode),
-    storagePlanLabel: profile.storagePlanLabel || membershipProduct.label,
-    storageQuotaBytes: Number(profile.storageQuotaBytes || 0),
-    storageBaseQuotaBytes: Number(profile.storageBaseQuotaBytes || 0),
-    storageAddonBytes: Number(profile.storageAddonBytes || 0),
-    joinedAt: profile.joinedAt || null,
-    updatedAt: profile.updatedAt || null,
-    emailVerified: Boolean(profile.emailVerified),
-  };
+  profileForm.value = toProfileForm(profile, authStore.user);
 };
 
 watch(
@@ -162,49 +94,15 @@ watch(
   },
 );
 
-const profileInitials = computed(() => {
-  const source = profileForm.value.displayName || authStore.user?.name || "User";
-  return (
-    source
-      .split(" ")
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((token) => token[0]?.toUpperCase() || "")
-      .join("") || "U"
-  );
-});
-
+const profileInitials = computed(() => getProfileInitials(profileForm.value, authStore.user));
 const storageSummary = computed(() => fileStore.storageSummary);
-const storageUsageWidth = computed(() => `${Math.min(100, Math.max(0, Number(storageSummary.value?.usagePercent || 0)))}%`);
-const currentMembershipProduct = computed(() => findMembershipProduct(profileForm.value.membershipCode));
-
-const formatDate = (value) => {
-  if (!value) return "정보 없음";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-
-  return new Intl.DateTimeFormat("ko-KR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date);
-};
+const storageUsageWidth = computed(() => getStorageUsageWidth(storageSummary.value));
+const currentMembershipProduct = computed(() => getProfileMembershipProduct(profileForm.value));
 
 const applySavedProfile = (savedProfile) => {
   syncForm(savedProfile);
 
-  const currentUser = authStore.user || {};
-  const updatedUser = {
-    ...currentUser,
-    name: savedProfile.displayName || currentUser.name,
-    userName: savedProfile.displayName || currentUser.userName,
-    email: savedProfile.email || currentUser.email,
-    role: savedProfile.role || currentUser.role,
-  };
-
-  authStore.user = updatedUser;
-  localStorage.setItem("USERINFO", JSON.stringify(updatedUser));
+  authStore.setUser(buildSavedAuthUser(authStore.user || {}, savedProfile));
 };
 
 const handleTabSelect = (tabId) => {
@@ -283,8 +181,9 @@ const handleProfileImageChange = async (event) => {
 
   if (!file) return;
 
-  if (!["image/png", "image/jpeg", "image/jpg"].includes(file.type)) {
-    imageFeedback.value = "PNG 또는 JPG 이미지만 업로드할 수 있습니다.";
+  const validation = validateProfileImageFile(file);
+  if (!validation.valid) {
+    if (validation.message) imageFeedback.value = validation.message;
     return;
   }
 
@@ -296,15 +195,9 @@ const handleProfileImageChange = async (event) => {
     const savedProfile = await uploadSettingsProfileImage(preparedFile);
     applySavedProfile(savedProfile);
     emit("saved", savedProfile);
-    imageFeedback.value =
-      preparedFile === file
-        ? "프로필 이미지를 적용했습니다."
-        : "프로필 이미지를 축소해 적용했습니다.";
+    imageFeedback.value = buildProfileImageFeedback(preparedFile, file);
   } catch (error) {
-    imageFeedback.value =
-      error?.response?.data?.message ||
-      error?.message ||
-      "프로필 이미지를 업로드하지 못했습니다.";
+    imageFeedback.value = getProfileErrorMessage(error, "프로필 이미지를 업로드하지 못했습니다.");
   } finally {
     isUploadingImage.value = false;
   }
@@ -315,24 +208,13 @@ const handleSave = async () => {
   isSaving.value = true;
 
   try {
-    const savedProfile = await updateSettingsProfile({
-      displayName: profileForm.value.displayName,
-      localeCode: profileForm.value.localeCode,
-      regionCode: profileForm.value.regionCode,
-      marketingOptIn: profileForm.value.marketingOptIn,
-      privateProfile: profileForm.value.privateProfile,
-      emailNotification: profileForm.value.emailNotification,
-      securityNotification: profileForm.value.securityNotification,
-    });
+    const savedProfile = await updateSettingsProfile(buildProfileUpdatePayload(profileForm.value));
 
     applySavedProfile(savedProfile);
     emit("saved", savedProfile);
     emit("close");
   } catch (error) {
-    saveError.value =
-      error?.response?.data?.message || 
-      error?.message ||
-      "설정을 저장하지 못했습니다.";
+    saveError.value = getProfileErrorMessage(error, "설정을 저장하지 못했습니다.");
   } finally {
     isSaving.value = false;
   }
@@ -508,7 +390,7 @@ const handleSave = async () => {
                   <div class="settings-info-box">
                     <span class="settings-info-box__label">기본 용량</span>
                     <strong>{{ formatBytes(storageSummary.addonQuotaBytes || profileForm.storageAddonBytes) }}</strong>
-                    
+
                   </div>
                   <div class="settings-info-box">
                     <span class="settings-info-box__label">추가 용량</span>
@@ -563,472 +445,4 @@ const handleSave = async () => {
   </div>
 </template>
 
-<style scoped>
-.settings-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 20000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(15, 23, 42, 0.45);
-  backdrop-filter: blur(10px);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.18s ease;
-}
-
-.settings-overlay.active {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.settings-modal {
-  display: flex;
-  width: min(1080px, 92vw);
-  height: min(88vh, 860px);
-  flex-direction: column;
-  overflow: hidden;
-  border-radius: 2rem;
-  border: 1px solid var(--border-color);
-  background: var(--bg-elevated);
-  box-shadow: 0 32px 80px color-mix(in srgb, #020617 18%, transparent);
-}
-
-.settings-modal__header,
-.settings-modal__footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1.3rem 1.5rem;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.settings-modal__footer {
-  border-top: 1px solid var(--border-color);
-  border-bottom: none;
-}
-
-.settings-modal__eyebrow {
-  font-size: 0.72rem;
-  font-weight: 900;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: #0ea5e9;
-}
-
-.settings-modal__title {
-  margin-top: 0.3rem;
-  font-size: 1.6rem;
-  font-weight: 900;
-  color: var(--text-main);
-}
-
-.settings-close {
-  display: inline-flex;
-  height: 2.6rem;
-  width: 2.6rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  color: var(--text-muted);
-  transition: background-color 0.18s ease, color 0.18s ease;
-}
-
-.settings-close:hover {
-  background: var(--bg-input);
-  color: var(--text-main);
-}
-
-.settings-modal__body {
-  display: grid;
-  min-height: 0;
-  flex: 1;
-  grid-template-columns: 220px minmax(0, 1fr);
-}
-
-.settings-sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  border-right: 1px solid var(--border-color);
-  padding: 1.2rem;
-  background: color-mix(in srgb, var(--bg-input) 76%, var(--bg-elevated) 24%);
-}
-
-.settings-sidebar__item {
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-  border-radius: 1rem;
-  padding: 0.85rem 0.95rem;
-  color: var(--text-secondary);
-  font-size: 0.92rem;
-  font-weight: 700;
-  transition: background-color 0.18s ease, color 0.18s ease;
-}
-
-.settings-sidebar__item.is-active {
-  background: rgba(14, 165, 233, 0.12);
-  color: #0369a1;
-}
-
-.settings-sidebar__submenu {
-  display: grid;
-  gap: 0.45rem;
-  margin-top: 0.2rem;
-  padding: 0.15rem 0 0 0.85rem;
-}
-
-.settings-sidebar__subitem {
-  border-radius: 0.85rem;
-  padding: 0.72rem 0.9rem;
-  text-align: left;
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: var(--text-secondary);
-  background: color-mix(in srgb, var(--bg-main) 88%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border-color) 88%, transparent);
-  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease;
-}
-
-.settings-sidebar__subitem:hover {
-  background: color-mix(in srgb, var(--accent) 12%, var(--bg-main) 88%);
-}
-
-.settings-sidebar__subitem.is-active {
-  background: rgba(14, 165, 233, 0.1);
-  border-color: rgba(14, 165, 233, 0.24);
-  color: #0369a1;
-}
-
-.settings-content {
-  min-height: 0;
-  overflow-y: auto;
-  padding: 1.35rem 1.5rem;
-}
-
-.settings-pane {
-  display: flex;
-  flex-direction: column;
-  gap: 1.2rem;
-}
-
-.profile-hero,
-.billing-summary,
-.storage-panel,
-.settings-card {
-  border-radius: 1.5rem;
-  border: 1px solid var(--border-color);
-  background: var(--bg-main);
-  padding: 1.25rem;
-}
-
-.profile-hero {
-  display: flex;
-  gap: 1.25rem;
-  align-items: center;
-}
-
-.profile-avatar {
-  display: inline-flex;
-  height: 5.4rem;
-  width: 5.4rem;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  border-radius: 1.5rem;
-  background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
-  color: white;
-  font-size: 1.4rem;
-  font-weight: 900;
-}
-
-.profile-avatar__image {
-  height: 100%;
-  width: 100%;
-  object-fit: cover;
-}
-
-.profile-hero__copy h3,
-.settings-section__title {
-  font-size: 1.25rem;
-  font-weight: 900;
-  color: var(--text-main);
-}
-
-.profile-hero__copy p,
-.settings-help,
-.addon-card p {
-  color: var(--text-muted);
-  line-height: 1.6;
-}
-
-.profile-hero__actions,
-.addon-card__footer,
-.settings-modal__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.7rem;
-  margin-top: 0.85rem;
-}
-
-.settings-feedback {
-  margin-top: 0.7rem;
-  color: #0f766e;
-  font-size: 0.88rem;
-  font-weight: 700;
-}
-
-.settings-grid {
-  display: grid;
-  gap: 1rem;
-}
-
-.settings-grid--two {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.settings-grid--three {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.settings-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-
-.settings-field__label,
-.settings-info-box__label,
-.settings-meta {
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--text-muted);
-}
-
-.settings-input {
-  width: 100%;
-  border-radius: 1rem;
-  border: 1px solid var(--border-color);
-  background: var(--bg-main);
-  padding: 0.8rem 0.95rem;
-  color: var(--text-main);
-}
-
-.settings-check {
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-  border-radius: 1rem;
-  border: 1px solid var(--border-color);
-  background: var(--bg-main);
-  padding: 1rem 1.1rem;
-  font-weight: 700;
-  color: var(--text-secondary);
-}
-
-.settings-check input {
-  height: 1rem;
-  width: 1rem;
-}
-
-.settings-pill {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: 0.35rem 0.72rem;
-  font-size: 0.72rem;
-  font-weight: 900;
-}
-
-.settings-pill--blue {
-  background: #e0f2fe;
-  color: #0369a1;
-}
-
-.settings-pill--amber {
-  background: #fef3c7;
-  color: #b45309;
-}
-
-.storage-panel__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.8rem;
-  font-size: 0.94rem;
-  font-weight: 800;
-  color: var(--text-main);
-}
-
-.storage-panel__bar {
-  margin: 0.9rem 0 0.8rem;
-  overflow: hidden;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--bg-input) 78%, var(--border-color) 22%);
-}
-
-.storage-panel__bar > div {
-  height: 0.8rem;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #0ea5e9 0%, #2563eb 100%);
-}
-
-.settings-info-box {
-  border-radius: 1.1rem;
-  background: color-mix(in srgb, var(--bg-input) 84%, var(--bg-main) 16%);
-  padding: 1rem;
-}
-
-.settings-info-box strong,
-.addon-card strong {
-  display: block;
-  margin-top: 0.4rem;
-  font-size: 1.05rem;
-  font-weight: 900;
-  color: var(--text-main);
-}
-
-.plan-feature-list {
-  display: grid;
-  gap: 0.55rem;
-  margin-top: 0.9rem;
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-  line-height: 1.55;
-}
-
-.plan-feature-list li {
-  display: flex;
-  gap: 0.6rem;
-  align-items: flex-start;
-}
-
-.plan-feature-list li::before {
-  content: "";
-  width: 0.5rem;
-  height: 0.5rem;
-  margin-top: 0.42rem;
-  border-radius: 999px;
-  background: #0ea5e9;
-  flex-shrink: 0;
-}
-
-.addon-grid {
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.addon-card {
-  display: flex;
-  min-height: 12rem;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 1rem;
-  border-radius: 1.4rem;
-  border: 1px solid var(--border-color);
-  background: var(--bg-main);
-  padding: 1.1rem;
-}
-
-.addon-card h4 {
-  margin-top: 0.65rem;
-  font-size: 1.05rem;
-  font-weight: 900;
-  color: var(--text-main);
-}
-
-.settings-primary-link,
-.settings-primary-button,
-.settings-secondary-button,
-.settings-ghost-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  padding: 0.75rem 1rem;
-  font-size: 0.86rem;
-  font-weight: 900;
-  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease;
-}
-
-.settings-primary-link,
-.settings-primary-button {
-  background: #0284c7;
-  color: white;
-}
-
-.settings-primary-link:hover,
-.settings-primary-button:hover {
-  background: #0369a1;
-}
-
-.settings-secondary-button,
-.settings-ghost-button {
-  border: 1px solid var(--border-color);
-  background: var(--bg-main);
-  color: var(--text-secondary);
-}
-
-.settings-secondary-button:hover,
-.settings-ghost-button:hover {
-  background: var(--bg-input);
-}
-
-.settings-error {
-  color: #dc2626;
-  font-size: 0.88rem;
-  font-weight: 700;
-}
-
-.settings-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 12rem;
-  border-radius: 1.5rem;
-  border: 1px dashed var(--border-color);
-  background: color-mix(in srgb, var(--bg-input) 74%, var(--bg-main) 26%);
-  color: var(--text-muted);
-}
-
-@media (max-width: 960px) {
-  .settings-modal {
-    width: min(96vw, 720px);
-    height: min(94vh, 860px);
-  }
-
-  .settings-modal__body {
-    grid-template-columns: 1fr;
-  }
-
-  .settings-sidebar {
-    border-right: none;
-    border-bottom: 1px solid var(--border-color);
-    flex-direction: row;
-    overflow-x: auto;
-  }
-
-  .settings-sidebar__submenu {
-    min-width: 100%;
-    padding-left: 0;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .settings-grid--two,
-  .settings-grid--three,
-  .addon-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .profile-hero,
-  .billing-summary {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-}
-</style>
+<style scoped src="./ProfileModal.css"></style>

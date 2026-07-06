@@ -1,7 +1,6 @@
 import api from '@/plugins/axiosinterceptor.js'
 
-const VAPID_PUBLIC_KEY =
-  'BLHgfPga02L2u89uc4xjhbUFTy_U04rQCjGq7o24oxtqfVmAPHTxOmp6xndSHZtGQpmt7gqTFdMXco2gRNP7_p8'
+const VAPID_PUBLIC_KEY = import.meta.env.VITE_WEB_PUSH_PUBLIC_KEY || ''
 
 const urlBase64ToUint8Array = (base64String) => {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
@@ -26,7 +25,7 @@ const apiCall = async (label, request, fallback = undefined) => {
     if (baseResponse?.success === false) {
       const code = baseResponse?.code ?? 'UNKNOWN'
       const message = baseResponse?.message ?? '알 수 없는 오류가 발생했습니다.'
-      console.error(`[${label}] 실패 — [${code}] ${message}`)
+      console.error(`[${label}] failed [${code}] ${message}`)
       const error = new Error(message)
       error.code = code
       error.baseResponse = baseResponse
@@ -41,14 +40,14 @@ const apiCall = async (label, request, fallback = undefined) => {
     if (serverData?.success === false) {
       const code = serverData?.code ?? error.response?.status ?? 'NETWORK'
       const message = serverData?.message ?? error.message
-      console.error(`[${label}] 실패 — [${code}] ${message}`)
+      console.error(`[${label}] failed [${code}] ${message}`)
       const wrappedError = new Error(message)
       wrappedError.code = code
       wrappedError.baseResponse = serverData
       throw wrappedError
     }
 
-    console.error(`[${label}] 오류 —`, error)
+    console.error(`[${label}] request failed`, error)
     if (fallback !== undefined) return fallback
     throw error
   }
@@ -62,6 +61,11 @@ const subscribeWebPush = async () => {
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
     return null
   }
+  if (!VAPID_PUBLIC_KEY) {
+    console.info('Web push registration skipped because VITE_WEB_PUSH_PUBLIC_KEY is not configured.')
+    return null
+  }
+
   try {
     const permission = await Notification.requestPermission()
     if (permission !== 'granted') return null
@@ -78,7 +82,7 @@ const subscribeWebPush = async () => {
       endpoint: subscriptionJson.endpoint,
       keys: subscriptionJson.keys,
     })
-    console.log('알림 구독 성공')
+    if (import.meta.env.DEV) console.debug('알림 구독 성공');
     return response.data
   } catch (error) {
     console.error('알림 구독 실패:', error)

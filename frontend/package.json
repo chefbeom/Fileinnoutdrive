@@ -9,6 +9,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test:unit": "vitest run",
+    "test:public-assets": "node scripts/verify-public-assets.mjs",
+    "test:workspace-chunks": "node scripts/verify-workspace-chunks.mjs",
+    "test:e2e": "playwright test",
+    "test:unit:watch": "vitest",
     "test:workspace-readonly": "node scripts/verify-workspace-readonly-xss.mjs",
     "test:workspace-collab-ui": "node scripts/verify-workspace-collab-ui.mjs",
     "test:chat-room-ui": "node scripts/verify-chat-room-ui.mjs",
@@ -53,9 +58,13 @@
     "y-websocket": "^3.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@vitejs/plugin-vue": "^6.0.3",
+    "@vue/test-utils": "^2.4.11",
+    "happy-dom": "^20.10.6",
     "prettier": "3.7.4",
     "vite": "^7.3.0",
-    "vite-plugin-vue-devtools": "^8.0.5"
+    "vite-plugin-vue-devtools": "^8.0.5",
+    "vitest": "^4.1.9"
   }
 }

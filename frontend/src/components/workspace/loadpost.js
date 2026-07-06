@@ -21,8 +21,7 @@ const side_list = async () => {
     try {
         // response = PostDto.ResList[]
         const response = await postApi.allPosts();
-        console.log('목록 가져오기 성공:', response);
-
+        if (import.meta.env.DEV) console.debug('목록 가져오기 성공:', response);
         personalItems.value = [];
         sharedItems.value   = [];
 
@@ -54,8 +53,7 @@ const read_post = async (idx) => {
     try {
         // data = PostDto.ResPost
         const data = await postApi.getPost(idx);
-        console.log('워크스페이스 가져오기 성공:', data);
-
+        if (import.meta.env.DEV) console.debug('워크스페이스 가져오기 성공:', data);
         let parsedContents;
         try {
             if (typeof data.contents === 'string' && data.contents.trim().startsWith('{')) {

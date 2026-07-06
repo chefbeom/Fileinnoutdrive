@@ -1,0 +1,219 @@
+.workspace-property-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px 20px 16px;
+  border-bottom: 1px solid var(--editor-border);
+  background: color-mix(in srgb, var(--editor-bg) 97%, #f8fafc 3%);
+}
+
+.workspace-property-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workspace-property-panel__header div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.workspace-property-panel__header span {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.workspace-property-panel__header strong {
+  color: var(--editor-text);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.workspace-property-badges,
+.workspace-property-tags {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.workspace-property-badge,
+.workspace-property-tags span {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.12);
+  color: #475569;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.workspace-property-badge--good,
+.workspace-property-badge--done {
+  background: rgba(34, 197, 94, 0.13);
+  color: #15803d;
+}
+
+.workspace-property-badge--warn {
+  background: rgba(245, 158, 11, 0.16);
+  color: #b45309;
+}
+
+.workspace-property-badge--danger {
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
+}
+
+.workspace-property-visual-grid {
+  display: grid;
+  grid-template-columns: minmax(120px, 160px) minmax(0, 1fr);
+  align-items: end;
+  gap: 8px;
+}
+
+.workspace-property-field--cover {
+  min-width: 0;
+}
+
+.workspace-cover-swatches {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workspace-cover-swatch {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 8px;
+  cursor: pointer;
+  outline: none;
+}
+
+.workspace-cover-swatch::after {
+  position: absolute;
+  inset: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.16);
+  content: '';
+  opacity: 0;
+  transform: scale(0.72);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.workspace-cover-swatch:hover,
+.workspace-cover-swatch:focus-visible {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.workspace-cover-swatch--active::after {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.workspace-cover-swatch:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.workspace-cover-swatch--blue {
+  background: linear-gradient(135deg, #dbeafe, #2563eb);
+}
+
+.workspace-cover-swatch--green {
+  background: linear-gradient(135deg, #dcfce7, #16a34a);
+}
+
+.workspace-cover-swatch--amber {
+  background: linear-gradient(135deg, #fef3c7, #d97706);
+}
+
+.workspace-cover-swatch--rose {
+  background: linear-gradient(135deg, #ffe4e6, #e11d48);
+}
+
+.workspace-cover-swatch--violet {
+  background: linear-gradient(135deg, #ede9fe, #7c3aed);
+}
+
+.workspace-cover-swatch--slate {
+  background: linear-gradient(135deg, #e2e8f0, #475569);
+}
+
+.workspace-property-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.workspace-property-field {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.workspace-property-field--tags {
+  grid-column: span 2;
+}
+
+.workspace-property-field span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.workspace-property-field input,
+.workspace-property-field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 10px;
+  background: var(--editor-input-bg);
+  color: var(--editor-text);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 750;
+  outline: none;
+}
+
+.workspace-property-field input:focus,
+.workspace-property-field select:focus {
+  border-color: rgba(37, 99, 235, 0.45);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
+.workspace-property-field input:disabled,
+.workspace-property-field select:disabled {
+  background: rgba(148, 163, 184, 0.08);
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+  .workspace-property-visual-grid,
+  .workspace-property-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .workspace-property-panel__header {
+    flex-direction: column;
+  }
+
+  .workspace-property-visual-grid,
+  .workspace-property-grid,
+  .workspace-property-field--tags {
+    grid-template-columns: 1fr;
+    grid-column: auto;
+  }
+}

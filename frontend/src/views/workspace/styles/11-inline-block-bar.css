@@ -1,0 +1,87 @@
+.workspace-inline-block-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.82);
+  padding: 8px;
+}
+
+.workspace-inline-block-input {
+  display: grid;
+  min-width: 0;
+  min-height: 34px;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0 10px;
+}
+
+.workspace-inline-block-input i {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.workspace-inline-block-input input {
+  min-width: 0;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--editor-text);
+  font-size: 12px;
+  font-weight: 800;
+  outline: none;
+}
+
+.workspace-inline-block-input input:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
+.workspace-inline-block-actions {
+  display: inline-flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.workspace-inline-block-actions button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 10px;
+  background: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  padding: 0 9px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.workspace-inline-block-actions button:hover:not(:disabled),
+.workspace-inline-block-actions button:focus-visible {
+  border-color: rgba(37, 99, 235, 0.35);
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+  outline: none;
+}
+
+.workspace-inline-block-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+@media (max-width: 640px) {
+  .workspace-inline-block-bar {
+    grid-template-columns: 1fr;
+  }
+}

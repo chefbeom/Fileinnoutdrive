@@ -54,8 +54,7 @@ const handleSseTitleUpdated = (evt) => {
 
   if (!postId || !newTitle) return;
 
-  console.log(`[SSE Vue] 타이틀 업데이트 감지: 게시글 ${postId} -> ${newTitle}`);
-
+  if (import.meta.env.DEV) console.debug(`[SSE Vue] 타이틀 업데이트 감지: 게시글 ${postId} -> ${newTitle}`);
   // 1. 협업 페이지(sharedItems) 리스트에서 해당 게시글 찾아서 제목 변경
   if (sharedItems.value) {
     sharedItems.value = sharedItems.value.map((item) => {
@@ -95,7 +94,6 @@ onMounted(() => {
   window.addEventListener('click', closeMenu);
 
   // sideListTimer = setInterval(() => {
-  //   console.log('실시간 리스트 갱신 중...');
   //   side_list();
   // }, 30000);
 })

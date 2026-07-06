@@ -1,0 +1,244 @@
+.workspace-board-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.workspace-board-columns {
+  display: grid;
+  grid-auto-columns: minmax(190px, 220px);
+  grid-auto-flow: column;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 3px;
+}
+
+.workspace-board-column {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.76);
+  padding: 9px;
+  transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.workspace-board-column--good {
+  border-color: rgba(22, 163, 74, 0.22);
+}
+
+.workspace-board-column--warn {
+  border-color: rgba(217, 119, 6, 0.24);
+}
+
+.workspace-board-column--danger {
+  border-color: rgba(220, 38, 38, 0.24);
+}
+
+.workspace-board-column--done {
+  border-color: rgba(79, 70, 229, 0.22);
+}
+
+.workspace-board-column--drop-target {
+  border-color: rgba(37, 99, 235, 0.42);
+  background: rgba(239, 246, 255, 0.88);
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.12);
+}
+
+.workspace-board-column__header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.workspace-board-column__header span {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-board-column__header strong {
+  display: inline-flex;
+  min-width: 24px;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.12);
+  color: #475569;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.workspace-board-column__tasks,
+.workspace-board-empty {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.workspace-board-empty {
+  border: 1px dashed rgba(148, 163, 184, 0.28);
+  border-radius: 10px;
+  padding: 14px 8px;
+  text-align: center;
+}
+
+.workspace-board-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.76);
+  padding: 8px;
+  transition: background 0.16s ease, border-color 0.16s ease, opacity 0.16s ease, transform 0.16s ease;
+}
+
+.workspace-board-card:hover,
+.workspace-board-card:focus-within {
+  border-color: rgba(37, 99, 235, 0.28);
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.workspace-board-card--overdue {
+  border-color: rgba(220, 38, 38, 0.28);
+  background: rgba(254, 242, 242, 0.82);
+}
+
+.workspace-board-card--locked {
+  border-color: rgba(15, 23, 42, 0.18);
+  background: rgba(248, 250, 252, 0.86);
+}
+
+.workspace-board-card--draggable {
+  cursor: grab;
+}
+
+.workspace-board-card--dragging {
+  border-style: dashed;
+  opacity: 0.56;
+  transform: scale(0.985);
+}
+
+.workspace-board-card__main {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: var(--editor-text);
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.workspace-board-card__icon {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: rgba(37, 99, 235, 0.1);
+  font-size: 15px;
+}
+
+.workspace-board-card__body {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.workspace-board-card__body strong,
+.workspace-board-card__body small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-board-card__body strong {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.workspace-board-card__body small {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.workspace-board-card__meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.workspace-board-card__meta > span:not(.workspace-property-badge) {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.12);
+  color: #475569;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.workspace-board-chip--danger {
+  background: rgba(220, 38, 38, 0.12) !important;
+  color: #b91c1c !important;
+}
+
+.workspace-board-card__actions {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  gap: 6px;
+}
+
+.workspace-board-card__actions button,
+.workspace-board-card__actions select {
+  height: 28px;
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 8px;
+  background: var(--editor-input-bg);
+  color: var(--editor-text);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.workspace-board-card__actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.workspace-board-card__actions select {
+  padding: 0 6px;
+}
+
+.workspace-board-card__actions button:hover:not(:disabled) {
+  border-color: rgba(37, 99, 235, 0.35);
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
+}
+
+.workspace-board-card__actions button:disabled,
+.workspace-board-card__actions select:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+

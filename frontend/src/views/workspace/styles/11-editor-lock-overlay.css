@@ -1,0 +1,59 @@
+.workspace-editor-lock-overlay {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  bottom: 20px;
+  left: 20px;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.72);
+  backdrop-filter: blur(2px);
+  pointer-events: auto;
+}
+
+.workspace-editor-lock-overlay div {
+  display: grid;
+  max-width: min(360px, 70%);
+  gap: 6px;
+  color: #334155;
+  text-align: left;
+}
+
+.workspace-editor-lock-overlay i {
+  color: #0f172a;
+  font-size: 20px;
+}
+
+.workspace-editor-lock-overlay strong {
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 950;
+}
+
+.workspace-editor-lock-overlay span {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.workspace-editor-lock-overlay button {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 10px;
+  background: #0f172a;
+  color: #ffffff;
+  cursor: pointer;
+  padding: 10px 13px;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.workspace-editor-lock-overlay button:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}

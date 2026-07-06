@@ -1,228 +1,110 @@
-<div align="center">
-<!-- 타이틀 이미지 -->
-<img src="Image/mainimage.png" alt="FileInNOut Typing" />
-</div>
+# FileInNOut Frontend
 
-<div align="center">
-<h3>파일 관리와 실시간 문서 협업의 경계를 허무는 하이브리드 워크스페이스</h3>
-<p>
-스마트한 <b>파일 저장소</b>와 강력한 <b>블록 기반 에디터</b>가 하나로 통합된 시스템입니다.
-클라우드 스토리지의 안정성과 실시간 협업 경험을 동시에 제공합니다.
-</p>
-</div>
+FileInNOut Frontend는 FileInNOut Drive의 Vue 3/Vite 기반 웹 클라이언트입니다. 파일 드라이브, 공유 폴더, 워크스페이스 문서, 관리자 화면, 실시간 협업 UI를 제공합니다.
 
-<div align="center">
-<table border="0" width="80%">
-<tr>
-<td align="center" colspan="4">
-<b>TEAM MEMBER</b>
-</td>
-</tr>
-<tr>
-<td align="center" width="25%">
-<a href="https://github.com/Joohyeng">
-<img src="https://github.com/Joohyeng.png" width="100"/>
+## 주요 화면
 
+- 로그인, 회원가입, OAuth 콜백 처리
+- 파일 드라이브, 최근 파일, 휴지통, 공유 파일 화면
+- 파일 업로드, 다운로드, 이동, 이름 변경, 잠금, 공유 관리
+- 워크스페이스 문서 편집, 댓글, 에셋, 페이지 인덱스, 협업 패널
+- 관리자 대시보드, 사용자 관리, 저장소/공유 감사 화면
+- Legup 미니게임과 정적 public asset
 
+## 기술 스택
 
+| 영역 | 기술 |
+| --- | --- |
+| App | Vue 3, Vite, Vue Router, Pinia |
+| Test | Vitest, Playwright, happy-dom |
+| Realtime | STOMP, SockJS, Yjs |
+| Network | Axios interceptor, SSE/EventSource |
+| Style | CSS modules by feature folder, Font Awesome classes |
 
+## 로컬 실행
 
-김주형
-</a>
-</td>
-<td align="center" width="25%">
-<a href="https://github.com/Yoonjoon13">
-<img src="https://github.com/Yoonjoon13.png" width="100"/>
+```powershell
+cd frontend
+npm install
+npm.cmd run dev
+```
 
+기본 개발 서버는 Vite 설정을 따릅니다. 백엔드 API 주소는 환경 변수 또는 `src/utils/backendUrl.js` 경로의 설정을 확인합니다.
 
+## 빌드
 
+```powershell
+cd frontend
+npm.cmd run build
+```
 
+빌드 결과는 `frontend/dist`에 생성됩니다. 운영 배포 이미지는 현재 프로젝트 코드 기준으로 다시 빌드해야 하며, 예전 `lumisia/frontend:latest` 이미지를 재사용하지 않습니다.
 
-범윤준
-</a>
-</td>
-<td align="center" width="25%">
-<a href="https://github.com/sunyeoplee0">
-<img src="https://github.com/sunyeoplee0.png" width="100"/>
+## 테스트
 
+전체 unit test:
 
+```powershell
+cd frontend
+npm.cmd run test:unit
+```
 
+핵심 정적 검증:
 
+```powershell
+cd frontend
+npm.cmd run test:public-assets
+npm.cmd run test:workspace-readonly
+npm.cmd run test:workspace-collab-ui
+npm.cmd run test:chat-room-ui
+```
 
-이선엽
-</a>
-</td>
-<td align="center" width="25%">
-<a href="https://github.com/Lumisia">
-<img src="https://github.com/Lumisia.png" width="100"/>
+E2E test:
 
+```powershell
+cd frontend
+npm.cmd run test:e2e
+```
 
+Playwright는 실제 backend 또는 mock 가능한 테스트 환경이 필요합니다. 로그인, 업로드, 다운로드, 공유, 관리자 화면은 별도 fixture와 테스트 계정 준비가 필요합니다.
 
+## 디렉터리 구조
 
+```text
+frontend/
+|-- src/api/                    backend API wrapper
+|-- src/components/             shared UI components
+|-- src/stores/                 Pinia state stores
+|-- src/views/dashboard/        drive/admin dashboard views
+|-- src/views/workspace/        workspace editor, panels, composables, services
+|-- src/legup/                  game views and sockets
+|-- public/                     static assets served as-is
+|-- scripts/                    local verification scripts
+```
 
-최재원
-</a>
-</td>
-</tr>
-</table>
-</div>
+## 워크스페이스 개발 규칙
 
-<div align="center">
-<a href="#프로젝트-소개">소개</a> &nbsp;|&nbsp;
-<a href="#기술-스택">기술 스택</a> &nbsp;|&nbsp;
-<a href="#요구사항-정의">요구사항</a> &nbsp;|&nbsp;
-<a href="#피그마-프로토타입">피그마</a> &nbsp;|&nbsp;
-<a href="#시스템-아키텍처">아키텍처</a> &nbsp;|&nbsp;
-<a href="#데이터베이스-설계">ERD</a> &nbsp;|&nbsp;
-<a href="#서비스-도메인">도메인</a>
-</div>
+`src/views/workspace/WorkSpace.vue`는 아직 큰 orchestration 파일입니다. 새 기능은 가능한 한 아래 위치로 분리합니다.
 
-<hr/>
+- UI 패널: `src/views/workspace/components/Workspace*.vue`
+- Main document/sidebar/editor bridge rendering: `src/views/workspace/components/WorkspaceMainLayoutBridge.vue`
+- Main document/sidebar/editor shell composition: `src/views/workspace/components/WorkspaceMainLayout.vue`
+- Main document/sidebar/editor model/action bridge: `src/views/workspace/composables/useWorkspaceMainLayoutBridge.js`
+- Floating sidebar panel stack composition: `src/views/workspace/components/WorkspaceFloatingPanelStack.vue`
+- Floating sidebar stack model/action bridge: `src/views/workspace/composables/useWorkspaceFloatingPanelStackBridge.js`
+- 상태와 lifecycle: `src/views/workspace/composables/useWorkspace*.js`
+- 순수 변환/정렬/필터: `src/views/workspace/services/workspace*.js`
+- 반복 옵션/상수: `src/constants/workspaceOptions.js`
 
-<h2 id="프로젝트-소개">프로젝트 소개</h2>
+새 composable 또는 service를 추가하면 가능한 한 같은 폴더에 `*.test.js`를 함께 추가합니다.
 
-<div align="center">
-<p><b>"전환 비용(Switching Cost)을 0으로 만드는 통합 환경"</b></p>
-<p>
-FileInNOut은 클라우드 저장소와 실시간 문서 협업 기능을 통합한 워크스페이스입니다.
-웹상에서 팀원들과 동시에 문서를 작성하고 파일을 관리할 수 있는 환경을 제공합니다.
-</p>
-</div>
+## public asset 주의사항
 
-<h3>Problem & Solution</h3>
+`frontend/public` 아래 파일은 Vite 번들 분석 밖에서 그대로 배포됩니다. Next.js 빌드 산출물, 중복 정적 파일, 출처가 불명확한 asset은 직접 넣지 말고 소스 기반 재빌드 또는 별도 asset package로 관리합니다.
 
-<table width="100%">
-<tr>
-<td width="50%" valign="top">
-<h3>Problem (Pain Points)</h3>
-<ul>
-<li><b>데이터 파편화</b>: 파일 저장소와 문서 툴의 분리로 인한 업무 비효율</li>
-<li><b>협업의 단절</b>: 폴더 구조 내에서 실시간 편집 중인 문서 식별의 어려움</li>
-<li><b>복잡한 권한</b>: 파일 및 문서별 상이한 권한 설정 프로세스</li>
-</ul>
-</td>
-<td width="50%" valign="top">
-<h3>Solution (Key Values)</h3>
-<ul>
-<li><b>MinIO 오브젝트 스토리지</b>: 대용량 파일의 안정적인 저장 및 관리</li>
-<li><b>Node.js & WebSocket</b>: 지연 없는 실시간 동시 편집 에디터 구현</li>
-<li><b>하이브리드 구조</b>: 파일 트리 내 문서(Page) 무한 계층 생성 지원</li>
-</ul>
-</td>
-</tr>
-</table>
+## 운영 배포 주의사항
 
-<hr/>
-
-<h2 id="기술-스택">기술 스택</h2>
-
-<div align="center">
-<h3>Backend & Storage</h3>
-<img src="https://img.shields.io/badge/Java-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white" alt="Java">
-<img src="https://img.shields.io/badge/Spring_Boot-6DB33F?style=for-the-badge&logo=springboot&logoColor=white" alt="Spring Boot">
-<img src="https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node.js">
-<img src="https://img.shields.io/badge/WebSocket-010101?style=for-the-badge&logo=websocket&logoColor=white" alt="WebSocket">
-<img src="https://img.shields.io/badge/MariaDB-003545?style=for-the-badge&logo=mariadb&logoColor=white" alt="MariaDB">
-
-<h3>Frontend</h3>
-<img src="https://img.shields.io/badge/Vue.js-4FC08D?style=for-the-badge&logo=vuedotjs&logoColor=white" alt="Vue.js">
-<img src="https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black" alt="JavaScript">
-<img src="https://img.shields.io/badge/Axios-5A29E4?style=for-the-badge&logo=axios&logoColor=white" alt="Axios">
-<img src="https://img.shields.io/badge/HTML5-E34F26?style=for-the-badge&logo=html5&logoColor=white" alt="HTML5">
-<img src="https://img.shields.io/badge/CSS3-1572B6?style=for-the-badge&logo=css3&logoColor=white" alt="CSS3">
-
-<h3>Infrastructure</h3>
-<img src="https://img.shields.io/badge/Nginx-009639?style=for-the-badge&logo=nginx&logoColor=white" alt="Nginx">
-<img src="https://img.shields.io/badge/HAProxy-1E90FF?style=for-the-badge&logo=haproxy&logoColor=white" alt="HAProxy">
-<img src="https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Linux">
-<img src="https://img.shields.io/badge/Git-F05032?style=for-the-badge&logo=git&logoColor=white" alt="Git">
-</div>
-
-<hr/>
-
-<h2 id="요구사항-정의">요구사항 정의</h2>
-<details>
-<summary>요구사항 정의서 상세 보기</summary>
-
-<p><a href="docs/요구사항%20정의서.pdf">요구사항 정의서 다운로드 (PDF)</a></p>
-<img src="Image/Requirements.png" alt="FileInNOut Requirements" width="850"/>
-</details>
-
-<hr/>
-
-<h2 id="피그마-프로토타입">피그마 프로토타입</h2>
-<details>
-<summary>피그마 프로토타입 상세 보기</summary>
-
-<p>
-<a href="https://www.figma.com/proto/K8oFcphOgrW7w1iWJxIdtH/%ED%8C%80-FileInNOut?node-id=0-1&t=w4Zkr2hu29DYfQZg-1">
-<img src="https://img.shields.io/badge/Figma-View%20Prototype-F24E1E?style=for-the-badge&logo=figma&logoColor=white" alt="Figma Badge"/>
-</a>
-</p>
-<img src="Image/FileInNOut.png" alt="FileInNOut Prototype" width="850"/>
-</details>
-
-<hr/>
-
-<h2 id="시스템-아키텍처">시스템 아키텍처</h2>
-<details>
-<summary>시스템 아키텍처 상세 보기</summary>
-
-<img src="Image/Systemarchitecture_ver01.png" alt="FileInNOut System Architecture" width="850"/>
-</details>
-
-<hr/>
-
-<h2 id="데이터베이스-설계">데이터베이스 설계 (ERD)</h2>
-<details>
-<summary>데이터베이스 설계도(ERD) 상세 보기</summary>
-
-<img src="Image/DB.png" alt="FileInNOut DB ERD" width="850"/> </details>
-
-<hr/>
-
-<h2 id="서비스-도메인">서비스 도메인</h2>
-<div align="left">
-<a href="http://www.innoutfile.kro.kr" target="_blank" rel="noopener noreferrer">
-<p>www.innoutfile.kro.kr</p>
-</a>
-</div>
-
-<hr/>
-
-<h2 id="서비스-시나리오">서비스 시나리오 및 기능 데모</h2>
-
-<p>FileInNOut의 주요 핵심 기능을 시나리오별로 정리하였습니다. 각 항목을 클릭하여 상세 동작 과정과 데모 영상을 확인할 수 있습니다.</p>
-
-<details>
-<summary>1. 사용자 인증 (회원가입 및 로그인)</summary>
-<div align="center">
-<img src="Image/user_auth.gif" width="850" controls>.
-<p>계정 생성 및 보안 인증을 통한 사용자 접속 프로세스</p>
-</div>
-</details>
-
-<details>
-<summary>2. 파일 및 문서 관리</summary>
-<div align="center">
-<img src="Image/file_docs.gif" width="850" controls>
-<p>파일 트리 구조 내 폴더/파일 업로드 및 문서(Page) 생성 관리</p>
-</div>
-</details>
-
-<details>
-<summary>3. 채팅 기능</summary>
-<div align="center">
-<img src="Image/chat.gif" width="850" controls>
-<p>협업 중인 팀원들과의 실시간 소통 기능</p>
-</div>
-</details>
-
-<details>
-<summary>4. 문서 편집기</summary>
-<div align="center">
-<img src="Image/editor.gif" width="850" controls>
-</video>
-<p>블록 기반의 실시간 동시 편집 에디터</p>
-
-</details>
+- Kubernetes 배포 source of truth는 `devops/Helm`입니다.
+- frontend image tag는 `latest`가 아니라 명시 tag 또는 digest를 사용합니다.
+- API, WebSocket, SSE origin은 운영 환경 변수로 명시합니다.
+- CORS origin은 backend의 `APP_CORS_ALLOWED_ORIGIN_PATTERNS` allowlist와 맞춰야 합니다.

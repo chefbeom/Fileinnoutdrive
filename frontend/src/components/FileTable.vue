@@ -3,9 +3,33 @@ import { computed, ref, watch } from "vue";
 import { useFileStore } from "@/stores/useFileStore.js";
 import { useViewStore } from "@/stores/viewStore.js";
 import { downloadFileAsset } from "@/api/filesApi.js";
-
-const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "gif", "svg", "webp", "bmp", "heic", "avif", "apng", "jfif", "tif", "tiff"]);
-const VIDEO_EXTENSIONS = new Set(["mp4", "webm", "mov", "mkv", "avi", "wmv", "m4v", "mpeg", "mpg", "ogv", "3gp"]);
+import {
+  FILE_TABLE_PARENT_DROP_TARGET_ID,
+  buildFileTableDeleteConfirmMessage,
+  buildSelectedIdSet,
+  buildVisibleFileIds,
+  canDownloadFileTableFile as canDownload,
+  canDropFileTableMove,
+  canManageFileTableFolder,
+  formatFileTableSize as formatDisplaySize,
+  getFileTableDragFileIds,
+  getFileTableExtension as getFileExtension,
+  getFileTableGridClassName,
+  getFileTableName as getFileName,
+  getFileTablePreviewUrl as getPreviewUrl,
+  getFileTableUpdatedAt as getUpdatedAt,
+  getFileTableVideoThumbnailUrl as getVideoThumbnailUrl,
+  hasInlineVideoThumbnail,
+  isFileTableFolderDropTarget,
+  isFileTableMovable,
+  isInlineImagePreviewable,
+  isInlineVideoPreviewable,
+  normalizeMoveFileIds,
+  parseFileTableDraggedIds,
+  pruneSelectionByVisibleIds,
+  toggleAllVisibleFileSelection,
+  toggleFileTableSelection,
+} from "./fileTableViewModel.js";
 
 const props = defineProps({
   files: {
@@ -40,18 +64,13 @@ const draggingFileIds = ref([]);
 const selectedIds = ref([]);
 const downloadingIds = ref([]);
 
-const visibleFileIds = computed(() =>
-  props.files
-    .map((file) => String(file?.id))
-    .filter(Boolean),
-);
+const visibleFileIds = computed(() => buildVisibleFileIds(props.files));
 
 watch(visibleFileIds, (ids) => {
-  const visibleSet = new Set(ids);
-  selectedIds.value = selectedIds.value.filter((id) => visibleSet.has(String(id)));
+  selectedIds.value = pruneSelectionByVisibleIds(selectedIds.value, ids);
 });
 
-const selectedIdSet = computed(() => new Set(selectedIds.value.map((id) => String(id))));
+const selectedIdSet = computed(() => buildSelectedIdSet(selectedIds.value));
 const downloadingIdSet = computed(() => new Set(downloadingIds.value.map((id) => String(id))));
 const selectedCount = computed(() => selectedIds.value.length);
 const hasSelection = computed(() => selectedCount.value > 0);
@@ -60,72 +79,16 @@ const allVisibleSelected = computed(() =>
   visibleFileIds.value.every((id) => selectedIdSet.value.has(String(id))),
 );
 
-const extractExtension = (fileName = "") => {
-  const lastDot = fileName.lastIndexOf(".");
-  if (lastDot < 0 || lastDot === fileName.length - 1) {
-    return "";
+
+const resolveProtectedShareOptions = (file) => {
+  if (!file?.sharedWithMe || !file?.passwordProtected) {
+    return {};
   }
-
-  return fileName.slice(lastDot + 1).trim().toLowerCase();
-};
-
-const formatDisplayDate = (value) => {
-  if (!value) return "-";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return String(value);
+  const sharePassword = window.prompt("\uACF5\uC720 \uBE44\uBC00\uBC88\uD638\uB97C \uC785\uB825\uD574 \uC8FC\uC138\uC694.");
+  if (sharePassword === null) {
+    throw new Error("\uACF5\uC720 \uBE44\uBC00\uBC88\uD638\uAC00 \uD544\uC694\uD569\uB2C8\uB2E4.");
   }
-
-  return new Intl.DateTimeFormat("ko-KR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-};
-
-const formatDisplaySize = (file) => {
-  if (typeof file?.sizeLabel === "string") return file.sizeLabel;
-  if (typeof file?.size === "string") return file.size;
-
-  const bytes = Number(file?.sizeBytes ?? file?.fileSize ?? file?.size ?? 0);
-  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
-
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const unitIndex = Math.min(
-    Math.floor(Math.log(bytes) / Math.log(1024)),
-    units.length - 1,
-  );
-  const value = bytes / 1024 ** unitIndex;
-  const fractionDigits = unitIndex === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2;
-
-  return `${value.toFixed(fractionDigits)} ${units[unitIndex]}`;
-};
-
-const getFileName = (file) => {
-  return file?.name || file?.fileOriginName || "이름 없는 파일";
-};
-
-const getFileExtension = (file) => {
-  return (
-    file?.extension ||
-    file?.fileFormat ||
-    extractExtension(getFileName(file))
-  ).toLowerCase();
-};
-
-const getUpdatedAt = (file) => {
-  return (
-    file?.updatedAtLabel ||
-    file?.date ||
-    formatDisplayDate(file?.updatedAt || file?.lastModified || file?.uploadDate)
-  );
-};
-
-const canDownload = (file) => {
-  return file?.type !== "folder" && Boolean(file?.downloadUrl || file?.presignedDownloadUrl);
+  return { sharePassword };
 };
 
 const isDownloading = (file) => downloadingIdSet.value.has(String(file?.id));
@@ -142,7 +105,7 @@ const handleDownload = async (file, event) => {
     if (fileId) {
       downloadingIds.value = [...downloadingIds.value, fileId];
     }
-    await downloadFileAsset(file);
+    await downloadFileAsset(file, "file", resolveProtectedShareOptions(file));
   } catch (error) {
     window.alert(error?.message || "\uD30C\uC77C\uC744 \uB2E4\uC6B4\uB85C\uB4DC\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
   } finally {
@@ -152,59 +115,10 @@ const handleDownload = async (file, event) => {
   }
 };
 
-const canManageFolder = (file) => {
-  return props.deleteMode !== "permanent" && file?.type === "folder" && !file?.isTrash;
-};
-const getDeleteConfirmMessage = (file) => {
-  if (file?.sharedFile && !file?.sharedWithMe) {
-    return "공유된 파일입니다 삭제하시겠습니까? 공유된 사람에게도 사라집니다.";
-  }
-
-  const targetLabel = file?.type === "folder" ? "폴더" : "파일";
-  return props.deleteMode === "permanent"
-    ? `'${getFileName(file)}' ${targetLabel}을 영구 삭제하시겠습니까?`
-    : `'${getFileName(file)}' ${targetLabel}을 휴지통으로 이동하시겠습니까?`;
-};
-
-const isMovable = (file) => {
-  return props.deleteMode !== "permanent" && !file?.isTrash;
-};
-
-const isFolderDropTarget = (file) => {
-  return canManageFolder(file);
-};
-
-const getPreviewUrl = (file) => {
-  return file?.downloadUrl || file?.presignedDownloadUrl || "";
-};
-
-const getContentType = (file) => String(file?.contentType || file?.raw?.contentType || "").toLowerCase();
-const getVideoThumbnailUrl = (file) => file?.thumbnailUrl || file?.thumbnailPresignedUrl || "";
-
-const hasPreviewSource = (file) => {
-  return file?.type !== "folder" && Boolean(getPreviewUrl(file));
-};
-
-const isInlineImagePreviewable = (file) => {
-  const contentType = getContentType(file);
-  return hasPreviewSource(file) && (
-    contentType.startsWith("image/") ||
-    IMAGE_EXTENSIONS.has(getFileExtension(file))
-  );
-};
-
-const isInlineVideoPreviewable = (file) => {
-  const contentType = getContentType(file);
-  return (
-    contentType.startsWith("video/") ||
-    VIDEO_EXTENSIONS.has(getFileExtension(file))
-  );
-};
-
-const hasInlineVideoThumbnail = (file) => {
-  return isInlineVideoPreviewable(file) && Boolean(getVideoThumbnailUrl(file));
-};
-
+const canManageFolder = (file) => canManageFileTableFolder(file, props.deleteMode);
+const getDeleteConfirmMessage = (file) => buildFileTableDeleteConfirmMessage(file, props.deleteMode);
+const isMovable = (file) => isFileTableMovable(file, props.deleteMode);
+const isFolderDropTarget = (file) => isFileTableFolderDropTarget(file, props.deleteMode);
 const handlePrimaryAction = (file) => {
   if (file?.type === "folder") {
     if (props.deleteMode === "permanent") {
@@ -221,10 +135,6 @@ const handlePrimaryAction = (file) => {
 const onClickDelete = (file, event) => {
   event.stopPropagation();
 
-  const targetLabel = file?.type === "folder" ? "폴더" : "파일";
-  const confirmMessage = props.deleteMode === "permanent"
-    ? `'${getFileName(file)}' ${targetLabel}을(를) 영구 삭제하시겠습니까?`
-    : `'${getFileName(file)}' ${targetLabel}을(를) 휴지통으로 이동하시겠습니까?`;
 
   if (window.confirm(getDeleteConfirmMessage(file))) {
     emit("delete-file", file?.id);
@@ -242,62 +152,23 @@ const onClickShowFolderProperties = (file, event) => {
 };
 
 const toggleFileSelection = (fileId, checked) => {
-  const normalizedId = String(fileId);
-  if (!normalizedId) {
-    return;
-  }
-
-  if (checked) {
-    if (!selectedIdSet.value.has(normalizedId)) {
-      selectedIds.value = [...selectedIds.value, normalizedId];
-    }
-    return;
-  }
-
-  selectedIds.value = selectedIds.value.filter((id) => String(id) !== normalizedId);
+  selectedIds.value = toggleFileTableSelection(selectedIds.value, fileId, checked);
 };
 
 const toggleSelectAllVisible = (checked) => {
-  if (checked) {
-    selectedIds.value = [...visibleFileIds.value];
-    return;
-  }
-
-  selectedIds.value = [];
+  selectedIds.value = toggleAllVisibleFileSelection(visibleFileIds.value, checked);
 };
 
 const clearSelection = () => {
   selectedIds.value = [];
 };
 
-const getDragFileIds = (file) => {
-  const fileId = String(file?.id);
-  if (!fileId) {
-    return [];
-  }
+const getDragFileIds = (file) => getFileTableDragFileIds(file, selectedIds.value);
 
-  if (selectedIdSet.value.has(fileId)) {
-    return [...selectedIds.value];
-  }
-
-  return [fileId];
-};
-
-const readDraggedFileIds = (event) => {
-  const payload = event?.dataTransfer?.getData("text/plain");
-  if (payload) {
-    try {
-      const parsed = JSON.parse(payload);
-      if (Array.isArray(parsed?.fileIds)) {
-        return parsed.fileIds.map((id) => String(id));
-      }
-    } catch {
-      return [];
-    }
-  }
-
-  return [...draggingFileIds.value];
-};
+const readDraggedFileIds = (event) => parseFileTableDraggedIds(
+  event?.dataTransfer?.getData("text/plain"),
+  draggingFileIds.value,
+);
 
 const onDragStart = (event, file) => {
   if (!isMovable(file)) {
@@ -321,7 +192,7 @@ const onDragOverFolder = (event, folder) => {
   }
 
   const draggedFileIds = readDraggedFileIds(event);
-  if (!draggedFileIds.length || draggedFileIds.includes(String(folder.id))) {
+  if (!canDropFileTableMove(draggedFileIds, folder.id)) {
     return;
   }
 
@@ -337,9 +208,7 @@ const onDragLeaveFolder = (folder) => {
 };
 
 const performMove = async (fileIds, targetFolderId) => {
-  const normalizedIds = Array.from(
-    new Set((fileIds || []).map((id) => String(id)).filter(Boolean)),
-  );
+  const normalizedIds = normalizeMoveFileIds(fileIds);
 
   if (!normalizedIds.length) {
     return;
@@ -364,7 +233,7 @@ const onDropToFolder = async (event, folder) => {
   dragTargetId.value = null;
   draggingFileIds.value = [];
 
-  if (!draggedFileIds.length || draggedFileIds.includes(String(folder.id))) {
+  if (!canDropFileTableMove(draggedFileIds, folder.id)) {
     return;
   }
 
@@ -391,11 +260,11 @@ const onDragOverParentNavigator = (event) => {
 
   event.preventDefault();
   event.dataTransfer.dropEffect = "move";
-  dragTargetId.value = "__parent__";
+  dragTargetId.value = FILE_TABLE_PARENT_DROP_TARGET_ID;
 };
 
 const onDragLeaveParentNavigator = () => {
-  if (dragTargetId.value === "__parent__") {
+  if (dragTargetId.value === FILE_TABLE_PARENT_DROP_TARGET_ID) {
     dragTargetId.value = null;
   }
 };
@@ -425,21 +294,7 @@ const onDropToParentNavigator = async (event) => {
   }
 };
 
-const gridClassName = computed(() => {
-  if (gridSize.value === "large") {
-    return "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3";
-  }
-
-  if (gridSize.value === "xsmall") {
-    return "grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7";
-  }
-
-  if (gridSize.value === "small") {
-    return "grid-cols-2 sm:grid-cols-3 xl:grid-cols-5";
-  }
-
-  return "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4";
-});
+const gridClassName = computed(() => getFileTableGridClassName(gridSize.value));
 </script>
 
 <template>

@@ -30,4 +30,6 @@ export const ADMIN_SECTIONS = Object.freeze([
   { value: "users", label: "사용자 관리" },
   { value: "storage", label: "스토리지 통계 및 분석" },
   { value: "plans", label: "플랜 / 결제 비중 통계 분석" },
+  { value: "shareAudit", label: "공유 감사 로그" },
+  { value: "sessions", label: "\uC138\uC158 \uAD00\uB9AC" },
 ]);

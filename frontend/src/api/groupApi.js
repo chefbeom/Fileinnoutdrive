@@ -82,13 +82,17 @@ export const rejectGroupInvite = async (inviteId) => {
   return unwrapResult(response);
 };
 
-export const shareFilesWithTargets = async ({ fileIds, userIds = [], groupIds = [], emails = [], permission = "READ" }) => {
+export const shareFilesWithTargets = async ({ fileIds, userIds = [], groupIds = [], emails = [], permission = "READ", expiresAt = null, downloadLimit = null, sharePassword = null }) => {
+  const normalizedDownloadLimit = Number(downloadLimit || 0);
   const response = await api.post("/group/share/files", {
     fileIds,
     userIds,
     groupIds,
     emails,
     permission,
+    expiresAt: expiresAt || null,
+    downloadLimit: Number.isFinite(normalizedDownloadLimit) && normalizedDownloadLimit > 0 ? normalizedDownloadLimit : null,
+    sharePassword: typeof sharePassword === "string" && sharePassword.trim() ? sharePassword.trim() : null,
   });
   return unwrapResult(response);
 };

@@ -3,13 +3,22 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { downloadFileAsset } from '@/api/filesApi.js'
 import postApi from '@/api/postApi.js'
+import {
+  getReadOnlyAssetBadge as getAssetBadge,
+  getReadOnlyWorkspaceFiles,
+  getReadOnlyWorkspaceImages,
+  hasReadOnlyAssets,
+  normalizeReadOnlyAsset,
+  renderReadOnlyContent,
+} from './workspaceReadOnlyViewModel.js'
+import { useWorkspaceThemeSync } from './composables/useWorkspaceThemeSync.js'
 
 const route = useRoute()
 const router = useRouter()
 
 // ── 상태 ──────────────────────────────────────────────────────────────────────
 const title = ref('')
-const contentBlocks = ref([])
+
 const rawContent = ref('')
 
 const workspaceId = ref(null)
@@ -21,138 +30,10 @@ const loadError = ref('')
 const activeAssetId = ref(null)
 
 // ── 계산 ──────────────────────────────────────────────────────────────────────
-const workspaceImages = computed(() => workspaceAssets.value.filter((a) => a.assetType === 'IMAGE'))
-const workspaceFiles = computed(() => workspaceAssets.value.filter((a) => a.assetType === 'FILE'))
-const hasAssets = computed(() => workspaceAssets.value.length > 0)
+const workspaceImages = computed(() => getReadOnlyWorkspaceImages(workspaceAssets.value))
+const workspaceFiles = computed(() => getReadOnlyWorkspaceFiles(workspaceAssets.value))
+const hasAssets = computed(() => hasReadOnlyAssets(workspaceAssets.value))
 
-// ── 유틸 ──────────────────────────────────────────────────────────────────────
-const formatBytes = (bytes) => {
-  const size = Number(bytes || 0)
-  if (!Number.isFinite(size) || size <= 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const idx = Math.min(Math.floor(Math.log(size) / Math.log(1024)), units.length - 1)
-  const val = size / 1024 ** idx
-  const digits = idx === 0 ? 0 : val >= 100 ? 0 : val >= 10 ? 1 : 2
-  return `${val.toFixed(digits)} ${units[idx]}`
-}
-
-const formatDateTime = (value) => {
-  if (!value) return ''
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return ''
-  return new Intl.DateTimeFormat('ko-KR', {
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit',
-  }).format(d)
-}
-
-const normalizeAsset = (asset = {}) => ({
-  id: asset.idx ?? asset.id ?? null,
-  workspaceId: asset.workspaceIdx ?? asset.workspaceId ?? workspaceId.value,
-  assetType: String(asset.assetType || 'FILE').toUpperCase(),
-  originalName: asset.originalName || asset.fileOriginName || '이름 없는 파일',
-  storedFileName: asset.storedFileName || asset.fileSaveName || '',
-  objectKey: asset.objectKey || asset.fileSavePath || '',
-  contentType: asset.contentType || 'application/octet-stream',
-  fileSize: Number(asset.fileSize || 0),
-  previewUrl: asset.previewUrl || '',
-  downloadUrl: asset.downloadUrl || asset.presignedDownloadUrl || '',
-  createdAt: asset.createdAt || null,
-  createdAtLabel: formatDateTime(asset.createdAt),
-  fileSizeLabel: formatBytes(asset.fileSize),
-})
-
-const escapeHtml = (value = '') => String(value)
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;')
-  .replace(/'/g, '&#39;')
-
-const safeUrl = (value = '') => {
-  const raw = String(value || '').trim()
-  if (!raw) return ''
-
-  try {
-    const parsed = new URL(raw, window.location.origin)
-    if (['http:', 'https:'].includes(parsed.protocol)) {
-      return escapeHtml(raw)
-    }
-  } catch {
-    return ''
-  }
-
-  return ''
-}
-
-// ── EditorJS 블록 렌더러 ──────────────────────────────────────────────────────
-const renderBlock = (block) => {
-  if (!block?.type) return ''
-
-  const d = block.data || {}
-
-  switch (block.type) {
-    case 'header': {
-      const level = Math.min(Math.max(Number(d.level) || 2, 1), 6)
-      return `<h${level} class="ro-heading ro-heading--${level}">${escapeHtml(d.text)}</h${level}>`
-    }
-    case 'paragraph':
-      return `<p class="ro-paragraph">${escapeHtml(d.text)}</p>`
-    case 'list': {
-      const tag = d.style === 'ordered' ? 'ol' : 'ul'
-      const style = tag === 'ol' ? 'ordered' : 'unordered'
-      const items = (d.items || []).map((item) => `<li>${escapeHtml(item)}</li>`).join('')
-      return `<${tag} class="ro-list ro-list--${style}">${items}</${tag}>`
-    }
-    case 'image': {
-      const caption = d.caption ? `<figcaption class="ro-image-caption">${escapeHtml(d.caption)}</figcaption>` : ''
-      const classes = ['ro-image-wrap', d.withBorder && 'ro-image-wrap--border', d.stretched && 'ro-image-wrap--stretched'].filter(Boolean).join(' ')
-      const src = safeUrl(d.file?.url || d.url)
-      if (!src) return caption ? `<figure class="${classes}">${caption}</figure>` : ''
-      return `<figure class="${classes}"><img src="${src}" alt="${escapeHtml(d.caption)}" class="ro-image" />${caption}</figure>`
-    }
-    case 'delimiter':
-      return `<hr class="ro-delimiter" />`
-    case 'quote':
-      return `<blockquote class="ro-quote"><p>${escapeHtml(d.text)}</p>${d.caption ? `<cite>${escapeHtml(d.caption)}</cite>` : ''}</blockquote>`
-    case 'code':
-      return `<pre class="ro-code"><code>${escapeHtml(d.code)}</code></pre>`
-    case 'table': {
-      const rows = (d.content || []).map((row, ri) => {
-        const cells = row.map((cell) => ri === 0 && d.withHeadings ? `<th>${escapeHtml(cell)}</th>` : `<td>${escapeHtml(cell)}</td>`).join('')
-        return `<tr>${cells}</tr>`
-      }).join('')
-      return `<div class="ro-table-wrap"><table class="ro-table">${rows}</table></div>`
-    }
-    case 'checklist': {
-      const items = (d.items || []).map((item) =>
-        `<li class="ro-checklist-item${item.checked ? ' ro-checklist-item--checked' : ''}">
-          <span class="ro-checklist-mark">${item.checked ? '✓' : ''}</span>
-          <span>${escapeHtml(item.text)}</span>
-        </li>`
-      ).join('')
-      return `<ul class="ro-checklist">${items}</ul>`
-    }
-    default:
-      return d.text ? `<p class="ro-paragraph">${escapeHtml(d.text)}</p>` : ''
-  }
-}
-
-const renderContent = (raw) => {
-  if (!raw) return ''
-
-  // EditorJS JSON 형식인 경우
-  try {
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-    if (parsed?.blocks && Array.isArray(parsed.blocks)) {
-      return parsed.blocks.map(renderBlock).join('\n')
-    }
-  } catch {}
-
-  // 이미 HTML인 경우 그대로 반환
-  // 일반 텍스트
-  return `<p class="ro-paragraph">${escapeHtml(raw)}</p>`
-}
 
 // ── 데이터 로드 ──────────────────────────────────────────────────────────────
 const loadPost = async () => {
@@ -199,7 +80,8 @@ const loadAssets = async (wsId) => {
   workspaceAssetError.value = ''
   try {
     const result = await postApi.getWorkspaceAssets(wsId)
-    workspaceAssets.value = (Array.isArray(result) ? result : []).map(normalizeAsset)
+    workspaceAssets.value = (Array.isArray(result) ? result : [])
+      .map((asset) => normalizeReadOnlyAsset(asset, workspaceId.value))
   } catch (error) {
     workspaceAssetError.value =
       error?.response?.data?.message ||
@@ -226,16 +108,10 @@ const toggleAssetActions = (assetId) => {
   activeAssetId.value = activeAssetId.value === assetId ? null : assetId
 }
 
-const getAssetBadge = (asset) => (asset?.assetType === 'IMAGE' ? '이미지' : '파일')
-
-const renderedContent = computed(() => renderContent(rawContent.value))
+const renderedContent = computed(() => renderReadOnlyContent(rawContent.value))
 
 // ── 테마 동기화 ───────────────────────────────────────────────────────────────
-const syncTheme = () => {
-  const saved = localStorage.getItem('theme')
-  const dark = saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)
-  document.documentElement.classList.toggle('dark', dark)
-}
+const { syncTheme } = useWorkspaceThemeSync()
 
 onMounted(async () => {
   syncTheme()

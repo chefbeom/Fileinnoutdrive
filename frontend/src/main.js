@@ -17,11 +17,11 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
       .then(registration => {
-        console.log('ServiceWorker registration successful with scope: ', registration.scope);
+        if (import.meta.env.DEV) console.debug('ServiceWorker registration successful with scope: ', registration.scope);
         registration.update().catch(() => {});
       })
       .catch(error => {
-        console.log('ServiceWorker registration failed: ', error);
+        if (import.meta.env.DEV) console.debug('ServiceWorker registration failed: ', error);
       });
   });
 

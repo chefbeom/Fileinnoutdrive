@@ -40,3 +40,25 @@ export async function updateAdministratorStorageCapacity(providerCapacityBytes, 
   );
   return extractObjectResult(response?.data);
 }
+export async function fetchAdministratorShareAudit() {
+  const response = await api.get("/administrator/share-audit", {
+    timeout: 30000,
+  });
+  return extractObjectResult(response?.data) || [];
+}
+export async function fetchAdministratorSessions() {
+  const response = await api.get("/administrator/sessions", {
+    timeout: 30000,
+  });
+  return extractObjectResult(response?.data) || [];
+}
+
+export async function forceLogoutAdministratorSession(sessionId) {
+  const response = await api.delete(`/administrator/sessions/${sessionId}`);
+  return extractObjectResult(response?.data);
+}
+
+export async function forceLogoutAdministratorUserSessions(userIdx) {
+  const response = await api.delete(`/administrator/users/${userIdx}/sessions`);
+  return extractObjectResult(response?.data);
+}

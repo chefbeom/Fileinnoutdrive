@@ -1,6 +1,8 @@
 import axios from 'axios'
 import { apiPath } from '@/utils/backendUrl.js'
 
+let refreshAccessTokenPromise = null
+
 const parseBearerToken = (value) => {
   if (!value) return ''
   return String(value).replace(/^Bearer\s+/i, '')
@@ -20,6 +22,17 @@ export const reissueAccessToken = async () => {
   }
 
   return { res, accessToken }
+}
+
+export const refreshAccessToken = () => {
+  if (!refreshAccessTokenPromise) {
+    refreshAccessTokenPromise = reissueAccessToken()
+      .finally(() => {
+        refreshAccessTokenPromise = null
+      })
+  }
+
+  return refreshAccessTokenPromise
 }
 
 export const logoutSession = async () => {

@@ -1,0 +1,48 @@
+.workspace-floating-divider {
+  height: 1px;
+  background: var(--editor-border);
+}
+
+.workspace-outline-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.workspace-outline-list {
+  display: grid;
+  gap: 4px;
+}
+
+.workspace-outline-item {
+  display: flex;
+  width: 100%;
+  min-height: 30px;
+  align-items: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #475569;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.workspace-outline-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-outline-item:hover,
+.workspace-outline-item:focus-visible {
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
+}
+
+.workspace-outline-item--level-1 { padding: 6px 8px; }
+.workspace-outline-item--level-2 { padding: 6px 8px 6px 18px; font-weight: 750; }
+.workspace-outline-item--level-3 { padding: 6px 8px 6px 28px; font-weight: 700; }
+.workspace-outline-item--level-4 { padding: 6px 8px 6px 38px; font-weight: 650; }
+

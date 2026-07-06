@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useFileStore } from "@/stores/useFileStore.js";
-import { downloadFileAsset } from "@/api/filesApi.js";
+import { downloadFileAsset, fetchFileVersions, restoreFileVersion } from "@/api/filesApi.js";
 
 const props = defineProps({
   file: {
@@ -16,6 +16,10 @@ const textPreview = ref(null);
 const textPreviewError = ref("");
 const isTextPreviewLoading = ref(false);
 const isDownloading = ref(false);
+const fileVersions = ref([]);
+const fileVersionsError = ref("");
+const isFileVersionsLoading = ref(false);
+const restoringVersionId = ref(null);
 
 const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "gif", "svg", "webp", "bmp", "heic", "avif", "apng", "jfif", "tif", "tiff"]);
 const VIDEO_EXTENSIONS = new Set(["mp4", "webm", "mov", "mkv", "avi", "wmv", "m4v", "mpeg", "mpg", "ogv", "3gp"]);
@@ -37,14 +41,25 @@ const previewKind = computed(() => {
 
 const previewUrl = computed(() => props.file?.downloadUrl || props.file?.presignedDownloadUrl || "");
 const isLockedFile = computed(() => Boolean(props.file?.lockedFile));
-const canDownload = computed(() => Boolean(!isLockedFile.value && previewUrl.value));
+const canDownload = computed(() => Boolean(!isLockedFile.value && (previewUrl.value || (props.file?.sharedWithMe && props.file?.downloadable))));
+const canManageVersions = computed(() => Boolean(props.file?.id && props.file?.type !== "folder" && !props.file?.sharedWithMe && !isLockedFile.value));
 
+const resolveProtectedShareOptions = () => {
+  if (!props.file?.sharedWithMe || !props.file?.passwordProtected) {
+    return {};
+  }
+  const sharePassword = window.prompt("\uACF5\uC720 \uBE44\uBC00\uBC88\uD638\uB97C \uC785\uB825\uD574 \uC8FC\uC138\uC694.");
+  if (sharePassword === null) {
+    throw new Error("\uACF5\uC720 \uBE44\uBC00\uBC88\uD638\uAC00 \uD544\uC694\uD569\uB2C8\uB2E4.");
+  }
+  return { sharePassword };
+};
 const handleDownload = async () => {
   if (!canDownload.value || isDownloading.value) return;
 
   try {
     isDownloading.value = true;
-    await downloadFileAsset(props.file);
+    await downloadFileAsset(props.file, "file", resolveProtectedShareOptions());
   } catch (error) {
     window.alert(error?.message || "\uD30C\uC77C\uC744 \uB2E4\uC6B4\uB85C\uB4DC\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
   } finally {
@@ -126,6 +141,44 @@ const closeOnEscape = (event) => {
   }
 };
 
+const loadFileVersions = async () => {
+  if (!canManageVersions.value) {
+    fileVersions.value = [];
+    fileVersionsError.value = "";
+    isFileVersionsLoading.value = false;
+    return;
+  }
+
+  isFileVersionsLoading.value = true;
+  fileVersionsError.value = "";
+  try {
+    fileVersions.value = await fetchFileVersions(props.file.id);
+  } catch (error) {
+    fileVersionsError.value = error?.response?.data?.message || error?.message || "\uD30C\uC77C \uBC84\uC804\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.";
+  } finally {
+    isFileVersionsLoading.value = false;
+  }
+};
+
+const handleRestoreVersion = async (version) => {
+  if (!canManageVersions.value || !version?.idx || restoringVersionId.value) {
+    return;
+  }
+  if (!window.confirm("\uC774 \uBC84\uC804\uC73C\uB85C \uD30C\uC77C\uC744 \uBCF5\uC6D0\uD558\uC2DC\uACA0\uC2B5\uB2C8\uAE4C?")) {
+    return;
+  }
+
+  restoringVersionId.value = version.idx;
+  try {
+    await restoreFileVersion(props.file.id, version.idx);
+    await fileStore.refreshAll();
+    await loadFileVersions();
+  } catch (error) {
+    window.alert(error?.response?.data?.message || error?.message || "\uD30C\uC77C \uBC84\uC804\uC744 \uBCF5\uC6D0\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
+  } finally {
+    restoringVersionId.value = null;
+  }
+};
 const loadTextPreview = async () => {
   if (!props.file?.id || previewKind.value !== "text") {
     textPreview.value = null;
@@ -145,7 +198,7 @@ const loadTextPreview = async () => {
   textPreviewError.value = "";
 
   try {
-    textPreview.value = await fileStore.fetchTextPreviewFor(props.file);
+    textPreview.value = await fileStore.fetchTextPreviewFor(props.file, resolveProtectedShareOptions());
   } catch (error) {
     textPreviewError.value = error?.response?.data?.message || error?.message || "텍스트 미리보기를 불러오지 못했습니다.";
   } finally {
@@ -161,6 +214,7 @@ watch(
       window.addEventListener("keydown", closeOnEscape);
     }
     loadTextPreview();
+    loadFileVersions();
   },
   { immediate: true },
 );
@@ -257,6 +311,29 @@ onBeforeUnmount(() => {
                 </dd>
               </div>
             </dl>
+          </div>
+          <div v-if="canManageVersions" class="file-version-panel rounded-2xl border border-gray-200 px-4 py-4">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="text-sm font-semibold text-gray-900">{{ "\uD30C\uC77C \uBC84\uC804" }}</p>
+                <p class="mt-1 text-xs text-gray-500">{{ "\uAD50\uCCB4 \uC804 \uD30C\uC77C\uC744 \uBCF5\uC6D0\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4." }}</p>
+              </div>
+              <button type="button" class="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 transition hover:bg-gray-50" :disabled="isFileVersionsLoading" @click="loadFileVersions">{{ "\uC0C8\uB85C\uACE0\uCE68" }}</button>
+            </div>
+            <div v-if="isFileVersionsLoading" class="mt-3 rounded-2xl bg-slate-50 px-4 py-5 text-center text-sm text-gray-500">{{ "\uBC84\uC804\uC744 \uBD88\uB7EC\uC624\uB294 \uC911\uC785\uB2C8\uB2E4." }}</div>
+            <div v-else-if="fileVersionsError" class="mt-3 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-600">{{ fileVersionsError }}</div>
+            <div v-else-if="fileVersions.length === 0" class="mt-3 rounded-2xl bg-slate-50 px-4 py-5 text-center text-sm text-gray-500">{{ "\uC800\uC7A5\uB41C \uC774\uC804 \uBC84\uC804\uC774 \uC5C6\uC2B5\uB2C8\uB2E4." }}</div>
+            <div v-else class="mt-3 space-y-2">
+              <div v-for="version in fileVersions" :key="version.idx" class="rounded-2xl bg-slate-50 px-3 py-3">
+                <div class="flex items-center justify-between gap-3">
+                  <div class="min-w-0">
+                    <p class="truncate text-sm font-semibold text-gray-900">v{{ version.versionNumber }} · {{ version.fileOriginName }}</p>
+                    <p class="mt-1 text-xs text-gray-500">{{ formatDate(version.createdAt) }} · {{ formatBytes(version.fileSize) }}</p>
+                  </div>
+                  <button type="button" class="shrink-0 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300" :disabled="restoringVersionId === version.idx" @click="handleRestoreVersion(version)">{{ restoringVersionId === version.idx ? "\uBCF5\uC6D0 \uC911" : "\uBCF5\uC6D0" }}</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 

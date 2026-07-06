@@ -5,16 +5,15 @@ const SSE_OPTIONS = {
   heartbeatTimeout: 3600000,
 }
 
-const getAuthHeaders = () => {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('ACCESS_TOKEN') : null
-  return token ? { Authorization: `Bearer ${token}` } : {}
-}
+const getAuthHeaders = (accessToken) => (
+  accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
+)
 
 const isFatalError = (eventSource) => eventSource.readyState === EventSourcePolyfill.CLOSED
 
-const connectNotificationSse = ({ onNotification, onNewMessage, onError } = {}) => {
+const connectNotificationSse = ({ accessToken, onNotification, onNewMessage, onError } = {}) => {
   const eventSource = new EventSourcePolyfill(apiPath('/sse/connect'), {
-    headers: getAuthHeaders(),
+    headers: getAuthHeaders(accessToken),
     withCredentials: true,
     ...SSE_OPTIONS,
   })
@@ -65,15 +64,15 @@ const connectNotificationSse = ({ onNotification, onNewMessage, onError } = {}) 
   return eventSource
 }
 
-const connectWorkspaceSse = ({ userId, onConnect, onTitleUpdated, onError } = {}) => {
+const connectWorkspaceSse = ({ userId, accessToken, onConnect, onTitleUpdated, onError } = {}) => {
   const eventSource = new EventSourcePolyfill(apiPath('/sse/connect'), {
-    headers: getAuthHeaders(),
+    headers: getAuthHeaders(accessToken),
     withCredentials: true,
     ...SSE_OPTIONS,
   })
 
   eventSource.onopen = (event) => {
-    console.log('[SSE] 워크스페이스 연결 성공 (userId:', userId, ')')
+    if (import.meta.env.DEV) console.debug('[SSE] 워크스페이스 연결 성공 (userId:', userId, ')');
     if (onConnect) onConnect(event)
   }
 
@@ -109,7 +108,7 @@ const connectWorkspaceSse = ({ userId, onConnect, onTitleUpdated, onError } = {}
 const closeSse = (eventSource) => {
   if (eventSource && typeof eventSource.close === 'function') {
     eventSource.close()
-    console.log('[SSE] 연결을 정상적으로 종료했습니다.')
+    if (import.meta.env.DEV) console.debug('[SSE] 연결을 정상적으로 종료했습니다.');
   }
 }
 

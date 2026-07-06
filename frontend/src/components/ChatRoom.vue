@@ -3,9 +3,31 @@ import { ref, onMounted, onUnmounted, nextTick, watch, computed } from 'vue'
 import api from '@/plugins/axiosinterceptor.js'
 import { useAuthStore } from '@/stores/useAuthStore.js'
 import SockJS from 'sockjs-client'
-import Stomp from 'stompjs'
+import Stomp from '@/utils/stompClient.js'
 import { apiPath } from '@/utils/backendUrl.js'
 import { formatBytes as formatFileSize } from '@/utils/formatBytes.js'
+import ChatParticipantsPanel from './ChatParticipantsPanel.vue'
+import {
+  DELETED_MESSAGE_TEXT,
+  applyChatParticipantReadState,
+  applyDeletedChatMessage,
+  buildChatFileMessagePayload,
+  buildChatReadPeopleTitle,
+  buildPendingChatFileMessage,
+  buildPendingChatTextMessage,
+  formatChatMessageDate as formatMessageDate,
+  formatChatReadPeople,
+  formatChatTime as formatTime,
+  getChatMessageUnreadCount,
+  getChatPreviewText,
+  getChatReadersForMessage,
+  getLatestChatMessageId,
+  normalizeChatParticipant,
+  shouldShowChatDateDivider,
+  sortChatMessages,
+  toChatMessage,
+  validateChatUploadFile,
+} from './chatRoomViewModel.js'
 
 const props = defineProps({
   room: Object,
@@ -47,61 +69,9 @@ const currentUserIdx = computed(() => authStore.user?.idx ?? props.currentUser?.
 const participantCountLabel = computed(() => (
   participants.value.length || props.room?.userCount || props.room?.participantCount || 0
 ))
-const DELETED_MESSAGE_TEXT = '삭제된 메시지입니다.'
-
-const isDeletedMessagePayload = (payload = {}) => (
-  Boolean(payload.deleted) ||
-  (
-    String(payload.contents ?? payload.text ?? '').trim() === DELETED_MESSAGE_TEXT &&
-    !payload.fileUrl &&
-    !payload.fileName
-  )
-)
-
-const toChatMessage = (payload = {}, options = {}) => {
-  const deleted = isDeletedMessagePayload(payload)
-  const isMe = Boolean(options.isMe)
-  const isPending = Boolean(options.isPending)
-
-  return {
-    id: payload.idx ?? payload.id,
-    sender: payload.senderNickname ?? payload.sender ?? myName.value,
-    text: deleted ? DELETED_MESSAGE_TEXT : (payload.contents ?? payload.text ?? ''),
-    time: payload.createdAt ?? payload.time ?? new Date().toISOString(),
-    isMe,
-    isPending,
-    deleted,
-    messageUnreadCount: payload.messageUnreadCount ?? 0,
-    profileImageUrl: deleted ? null : (payload.profileImageUrl ?? null),
-    fileUrl: deleted ? null : (payload.fileUrl ?? null),
-    fileName: deleted ? null : (payload.fileName ?? null),
-    fileType: deleted ? null : (payload.fileType ?? null),
-    fileSize: deleted ? null : (payload.fileSize ?? null),
-    messageType: deleted ? 'TEXT' : (payload.messageType || 'TEXT'),
-  }
-}
-
-const getPreviewText = (message = {}) => {
-  const text = String(message.text ?? message.contents ?? '').trim()
-  if (text) return text
-
-  const normalizedMessageType = String(message.messageType ?? '').toUpperCase()
-  if (normalizedMessageType === 'IMAGE') return '사진'
-  if (normalizedMessageType === 'FILE') return '문서'
-
-  const normalizedFileType = String(message.fileType ?? '').toLowerCase()
-  if (normalizedFileType.startsWith('image/')) return '사진'
-  if (normalizedFileType) return '문서'
-
-  const fileHint = String(message.fileName ?? message.fileUrl ?? '').toLowerCase()
-  if (/\.(png|jpe?g|gif|webp|bmp|svg)$/.test(fileHint)) return '사진'
-  if (fileHint) return '문서'
-
-  return ''
-}
 
 const emitRoomPreviewUpdate = (message = {}) => {
-  const lastMsg = getPreviewText(message)
+  const lastMsg = getChatPreviewText(message)
   if (!props.room?.id || !lastMsg) return
 
   emit('room-preview-update', {
@@ -112,17 +82,9 @@ const emitRoomPreviewUpdate = (message = {}) => {
 }
 
 const applyDeletedMessage = (messageId, deletedText = DELETED_MESSAGE_TEXT) => {
-  const target = chatMessages.value.find((msg) => msg.id === messageId)
+  const target = applyDeletedChatMessage(chatMessages.value, messageId, deletedText)
   if (!target) return
 
-  target.text = deletedText || DELETED_MESSAGE_TEXT
-  target.deleted = true
-  target.isPending = false
-  target.fileUrl = null
-  target.fileName = null
-  target.fileType = null
-  target.fileSize = null
-  target.messageType = 'TEXT'
   emitRoomPreviewUpdate(target)
 }
 
@@ -184,140 +146,23 @@ const handleWindowKeydown = (event) => {
   closeParticipantsPanel()
 }
 
-const formatTime = (isoString) => {
-  if (!isoString) return ''
-  const date = new Date(isoString)
-  return new Intl.DateTimeFormat('ko-KR', {
-    hour: 'numeric',
-    minute: 'numeric',
-    hour12: true
-  }).format(date)
-}
+const shouldShowDateDivider = (index) => shouldShowChatDateDivider(chatMessages.value, index)
 
-const formatDateTime = (isoString) => {
-  if (!isoString) return ''
-  const date = new Date(isoString)
-  if (Number.isNaN(date.getTime())) return ''
 
-  return new Intl.DateTimeFormat('ko-KR', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    hour12: true
-  }).format(date)
-}
-
-const getMessageDateKey = (isoString) => {
-  if (!isoString) return ''
-  const date = new Date(isoString)
-  if (Number.isNaN(date.getTime())) return ''
-
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, '0'),
-    String(date.getDate()).padStart(2, '0')
-  ].join('-')
-}
-
-const formatMessageDate = (isoString) => {
-  if (!isoString) return ''
-  const date = new Date(isoString)
-  if (Number.isNaN(date.getTime())) return ''
-
-  return new Intl.DateTimeFormat('ko-KR', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    weekday: 'short'
-  }).format(date)
-}
-
-const shouldShowDateDivider = (index) => {
-  const currentMessage = chatMessages.value[index]
-  if (!currentMessage) return false
-  if (index === 0) return true
-
-  const previousMessage = chatMessages.value[index - 1]
-  return getMessageDateKey(currentMessage.time) !== getMessageDateKey(previousMessage?.time)
-}
-
-const normalizeParticipant = (participant = {}) => {
-  const userIdx = participant.userIdx
-
-  return {
-    id: participant.id,
-    userIdx,
-    nickname: participant.nickname || participant.email || '사용자',
-    email: participant.email || '',
-    customRoomName: participant.customRoomName || '',
-    joinedAt: participant.joinedAt || null,
-    lastReadMessageId: Number(participant.lastReadMessageId || 0),
-    isFavorite: Boolean(participant.isFavorite ?? participant.favorite),
-    isMe: Boolean(participant.isMe ?? participant.me ?? Number(userIdx) === Number(currentUserIdx.value))
-  }
-}
-
-const participantInitial = (participant = {}) => (
-  String(participant.nickname || participant.email || '?').charAt(0).toUpperCase()
-)
-
-const getLatestLoadedMessageId = () => (
-  chatMessages.value.reduce((latest, message) => {
-    const messageId = Number(message.id)
-    return Number.isFinite(messageId) ? Math.max(latest, messageId) : latest
-  }, 0)
-)
+const getLatestLoadedMessageId = () => getLatestChatMessageId(chatMessages.value)
 
 const updateParticipantReadState = (userIdx, lastReadMessageId = null) => {
-  const normalizedUserIdx = Number(userIdx)
-  const nextReadId = Number(lastReadMessageId ?? getLatestLoadedMessageId())
-
-  if (!Number.isFinite(normalizedUserIdx) || !Number.isFinite(nextReadId) || nextReadId <= 0) return
-
-  const participant = participants.value.find((item) => Number(item.userIdx) === normalizedUserIdx)
-  if (!participant) return
-
-  participant.lastReadMessageId = Math.max(Number(participant.lastReadMessageId || 0), nextReadId)
+  const nextReadId = lastReadMessageId ?? getLatestLoadedMessageId()
+  applyChatParticipantReadState(participants.value, userIdx, nextReadId)
 }
 
-const getReadersForMessage = (message = {}) => {
-  const messageId = Number(message.id)
-  if (!message.isMe || !Number.isFinite(messageId)) return []
+const getReadersForMessage = (message = {}) => getChatReadersForMessage(message, participants.value)
 
-  return participants.value.filter((participant) => (
-    !participant.isMe && Number(participant.lastReadMessageId || 0) >= messageId
-  ))
-}
+const formatReadPeople = (message = {}) => formatChatReadPeople(getReadersForMessage(message))
 
-const formatReadPeople = (message = {}) => {
-  const readers = getReadersForMessage(message)
-  if (!readers.length) return ''
-  if (readers.length <= 2) return `${readers.map((reader) => reader.nickname).join(', ')} 읽음`
-  return `${readers[0].nickname} 외 ${readers.length - 1}명 읽음`
-}
+const messageReadPeopleTitle = (message = {}) => buildChatReadPeopleTitle(getReadersForMessage(message))
 
-const messageReadPeopleTitle = (message = {}) => (
-  getReadersForMessage(message).map((reader) => reader.nickname).join(', ')
-)
-
-const getMessageUnreadCount = (message = {}) => {
-  if (!message.isMe) return 0
-
-  const messageId = Number(message.id)
-  if (!Number.isFinite(messageId) || !participants.value.length) {
-    return Number(message.messageUnreadCount || 0)
-  }
-
-  return participants.value.filter((participant) => (
-    !participant.isMe && Number(participant.lastReadMessageId || 0) < messageId
-  )).length
-}
-
-const participantReadLabel = (participant = {}) => {
-  const lastReadMessageId = Number(participant.lastReadMessageId || 0)
-  return lastReadMessageId > 0 ? `#${lastReadMessageId}까지 읽음` : '읽음 없음'
-}
+const getMessageUnreadCount = (message = {}) => getChatMessageUnreadCount(message, participants.value)
 
 const fetchParticipants = async () => {
   if (!props.room?.id) return
@@ -328,7 +173,9 @@ const fetchParticipants = async () => {
   try {
     const response = await api.get(`/chatRoom/${props.room.id}/participants`)
     const result = response.data?.result ?? []
-    participants.value = Array.isArray(result) ? result.map(normalizeParticipant) : []
+    participants.value = Array.isArray(result)
+      ? result.map((participant) => normalizeChatParticipant(participant, currentUserIdx.value))
+      : []
   } catch (error) {
     console.error('참여자 목록 로드 실패:', error)
     participantsError.value = '참여자 정보를 불러오지 못했습니다.'
@@ -347,12 +194,7 @@ const closeParticipantsPanel = () => {
 }
 
 const sortMessages = () => {
-  chatMessages.value.sort((a, b) => {
-    const timeA = new Date(a.time).getTime()
-    const timeB = new Date(b.time).getTime()
-    if (timeA !== timeB) return timeA - timeB
-    return (a.id > b.id) ? 1 : -1
-  })
+  chatMessages.value = sortChatMessages(chatMessages.value)
 }
 
 const fetchHistory = async (isFirst = false) => {
@@ -377,7 +219,10 @@ const fetchHistory = async (isFirst = false) => {
 
     if (response.data.success && response.data.result.messageList) {
       const newMsgs = response.data.result.messageList.map((msg) =>
-        toChatMessage(msg, { isMe: Number(msg.senderIdx) === Number(currentUserIdx.value) })
+        toChatMessage(msg, {
+          isMe: Number(msg.senderIdx) === Number(currentUserIdx.value),
+          fallbackSender: myName.value
+        })
       )
 
       if (newMsgs.length < size) isLastPage.value = true
@@ -426,8 +271,7 @@ const initChat = () => {
   stompClient.connect(
     { Authorization: `Bearer ${authStore.token}` },
     () => {
-      console.log('STOMP 연결 성공')
-
+      if (import.meta.env.DEV) console.debug('STOMP 연결 성공');
       stompClient.subscribe(`/sub/chat/room/${props.room.id}`, (sdkEvent) => {
         const data = JSON.parse(sdkEvent.body)
 
@@ -458,7 +302,7 @@ const initChat = () => {
         if (Number(data.senderIdx) === Number(currentUserIdx.value)) {
           const tempIdx = chatMessages.value.findLastIndex(m => m.isPending && m.isMe)
           if (tempIdx !== -1) {
-            chatMessages.value[tempIdx] = toChatMessage(data, { isMe: true })
+            chatMessages.value[tempIdx] = toChatMessage(data, { isMe: true, fallbackSender: myName.value })
             emitRoomPreviewUpdate(chatMessages.value[tempIdx])
             sortMessages()
             nextTick(() => scrollToBottom())
@@ -468,7 +312,7 @@ const initChat = () => {
 
         // 상대방 메시지 (중복 방지)
         if (!chatMessages.value.some(m => m.id === data.idx && !m.isPending)) {
-          const nextMessage = toChatMessage(data, { isMe: false })
+          const nextMessage = toChatMessage(data, { isMe: false, fallbackSender: myName.value })
           chatMessages.value.push(nextMessage)
           emitRoomPreviewUpdate(nextMessage)
           sortMessages()
@@ -489,16 +333,11 @@ const sendMessage = () => {
 
   newMessage.value = '' // 즉시 초기화
 
-  const tempMsg = {
-    id: 'temp-' + Date.now() + Math.random(),
+  const tempMsg = buildPendingChatTextMessage({
+    text,
     sender: myName.value,
-    text: text,
-    time: new Date().toISOString(),
-    isMe: true,
-    isPending: true,
-    messageUnreadCount: 0,
     profileImageUrl: myProfileImageUrl.value
-  }
+  })
   chatMessages.value.push(tempMsg)
   emitRoomPreviewUpdate(tempMsg)
   sortMessages()
@@ -517,11 +356,9 @@ const handleFileSelect = async (e) => {
   const file = e.target.files[0]
   if (!file) return
 
-  const isImage = file.type.startsWith('image/')
-  const maxSize = isImage ? 5 * 1024 * 1024 : 30 * 1024 * 1024
-
-  if (file.size > maxSize) {
-    alert(isImage ? '이미지는 5MB 이하만 업로드 가능합니다.' : '파일은 30MB 이하만 업로드 가능합니다.')
+  const uploadValidation = validateChatUploadFile(file)
+  if (!uploadValidation.valid) {
+    if (uploadValidation.message) alert(uploadValidation.message)
     return
   }
 
@@ -534,24 +371,14 @@ const handleFileSelect = async (e) => {
     })
 
     const fileUrl = response.data.result.fileUrl
-    const messageType = isImage ? 'IMAGE' : 'FILE'
 
     // 임시 메시지 추가
-    const tempMsg = {
-      id: 'temp-' + Date.now() + Math.random(),
+    const tempMsg = buildPendingChatFileMessage({
+      file,
+      fileUrl,
       sender: myName.value,
-      time: new Date().toISOString(),
-      isMe: true,
-      isPending: true,
-      messageUnreadCount: 0,
-      profileImageUrl: myProfileImageUrl.value,
-      fileUrl: fileUrl,
-      fileName: file.name,
-      fileType: file.type,
-      fileSize: file.size,
-      messageType: messageType,
-      contents: ''
-    }
+      profileImageUrl: myProfileImageUrl.value
+    })
     chatMessages.value.push(tempMsg)
     emitRoomPreviewUpdate(tempMsg)
     sortMessages()
@@ -561,14 +388,11 @@ const handleFileSelect = async (e) => {
     stompClient.send(
       `/pub/chat/${props.room.id}`,
       { Authorization: `Bearer ${authStore.token}` },
-      JSON.stringify({
-        contents: '',
-        fileUrl: fileUrl,
-        fileName: file.name,
-        fileType: file.type,
-        fileSize: file.size,
-        messageType: messageType
-      })
+      JSON.stringify(buildChatFileMessagePayload({
+        file,
+        fileUrl,
+        messageType: uploadValidation.meta.messageType
+      }))
     )
   } catch (e) {
     alert('파일 업로드에 실패했습니다.')
@@ -833,88 +657,14 @@ watch(() => props.participantsRefreshKey, () => {
       </div>
     </div>
 
-    <div
-      v-if="isParticipantsPanelOpen"
-      class="absolute inset-0 z-[70] bg-black/10 md:hidden"
-      @click="closeParticipantsPanel"
-    ></div>
-
-    <aside
-      v-if="isParticipantsPanelOpen"
-      class="absolute inset-y-0 right-0 z-[80] flex w-full max-w-[320px] flex-col border-l border-gray-100 bg-white shadow-2xl"
-    >
-      <div class="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-        <div>
-          <p class="text-sm font-bold text-[var(--text-main)]">참여자</p>
-          <p class="text-[10px] text-[var(--text-muted)]">{{ participants.length }}명</p>
-        </div>
-        <div class="flex items-center gap-1">
-          <button
-            type="button"
-            class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-            @click="fetchParticipants"
-          >
-            <i class="fa-solid fa-rotate-right text-[11px]"></i>
-          </button>
-          <button
-            type="button"
-            class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-            @click="closeParticipantsPanel"
-          >
-            <i class="fa-solid fa-xmark text-sm"></i>
-          </button>
-        </div>
-      </div>
-
-      <div class="flex-1 overflow-y-auto p-4">
-        <div v-if="participantsLoading" class="flex justify-center py-10 text-xs text-gray-400">
-          <i class="fa-solid fa-circle-notch fa-spin mr-2"></i> 불러오는 중...
-        </div>
-
-        <div v-else-if="participantsError" class="rounded-lg bg-red-50 p-3 text-xs text-red-500">
-          <p>{{ participantsError }}</p>
-          <button type="button" class="mt-2 font-bold" @click="fetchParticipants">다시 시도</button>
-        </div>
-
-        <div v-else-if="!participants.length" class="py-10 text-center text-xs text-gray-400">
-          참여자가 없습니다.
-        </div>
-
-        <div v-else class="space-y-2">
-          <div
-            v-for="participant in participants"
-            :key="participant.id || participant.userIdx"
-            class="flex items-center gap-3 rounded-lg border border-gray-100 px-3 py-2"
-          >
-            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500 text-xs font-bold text-white">
-              {{ participantInitial(participant) }}
-            </div>
-
-            <div class="min-w-0 flex-1">
-              <div class="flex min-w-0 items-center gap-1.5">
-                <p class="truncate text-xs font-bold text-[var(--text-main)]">{{ participant.nickname }}</p>
-                <span
-                  v-if="participant.isMe"
-                  class="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold text-[#4169E1]"
-                >
-                  나
-                </span>
-              </div>
-              <p v-if="participant.email" class="truncate text-[10px] text-[var(--text-muted)]">
-                {{ participant.email }}
-              </p>
-              <p class="text-[9px] text-gray-400">
-                {{ formatDateTime(participant.joinedAt) }} 참여
-              </p>
-            </div>
-
-            <span class="shrink-0 text-[9px] font-semibold text-gray-400">
-              {{ participantReadLabel(participant) }}
-            </span>
-          </div>
-        </div>
-      </div>
-    </aside>
+    <ChatParticipantsPanel
+      :is-open="isParticipantsPanelOpen"
+      :participants="participants"
+      :loading="participantsLoading"
+      :error="participantsError"
+      @close="closeParticipantsPanel"
+      @retry="fetchParticipants"
+    />
 
     <div
       v-if="messageMenuVisible"

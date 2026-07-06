@@ -1,4 +1,4 @@
-﻿import { computed, ref } from "vue";
+import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { useAuthStore } from "@/stores/useAuthStore.js";
 import {
@@ -29,292 +29,27 @@ import {
   setLockedFiles as setLockedFilesApi,
   shareFilesWithUser as shareFilesWithUserApi,
 } from "@/api/filesApi.js";
-import { IMAGE_EXTENSIONS, VIDEO_EXTENSIONS } from "@/constants/fileTypes.js";
-import { formatBytes as formatFileSize } from "@/utils/formatBytes.js";
+import {
+  ROOT_LOCATION_LABEL,
+  areDriveQueriesEqual,
+  decorateLocations,
+  decorateSharedPaths,
+  normalizeBreadcrumbRecord,
+  normalizeFileRecord,
+  normalizeIdList,
+  normalizeLookupValue,
+  normalizePathSegments,
+  rememberFolderRecords,
+  reuseCachedAssetUrls,
+} from "./fileStoreModel.js";
 
-const ROOT_LOCATION_LABEL = "홈";
-const SHARED_LOCATION_LABEL = "공유 문서함";
 const ADMINISTRATOR_EMAIL = "administrator@administrator.adm";
 const DEFAULT_MAX_UPLOAD_FILE_BYTES = 5 * 1024 * 1024 * 1024;
 const DEFAULT_MAX_UPLOAD_COUNT = 30;
 const ADMIN_MAX_UPLOAD_FILE_BYTES = 20 * 1024 * 1024 * 1024;
 const ADMIN_MAX_UPLOAD_COUNT = 500;
-const PRESIGNED_URL_SAFETY_MARGIN_MS = 30 * 1000;
 const DEFAULT_DRIVE_PAGE_SIZE = 10;
 const MAX_DRIVE_PAGE_SIZE = 30;
-
-const extractExtension = (fileName = "") => {
-  const lastDot = fileName.lastIndexOf(".");
-  if (lastDot < 0 || lastDot === fileName.length - 1) {
-    return "";
-  }
-
-  return fileName.slice(lastDot + 1).trim().toLowerCase();
-};
-
-const parseDate = (value) => {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-};
-
-const formatDateLabel = (value) => {
-  const date = parseDate(value);
-  if (!date) return "-";
-
-  return new Intl.DateTimeFormat("ko-KR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-};
-
-const normalizeIdList = (ids) => {
-  return Array.from(
-    new Set((ids || []).map((value) => Number(value)).filter(Number.isFinite)),
-  );
-};
-
-const normalizePathSegments = (value = "") => String(value || "")
-  .replace(/\\/g, "/")
-  .split("/")
-  .map((segment) => segment.trim())
-  .filter(Boolean);
-
-const normalizeLookupValue = (value = "") => String(value || "").trim().toLocaleLowerCase("ko-KR");
-
-const areDriveQueriesEqual = (left, right) => {
-  if (!left || !right) {
-    return false;
-  }
-
-  return (
-    (left.parentId ?? null) === (right.parentId ?? null) &&
-    Number(left.page ?? 0) === Number(right.page ?? 0) &&
-    Number(left.size ?? 0) === Number(right.size ?? 0) &&
-    String(left.sortOption || "") === String(right.sortOption || "") &&
-    String(left.searchQuery || "") === String(right.searchQuery || "") &&
-    String(left.extensionFilter || "") === String(right.extensionFilter || "") &&
-    String(left.sizeFilter || "") === String(right.sizeFilter || "") &&
-    String(left.customMinSize || "") === String(right.customMinSize || "") &&
-    String(left.customMaxSize || "") === String(right.customMaxSize || "") &&
-    String(left.statusFilter || "") === String(right.statusFilter || "")
-  );
-};
-
-const normalizeFileRecord = (rawFile, options = {}) => {
-  const name = rawFile?.fileOriginName || rawFile?.name || "이름 없는 파일";
-  const nodeType = String(rawFile?.nodeType || rawFile?.type || "FILE").toUpperCase();
-  const type = nodeType === "FOLDER" ? "folder" : "file";
-  const extension = type === "folder"
-    ? ""
-    : String(rawFile?.fileFormat || rawFile?.extension || extractExtension(name)).toLowerCase();
-  const sizeBytes = Number(rawFile?.fileSize ?? rawFile?.sizeBytes ?? rawFile?.size ?? 0) || 0;
-  const uploadDate = rawFile?.uploadDate || rawFile?.uploadedAt || rawFile?.createdAt || null;
-  const updatedAt = rawFile?.lastModifyDate || rawFile?.updatedAt || rawFile?.lastModified || uploadDate;
-  const updatedDate = parseDate(updatedAt);
-  const uploadedDate = parseDate(uploadDate);
-  const sharedAt = rawFile?.sharedAt || rawFile?.shareDate || null;
-  const sharedWithMe = Boolean(rawFile?.sharedWithMe || options.shared);
-  const permission = String(rawFile?.permission || "READ").toUpperCase();
-  const readable = Boolean(rawFile?.readable ?? rawFile?.canRead ?? true);
-  const downloadable = Boolean(rawFile?.downloadable ?? rawFile?.canDownload ?? (permission === "DOWNLOAD" || permission === "WRITE"));
-  const uploadable = Boolean(rawFile?.uploadable ?? rawFile?.canUpload ?? (permission === "UPLOAD" || permission === "WRITE"));
-  const writable = Boolean(rawFile?.writable ?? rawFile?.canWrite ?? (permission === "WRITE"));
-  const recipients = Array.isArray(rawFile?.recipients)
-    ? rawFile.recipients
-      .map((recipient) => ({
-        recipientName: recipient?.recipientName || "",
-        recipientEmail: recipient?.recipientEmail || "",
-        permission: String(recipient?.permission || "READ").toUpperCase(),
-        sharedAt: recipient?.sharedAt || null,
-        status: String(recipient?.status || "").toUpperCase(),
-        readable: Boolean(recipient?.readable ?? recipient?.canRead ?? true),
-        downloadable: Boolean(recipient?.downloadable ?? recipient?.canDownload ?? false),
-        uploadable: Boolean(recipient?.uploadable ?? recipient?.canUpload ?? false),
-        writable: Boolean(recipient?.writable ?? recipient?.canWrite ?? false),
-      }))
-      .filter((recipient) => recipient.recipientName || recipient.recipientEmail)
-    : [];
-  const recipientCount = Number(rawFile?.recipientCount ?? recipients.length) || 0;
-  const recipientNames = recipients
-    .map((recipient) => recipient.recipientName || recipient.recipientEmail)
-    .filter(Boolean);
-  const shareRecipientsLabel = recipientCount <= 0
-    ? ""
-    : recipientCount <= 2
-      ? `공유 대상: ${recipientNames.join(", ")}`
-      : `공유 대상: ${recipientNames.slice(0, 2).join(", ")} 외 ${recipientCount - 2}명`;
-  const downloadUrl = rawFile?.presignedDownloadUrl || rawFile?.downloadUrl || "";
-  const thumbnailUrl = rawFile?.thumbnailPresignedUrl || rawFile?.thumbnailUrl || "";
-  const presignedUrlExpiresIn = Number(rawFile?.presignedUrlExpiresIn ?? 0) || 0;
-  const assetUrlExpiresAt = presignedUrlExpiresIn > 0
-    ? Date.now() + (presignedUrlExpiresIn * 1000)
-    : 0;
-
-  return {
-    id: rawFile?.idx ?? rawFile?.id ?? `${name}-${uploadDate || Date.now()}`,
-    idx: rawFile?.idx ?? rawFile?.id ?? null,
-    name,
-    fileOriginName: name,
-    extension,
-    fileFormat: extension,
-    type,
-    nodeType,
-    sizeBytes,
-    sizeLabel: type === "folder" ? "-" : formatFileSize(sizeBytes),
-    size: type === "folder" ? "-" : formatFileSize(sizeBytes),
-    uploadDate,
-    uploadedAt: uploadDate,
-    uploadDateLabel: formatDateLabel(uploadDate),
-    updatedAt,
-    updatedAtLabel: formatDateLabel(updatedAt),
-    lastModified: updatedAt,
-    lastModifiedMs: updatedDate?.getTime() ?? 0,
-    uploadedAtMs: uploadedDate?.getTime() ?? 0,
-    owner: rawFile?.ownerName || rawFile?.owner || "-",
-    ownerName: rawFile?.ownerName || rawFile?.owner || "",
-    ownerEmail: rawFile?.ownerEmail || "",
-    location: sharedWithMe ? SHARED_LOCATION_LABEL : (options.sentShared ? "내가 공유함" : ROOT_LOCATION_LABEL),
-    reason:
-      rawFile?.reason ||
-      (type === "folder" ? "폴더" : `${extension ? extension.toUpperCase() : "FILE"} · ${formatFileSize(sizeBytes)}`),
-    isTrash: Boolean(rawFile?.trashed ?? rawFile?.isTrash),
-    isShared: Boolean(rawFile?.sharedFile ?? rawFile?.isShared),
-    sharedFile: Boolean(rawFile?.sharedFile ?? rawFile?.isShared),
-    lockedFile: Boolean(rawFile?.lockedFile),
-    parentId: rawFile?.parentId ?? null,
-    deletedAt: rawFile?.deletedAt || null,
-    downloadUrl,
-    presignedDownloadUrl: rawFile?.presignedDownloadUrl || "",
-    thumbnailUrl,
-    thumbnailPresignedUrl: rawFile?.thumbnailPresignedUrl || "",
-    contentType: rawFile?.contentType || rawFile?.mimeType || rawFile?.fileContentType || "",
-    fileSaveName: rawFile?.fileSaveName || "",
-    fileSavePath: rawFile?.fileSavePath || rawFile?.objectKey || "",
-    presignedUrlExpiresIn,
-    assetUrlExpiresAt,
-    sharedWithMe,
-    permission,
-    status: String(rawFile?.status || "").toUpperCase(),
-    respondedAt: rawFile?.respondedAt || null,
-    readable,
-    downloadable,
-    uploadable,
-    writable,
-    sharedAt,
-    sharedAtLabel: formatDateLabel(sharedAt),
-    recipientCount,
-    recipients,
-    shareRecipientsLabel,
-    isImage: IMAGE_EXTENSIONS.has(extension),
-    isVideo: VIDEO_EXTENSIONS.has(extension),
-    raw: rawFile,
-  };
-};
-
-const buildSharedPathSegments = (file, fileById) => {
-  const path = [];
-  const visited = new Set();
-  let cursor = file;
-
-  while (cursor && !visited.has(String(cursor.id))) {
-    visited.add(String(cursor.id));
-    path.unshift(cursor.name || cursor.fileOriginName || "");
-    if (cursor.parentId == null) {
-      break;
-    }
-    cursor = fileById.get(String(cursor.parentId)) || null;
-  }
-
-  const owner = file.ownerEmail || file.ownerName || "shared";
-  return ["Shared", owner, ...path].filter(Boolean);
-};
-
-const decorateSharedPaths = (files) => {
-  const fileById = new Map(files.map((file) => [String(file.id), file]));
-
-  return files.map((file) => {
-    const sharedPathSegments = buildSharedPathSegments(file, fileById);
-    const sharedPath = sharedPathSegments.join("/");
-    return {
-      ...file,
-      sharedPath,
-      sharedPathSegments,
-      desktopPath: sharedPath,
-    };
-  });
-};
-
-const decorateLocations = (files) => {
-  const fileById = new Map(files.map((file) => [String(file.id), file]));
-
-  return files.map((file) => ({
-    ...file,
-    location:
-      file.parentId != null
-        ? fileById.get(String(file.parentId))?.name || ROOT_LOCATION_LABEL
-        : ROOT_LOCATION_LABEL,
-  }));
-};
-
-const normalizeBreadcrumbRecord = (rawFolder) => normalizeFileRecord({
-  idx: rawFolder?.idx ?? rawFolder?.id ?? null,
-  fileOriginName: rawFolder?.fileOriginName || rawFolder?.name || "폴더",
-  fileFormat: "folder",
-  fileSize: 0,
-  nodeType: "FOLDER",
-  parentId: rawFolder?.parentId ?? null,
-  trashed: false,
-});
-
-const rememberFolderRecords = (currentRecords, nextRecords) => {
-  const folderMap = new Map(
-    (currentRecords || [])
-      .filter((record) => record?.id != null && record?.type === "folder")
-      .map((record) => [String(record.id), record]),
-  );
-
-  (nextRecords || [])
-    .filter((record) => record?.id != null && record?.type === "folder")
-    .forEach((record) => {
-      folderMap.set(String(record.id), record);
-    });
-
-  return [...folderMap.values()];
-};
-
-const reuseCachedAssetUrls = (previousRecords, nextRecords) => {
-  const previousById = new Map(
-    (previousRecords || [])
-      .filter((record) => record?.id != null)
-      .map((record) => [String(record.id), record]),
-  );
-
-  return (nextRecords || []).map((record) => {
-    const previous = previousById.get(String(record?.id));
-    const notExpired = Number(previous?.assetUrlExpiresAt || 0) > (Date.now() + PRESIGNED_URL_SAFETY_MARGIN_MS);
-    const sameObject = String(previous?.fileSavePath || "") === String(record?.fileSavePath || "");
-    const sameRevision = String(previous?.updatedAt || "") === String(record?.updatedAt || "");
-
-    if (!previous || !notExpired || !sameObject || !sameRevision) {
-      return record;
-    }
-
-    return {
-      ...record,
-      downloadUrl: previous.downloadUrl || record.downloadUrl,
-      presignedDownloadUrl: previous.presignedDownloadUrl || record.presignedDownloadUrl,
-      thumbnailUrl: previous.thumbnailUrl || record.thumbnailUrl,
-      thumbnailPresignedUrl: previous.thumbnailPresignedUrl || record.thumbnailPresignedUrl,
-      presignedUrlExpiresIn: previous.presignedUrlExpiresIn || record.presignedUrlExpiresIn,
-      assetUrlExpiresAt: previous.assetUrlExpiresAt || record.assetUrlExpiresAt,
-    };
-  });
-};
-
 export const useFileStore = defineStore("file", () => {
   const authStore = useAuthStore();
   const allFiles = ref([]);
@@ -340,20 +75,8 @@ export const useFileStore = defineStore("file", () => {
   const storageSummary = ref(null);
   const storageLoading = ref(false);
   const storageError = ref("");
-  const resolveCachedUser = () => {
-    try {
-      const savedUser = localStorage.getItem("USERINFO");
-      if (!savedUser || savedUser === "undefined") {
-        return null;
-      }
-
-      return JSON.parse(savedUser);
-    } catch {
-      return null;
-    }
-  };
   const isAdministrator = computed(() => {
-    const currentUser = authStore.user || resolveCachedUser();
+    const currentUser = authStore.user;
     const role = String(currentUser?.role || "").toUpperCase();
     const email = String(currentUser?.email || "").toLowerCase();
 
@@ -882,13 +605,13 @@ export const useFileStore = defineStore("file", () => {
     await refreshAll();
   };
 
-  const shareFiles = async (fileIds, recipientEmail, permission = "READ") => {
+  const shareFiles = async (fileIds, recipientEmail, permission = "READ", options = {}) => {
     const normalizedIds = normalizeIdList(fileIds);
     if (!normalizedIds.length) {
       return;
     }
 
-    await shareFilesWithUserApi(normalizedIds, recipientEmail.trim(), permission);
+    await shareFilesWithUserApi(normalizedIds, recipientEmail.trim(), permission, options);
     await refreshAll();
   };
 
@@ -934,8 +657,8 @@ export const useFileStore = defineStore("file", () => {
     return fetchFileShareInfoApi(fileId);
   };
 
-  const saveSharedFileToDrive = async (fileId, parentId = currentFolderId.value) => {
-    const result = await saveSharedFileToDriveApi(fileId, parentId);
+  const saveSharedFileToDrive = async (fileId, parentId = currentFolderId.value, options = {}) => {
+    const result = await saveSharedFileToDriveApi(fileId, parentId, options);
     await refreshAll();
     return result;
   };
@@ -948,13 +671,13 @@ export const useFileStore = defineStore("file", () => {
     return fetchTextPreviewApi(fileId);
   };
 
-  const fetchSharedTextPreview = async (fileId) => {
-    return fetchSharedTextPreviewApi(fileId);
+  const fetchSharedTextPreview = async (fileId, options = {}) => {
+    return fetchSharedTextPreviewApi(fileId, options);
   };
 
-  const fetchTextPreviewFor = async (file) => {
+  const fetchTextPreviewFor = async (file, options = {}) => {
     if (file?.sharedWithMe) {
-      return fetchSharedTextPreviewApi(file.id);
+      return fetchSharedTextPreviewApi(file.id, options);
     }
 
     return fetchTextPreviewApi(file?.id);

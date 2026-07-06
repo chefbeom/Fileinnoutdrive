@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import SockJS from 'sockjs-client'
-import Stomp from 'stompjs'
+import Stomp from '@/utils/stompClient.js'
 import { api } from '@/plugins/axiosinterceptor.js'
 import { apiPath } from '@/utils/backendUrl.js'
 

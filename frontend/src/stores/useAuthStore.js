@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { logoutSession, reissueAccessToken } from '@/api/authSession.js'
+import { logoutSession, refreshAccessToken } from '@/api/authSession.js'
 import postApi from '@/api/postApi.js'
 import sseApi from '@/api/sseApi.js'
 
 const TOKEN_REFRESH_SKEW_MS = 30 * 1000
+const LEGACY_SESSION_KEYS = ['USERINFO', 'ACCESS_TOKEN']
 
 export const useAuthStore = defineStore('auth', () => {
   const isLogin = ref(false)
@@ -33,13 +34,18 @@ export const useAuthStore = defineStore('auth', () => {
     return decoded.exp * 1000 <= Date.now() + TOKEN_REFRESH_SKEW_MS
   }
 
+  const clearLegacyLocalSession = () => {
+    for (const key of LEGACY_SESSION_KEYS) {
+      localStorage.removeItem(key)
+    }
+  }
+
   const clearLocalSession = () => {
     stopSseConnection()
     isLogin.value = false
     user.value = null
     token.value = null
-    localStorage.removeItem('USERINFO')
-    localStorage.removeItem('ACCESS_TOKEN')
+    clearLegacyLocalSession()
   }
 
   const applyAccessToken = (accessToken) => {
@@ -51,8 +57,7 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = accessToken
     user.value = userInfo
     isLogin.value = true
-    localStorage.setItem('ACCESS_TOKEN', accessToken)
-    localStorage.setItem('USERINFO', JSON.stringify(userInfo))
+    clearLegacyLocalSession()
 
     if (userInfo.idx) {
       startSseConnection(userInfo.idx)
@@ -69,25 +74,32 @@ export const useAuthStore = defineStore('auth', () => {
     applyAccessToken(newAccessToken)
   }
 
-  const checkLogin = () => {
-    const savedToken = localStorage.getItem('ACCESS_TOKEN')
+  const setUser = (nextUser) => {
+    user.value = nextUser || null
+    isLogin.value = Boolean(user.value && token.value)
+  }
 
-    if (!savedToken) {
+  const checkLogin = () => {
+    clearLegacyLocalSession()
+
+    if (!token.value) {
+      isLogin.value = false
+      user.value = null
+      stopSseConnection()
+      return false
+    }
+
+    if (isAccessTokenExpired(token.value)) {
       clearLocalSession()
       return false
     }
 
-    if (applyAccessToken(savedToken)) {
-      return true
-    }
-
-    clearLocalSession()
-    return false
+    return true
   }
 
   const refreshSession = async () => {
     try {
-      const { accessToken } = await reissueAccessToken()
+      const { accessToken } = await refreshAccessToken()
       return applyAccessToken(accessToken)
     } catch (error) {
       console.error('Session refresh failed:', error)
@@ -96,10 +108,6 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const ensureSession = async () => {
-    if (!token.value) {
-      checkLogin()
-    }
-
     if (token.value && !isAccessTokenExpired(token.value)) {
       return true
     }
@@ -113,10 +121,12 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const logout = async ({ remote = true, unsubscribe = true } = {}) => {
+    const hadToken = Boolean(token.value)
+
     try {
       stopSseConnection()
 
-      if (unsubscribe && (token.value || localStorage.getItem('ACCESS_TOKEN'))) {
+      if (unsubscribe && hadToken) {
         try {
           await postApi.unsubscribeWebPush()
         } catch (error) {
@@ -139,7 +149,8 @@ export const useAuthStore = defineStore('auth', () => {
 
     sseInstance.value = sseApi.connectWorkspaceSse({
       userId,
-      onConnect: () => console.log(`[SSE] user ${userId} connected`),
+      accessToken: token.value,
+      onConnect: () => { if (import.meta.env.DEV) console.debug(`[SSE] user ${userId} connected`) },
       onTitleUpdated: (updatedData) => {
         window.dispatchEvent(new CustomEvent('sse-title-updated', { detail: updatedData }))
       },
@@ -162,6 +173,7 @@ export const useAuthStore = defineStore('auth', () => {
     token,
     login,
     setToken,
+    setUser,
     checkLogin,
     refreshSession,
     ensureSession,

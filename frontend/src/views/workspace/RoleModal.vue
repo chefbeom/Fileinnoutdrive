@@ -33,13 +33,11 @@ const handleSaveRole = async () => {
       return acc;
     }, {});
 
-    console.log('서버로 보낼 변환된 데이터:', roleData);
-
+    if (import.meta.env.DEV) console.debug('서버로 보낼 변환된 데이터:', roleData);
     // 2. 실제 백엔드 API 호출
     const response = await postApi.saveRole(props.postIdx, roleData);
 
-    console.log(response);
-    
+    if (import.meta.env.DEV) console.debug(response);
     alert('권한 설정이 저장되었습니다.');
     
     emit('refresh'); // 사이드바 또는 부모 데이터 갱신

@@ -1,0 +1,39 @@
+:root {
+  --editor-bg: #ffffff;
+  --editor-text: #1f2937;
+  --editor-border: #e5e7eb;
+  --editor-input-bg: #ffffff;
+}
+
+:global(html.dark) {
+  --editor-bg: #1e1e1e;
+  --editor-text: #e5e7eb;
+  --editor-border: #333333;
+  --editor-input-bg: #2d2d2d;
+}
+
+.workspace-layout {
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr) 320px;
+  gap: 24px;
+  align-items: start;
+  max-width: 1680px;
+  margin: 24px auto;
+  padding: 0 20px 28px;
+}
+
+.workspace-layout--panel-collapsed {
+  grid-template-columns: 264px minmax(0, 1fr);
+  max-width: 1360px;
+}
+
+.workspace-notice-enter-active,
+.workspace-notice-leave-active {
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.workspace-notice-enter-from,
+.workspace-notice-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}

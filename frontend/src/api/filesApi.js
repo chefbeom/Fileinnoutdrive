@@ -93,23 +93,27 @@ const extractDownloadLink = (responseData) => {
   return objectResult?.downloadUrl || responseData?.downloadUrl || responseData?.result?.downloadUrl || "";
 };
 
-export async function downloadFileAsset(fileOrUrl, fallbackFileName = "file") {
+export async function downloadFileAsset(fileOrUrl, fallbackFileName = "file", options = {}) {
   const downloadUrl = resolveDownloadUrl(fileOrUrl);
-  if (!downloadUrl) {
-    throw new Error("\uB2E4\uC6B4\uB85C\uB4DC\uD560 \uD30C\uC77C \uC8FC\uC18C\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.");
-  }
-
   const fileName = resolveDownloadFileName(fileOrUrl, fallbackFileName);
   const downloadLinkPath = resolveDownloadLinkPath(fileOrUrl);
+  const sharePassword = typeof options?.sharePassword === "string" ? options.sharePassword : "";
+
+  if (!downloadUrl && !downloadLinkPath) {
+    throw new Error("\uB2E4\uC6B4\uB85C\uB4DC\uD560 \uD30C\uC77C \uC8FC\uC18C\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.");
+  }
 
   if (!downloadLinkPath) {
     triggerDirectDownload(downloadUrl, fileName);
     return;
   }
 
-  const response = await api.get(downloadLinkPath, {
-    timeout: 15000,
-  });
+  const requestConfig = { timeout: 15000 };
+  if (sharePassword) {
+    requestConfig.headers = { "X-FileInNOut-Share-Password": sharePassword };
+  }
+
+  const response = await api.get(downloadLinkPath, requestConfig);
   const attachmentDownloadUrl = extractDownloadLink(response?.data);
   if (!attachmentDownloadUrl) {
     throw new Error("\uB2E4\uC6B4\uB85C\uB4DC \uB9C1\uD06C\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.");
@@ -117,7 +121,6 @@ export async function downloadFileAsset(fileOrUrl, fallbackFileName = "file") {
 
   triggerDirectDownload(attachmentDownloadUrl, fileName);
 }
-
 export function initUploadFiles(files, parentId = null) {
   const fileRequestList = toUploadRequestList(files, parentId);
   return api.post("/file/upload", fileRequestList);
@@ -236,15 +239,18 @@ export async function setLockedFiles(fileIdList, locked) {
   return extractObjectResult(response?.data);
 }
 
-export async function shareFilesWithUser(fileIdList, recipientEmail, permission = "READ") {
+export async function shareFilesWithUser(fileIdList, recipientEmail, permission = "READ", options = {}) {
+  const downloadLimit = Number(options?.downloadLimit || 0);
   const response = await api.post("/file/share", {
     fileIdxList: fileIdList,
     recipientEmail,
     permission,
+    expiresAt: options?.expiresAt || null,
+    downloadLimit: Number.isFinite(downloadLimit) && downloadLimit > 0 ? downloadLimit : null,
+    sharePassword: typeof options?.sharePassword === "string" && options.sharePassword.trim() ? options.sharePassword.trim() : null,
   });
   return extractObjectResult(response?.data);
 }
-
 export async function cancelFileShares(fileIdList, recipientEmail) {
   const response = await api.post("/file/share/cancel", {
     fileIdxList: fileIdList,
@@ -270,13 +276,13 @@ export async function rejectSharedFile(fileId) {
   return extractObjectResult(response?.data);
 }
 
-export async function saveSharedFileToDrive(fileId, parentId = null) {
+export async function saveSharedFileToDrive(fileId, parentId = null, options = {}) {
   const response = await api.post(`/file/share/shared/${fileId}/save`, {
     parentId,
+    sharePassword: typeof options?.sharePassword === "string" ? options.sharePassword : null,
   });
   return extractObjectResult(response?.data);
 }
-
 export async function fetchFolderProperties(fileId) {
   const response = await api.get(`/file/${fileId}/properties`);
   return extractObjectResult(response?.data);
@@ -292,11 +298,21 @@ export async function fetchTextPreview(fileId) {
   return extractObjectResult(response?.data);
 }
 
-export async function fetchSharedTextPreview(fileId) {
-  const response = await api.get(`/file/share/shared/${fileId}/text-preview`);
+export async function fetchSharedTextPreview(fileId, options = {}) {
+  const sharePassword = typeof options?.sharePassword === "string" ? options.sharePassword : "";
+  const config = sharePassword ? { headers: { "X-FileInNOut-Share-Password": sharePassword } } : undefined;
+  const response = await api.get(`/file/share/shared/${fileId}/text-preview`, config);
   return extractObjectResult(response?.data);
 }
+export async function fetchFileVersions(fileId) {
+  const response = await api.get(`/file/${fileId}/versions`);
+  return extractArrayResult(response?.data);
+}
 
+export async function restoreFileVersion(fileId, versionId) {
+  const response = await api.post(`/file/${fileId}/versions/${versionId}/restore`);
+  return extractObjectResult(response?.data);
+}
 export async function fetchFileThumbnailBlob(fileId, version = "") {
   const response = await api.get(`/file/${fileId}/thumbnail`, {
     params: version ? { v: version } : undefined,

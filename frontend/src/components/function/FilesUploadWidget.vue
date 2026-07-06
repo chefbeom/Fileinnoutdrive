@@ -56,98 +56,30 @@
     <div v-if="isDropdownOpen" class="upload-backdrop" @click="closeDropdown"></div>
   </div>
 
-  <Teleport to="body">
-    <div v-if="showFloatingPanel" class="upload-float" :class="{ 'is-collapsed': isPanelCollapsed }">
-      <div class="upload-panel">
-        <div class="upload-panel__header">
-          <div class="upload-panel__heading">
-            <strong>{{ panelTitle }}</strong>
-            <p v-if="!isPanelCollapsed">{{ panelSubtitleDisplay }}</p>
-          </div>
-          <div class="upload-panel__actions">
-            <button
-              v-if="canCancel && !isPanelCollapsed"
-              type="button"
-              class="upload-panel__cancel"
-              @click="cancelUploads"
-            >
-              업로드 취소
-            </button>
-            <button
-              v-if="canClearDismissed && !isPanelCollapsed"
-              type="button"
-              class="upload-panel__clear"
-              @click="clearDismissedItems"
-            >
-              정리
-            </button>
-            <button
-              type="button"
-              class="upload-panel__icon"
-              :aria-label="isPanelCollapsed ? '업로드 상태 펼치기' : '업로드 상태 접기'"
-              @click="togglePanelCollapsed"
-            >
-              <i class="fa-solid" :class="isPanelCollapsed ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
-            </button>
-            <button
-              type="button"
-              class="upload-panel__icon"
-              aria-label="업로드 상태창 닫기"
-              @click="dismissPanel"
-            >
-              <i class="fa-solid fa-xmark"></i>
-            </button>
-          </div>
-        </div>
+  <FilesUploadStatusPanel
+    :show="showFloatingPanel"
+    :collapsed="isPanelCollapsed"
+    :can-cancel="canCancel"
+    :can-clear-dismissed="canClearDismissed"
+    :panel-title="panelTitle"
+    :panel-subtitle="panelSubtitleDisplay"
+    :items="panelItems"
+    @cancel="cancelUploads"
+    @clear-dismissed="clearDismissedItems"
+    @toggle-collapsed="togglePanelCollapsed"
+    @dismiss="dismissPanel"
+  />
 
-        <div v-if="!isPanelCollapsed" class="upload-panel__list">
-          <div v-for="item in panelItems" :key="item.id" class="upload-item">
-            <div class="upload-item__main">
-              <div class="upload-item__name">{{ item.name }}</div>
-              <div class="upload-item__status">{{ item.statusText }}</div>
-              <div v-if="formatUploadSpeed(item)" class="upload-item__speed">{{ formatUploadSpeed(item) }}</div>
-              <div class="upload-item__bar">
-                <span class="upload-item__fill" :style="{ width: `${item.progress}%` }"></span>
-              </div>
-            </div>
-            <div class="upload-item__percent" :class="`is-${item.status}`">{{ item.progress }}%</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </Teleport>
-
-  <Teleport to="body">
-    <div
-      v-if="isExitDialogOpen"
-      class="upload-exit"
-      role="presentation"
-      @click.self="closeExitDialog(false)"
-    >
-      <div class="upload-exit__dialog" role="dialog" aria-modal="true" :aria-labelledby="exitDialogTitleId">
-        <strong :id="exitDialogTitleId" class="upload-exit__title">{{ exitDialogTitle }}</strong>
-        <p class="upload-exit__description">{{ exitDialogDescription }}</p>
-        <div class="upload-exit__actions">
-          <button
-            type="button"
-            class="upload-exit__button upload-exit__button--secondary"
-            :disabled="isExitDialogBusy"
-            @click="closeExitDialog(false)"
-          >
-            취소
-          </button>
-          <button
-            type="button"
-            class="upload-exit__button upload-exit__button--primary"
-            :disabled="isExitDialogBusy"
-            @click="confirmExitDialog"
-          >
-            {{ exitDialogActionLabel }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
+  <FilesUploadExitDialog
+    :open="isExitDialogOpen"
+    :busy="isExitDialogBusy"
+    :title-id="exitDialogTitleId"
+    :title="exitDialogTitle"
+    :description="exitDialogDescription"
+    :action-label="exitDialogActionLabel"
+    @cancel="closeExitDialog(false)"
+    @confirm="confirmExitDialog"
+  />
 </template>
 
 <script setup>
@@ -159,17 +91,31 @@ import {
   ACTIVE_UPLOAD_STATUSES,
   CHUNK_SIZE_BYTES,
   DEFAULT_UPLOAD_CONCURRENCY,
-  PARTITION_SIZE_BYTES,
   UPLOAD_CONCURRENCY_STORAGE_KEY,
   normalizeUploadConcurrency,
   uploadConcurrencyOptions,
 } from "@/constants/uploadOptions.js";
 import { api } from "@/plugins/axiosinterceptor.js";
 import { useFileStore } from "@/stores/useFileStore.js";
+import { useAuthStore } from "@/stores/useAuthStore.js";
 import { formatBytes } from "@/utils/formatBytes.js";
+import FilesUploadExitDialog from "./FilesUploadExitDialog.vue";
+import FilesUploadStatusPanel from "./FilesUploadStatusPanel.vue";
+import {
+  applyUploadItemState,
+  buildAbortPayload,
+  buildUploadJobs,
+  createUploadItem,
+  defaultStatusText,
+  extractErrorMessage,
+  formatBytesPerSecond,
+  getFileFormat,
+  updateUploadItemProgress,
+} from "./uploadState.js";
 
 const emit = defineEmits(["upload-complete", "upload-fail"]);
 const fileStore = useFileStore();
+const authStore = useAuthStore();
 
 const transientStatuses = ACTIVE_UPLOAD_STATUSES;
 const activeUploadControllers = new Map();
@@ -382,90 +328,6 @@ function clearCompletedHistoryIfIdle() {
   isPanelHidden.value = false;
 }
 
-function formatUploadSpeed(item) {
-  if (!item || item.status !== "uploading") {
-    return "";
-  }
-
-  const bytesPerSecond = Number(item.speedBytesPerSecond || 0);
-  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) {
-    return "";
-  }
-
-  return formatBytesPerSecond(bytesPerSecond);
-}
-
-function formatBytesPerSecond(bytesPerSecond) {
-  const normalizedBytesPerSecond = Number(bytesPerSecond || 0);
-  if (!Number.isFinite(normalizedBytesPerSecond) || normalizedBytesPerSecond <= 0) {
-    return "0.00 MB/s";
-  }
-
-  const megabytesPerSecond = normalizedBytesPerSecond / (1024 * 1024);
-  const fractionDigits = megabytesPerSecond >= 100 ? 0 : megabytesPerSecond >= 10 ? 1 : 2;
-  return `${megabytesPerSecond.toFixed(fractionDigits)} MB/s`;
-}
-
-function extractErrorMessage(error, fallbackMessage) {
-  return (
-    error?.response?.data?.message ||
-    error?.response?.data?.result?.message ||
-    error?.message ||
-    fallbackMessage
-  );
-}
-
-function getFileFormat(file) {
-  if (typeof file?.name !== "string") {
-    return "";
-  }
-
-  const lastDotIndex = file.name.lastIndexOf(".");
-  if (lastDotIndex <= 0 || lastDotIndex >= file.name.length - 1) {
-    return "";
-  }
-
-  return file.name.slice(lastDotIndex + 1).trim().replace(/^\.+/, "").toLowerCase();
-}
-
-function defaultStatusText(status) {
-  switch (status) {
-    case "preparing":
-      return "업로드 정보를 준비하고 있습니다.";
-    case "pending":
-      return "업로드 대기 중입니다.";
-    case "uploading":
-      return "업로드를 진행하고 있습니다.";
-    case "merging":
-      return "서버에서 업로드를 마무리하고 있습니다.";
-    case "completed":
-      return "업로드 완료";
-    case "canceling":
-      return "업로드를 정리하고 있습니다.";
-    case "canceled":
-      return "업로드가 취소되었습니다.";
-    case "failed":
-      return "업로드에 실패했습니다.";
-    default:
-      return "업로드 상태를 확인하고 있습니다.";
-  }
-}
-
-function createUploadItem(file) {
-  return {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    name: file?.name || "이름 없는 파일",
-    fileSize: Number(file?.size || 0),
-    progress: 0,
-    uploadedBytes: 0,
-    speedBytesPerSecond: 0,
-    speedSampleAt: 0,
-    speedSampleBytes: 0,
-    status: "preparing",
-    statusText: defaultStatusText("preparing"),
-    uploadMetas: [],
-  };
-}
 
 function setItemState(itemId, patch) {
   const item = uploadItems.value.find((candidate) => candidate.id === itemId);
@@ -473,20 +335,7 @@ function setItemState(itemId, patch) {
     return;
   }
 
-  if (Object.prototype.hasOwnProperty.call(patch, "status")) {
-    const nextStatus = patch.status;
-    if (nextStatus === "uploading" && item.status !== "uploading") {
-      item.speedBytesPerSecond = 0;
-      item.speedSampleAt = 0;
-      item.speedSampleBytes = Number(item.uploadedBytes || 0);
-    } else if (nextStatus !== "uploading") {
-      item.speedBytesPerSecond = 0;
-      item.speedSampleAt = 0;
-      item.speedSampleBytes = Number(item.uploadedBytes || 0);
-    }
-  }
-
-  Object.assign(item, patch);
+  applyUploadItemState(item, patch);
 }
 
 function updateItemProgress(itemId, uploadedBytes, statusText) {
@@ -495,103 +344,7 @@ function updateItemProgress(itemId, uploadedBytes, statusText) {
     return;
   }
 
-  const safeUploadedBytes = Math.max(0, Math.min(Number(item.fileSize || 0), Number(uploadedBytes || 0)));
-  const progress = item.fileSize > 0 ? Math.min(100, Math.round((safeUploadedBytes / item.fileSize) * 100)) : 0;
-  const now = Date.now();
-
-  if (!item.speedSampleAt || safeUploadedBytes < Number(item.speedSampleBytes || 0)) {
-    item.speedSampleAt = now;
-    item.speedSampleBytes = safeUploadedBytes;
-    item.speedBytesPerSecond = 0;
-  } else {
-    const deltaBytes = safeUploadedBytes - Number(item.speedSampleBytes || 0);
-    const deltaMs = now - Number(item.speedSampleAt || 0);
-
-    if (deltaBytes > 0 && deltaMs >= 200) {
-      const nextBytesPerSecond = (deltaBytes / deltaMs) * 1000;
-      const previousBytesPerSecond = Number(item.speedBytesPerSecond || 0);
-      item.speedBytesPerSecond = previousBytesPerSecond > 0
-        ? (previousBytesPerSecond * 0.45) + (nextBytesPerSecond * 0.55)
-        : nextBytesPerSecond;
-      item.speedSampleAt = now;
-      item.speedSampleBytes = safeUploadedBytes;
-    }
-  }
-
-  item.uploadedBytes = safeUploadedBytes;
-  item.progress = progress;
-  if (statusText) {
-    item.statusText = statusText;
-  }
-}
-
-function buildAbortPayload(uploadMetas) {
-  const metaList = Array.isArray(uploadMetas) ? uploadMetas : [];
-  const firstMeta = metaList[0];
-  const finalObjectKey = firstMeta?.finalObjectKey || firstMeta?.objectKey || null;
-  const chunkObjectKeys = firstMeta?.partitioned === true
-    ? metaList.map((meta) => meta?.objectKey).filter(Boolean)
-    : [];
-
-  return {
-    finalObjectKey,
-    chunkObjectKeys,
-  };
-}
-
-function getExpectedUploadCount(file, firstMeta) {
-  const partitionCount = Number(firstMeta?.partitionCount || 0);
-  if (firstMeta?.partitioned === true && Number.isInteger(partitionCount) && partitionCount > 0) {
-    return partitionCount;
-  }
-
-  if (!file?.size || Number(file.size) <= PARTITION_SIZE_BYTES) {
-    return 1;
-  }
-
-  return Math.ceil(Number(file.size) / CHUNK_SIZE_BYTES);
-}
-
-function buildUploadJobs(selectedFiles, uploadMetas) {
-  const jobs = [];
-  let responseIndex = 0;
-
-  for (const [fileIndex, file] of selectedFiles.entries()) {
-    const firstMeta = uploadMetas?.[responseIndex];
-    const item = uploadItems.value[fileIndex];
-
-    if (!firstMeta || !item) {
-      throw new Error(`"${file?.name || "파일"}" 업로드 정보를 찾을 수 없습니다.`);
-    }
-
-    const expectedCount = getExpectedUploadCount(file, firstMeta);
-    const group = uploadMetas.slice(responseIndex, responseIndex + expectedCount);
-
-    if (group.length !== expectedCount) {
-      throw new Error(`"${file.name}" 업로드 메타 개수가 올바르지 않습니다.`);
-    }
-
-    Object.assign(item, {
-      status: "pending",
-      statusText: defaultStatusText("pending"),
-      uploadMetas: group,
-    });
-
-    jobs.push({
-      file,
-      metas: group,
-      itemId: item.id,
-      partitioned: firstMeta?.partitioned === true,
-    });
-
-    responseIndex += expectedCount;
-  }
-
-  if (responseIndex !== uploadMetas.length) {
-    throw new Error("업로드 메타 개수와 선택한 파일 수가 일치하지 않습니다.");
-  }
-
-  return jobs;
+  updateUploadItemProgress(item, uploadedBytes, statusText);
 }
 
 async function uploadChunkToUrl(blob, uploadMeta, contentType, options = {}) {
@@ -784,7 +537,7 @@ async function terminateUploadsForExit() {
 }
 
 function abortUploadsKeepalive() {
-  const token = window.localStorage.getItem("ACCESS_TOKEN");
+  const token = authStore.token;
   const headers = {
     "Content-Type": "application/json",
   };
@@ -856,7 +609,7 @@ async function handleUpload(event, uploadTypeLabel) {
       throw new Error("업로드 준비 응답이 비어 있습니다.");
     }
 
-    const jobs = buildUploadJobs(selectedFiles, uploadMetas);
+    const jobs = buildUploadJobs(selectedFiles, uploadMetas, uploadItems.value);
     const { successList, failureList } = await runJobs(jobs, fileStore.currentFolderId);
 
     if (isCancelRequested.value) {
@@ -996,389 +749,4 @@ onBeforeUnmount(() => {
 });
 </script>
 
-<style scoped>
-.upload-widget {
-  position: relative;
-}
-
-.upload-trigger {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.625rem;
-  padding: 0.95rem 1rem;
-  border: 1px solid var(--border-color);
-  border-radius: 1rem;
-  background: linear-gradient(
-    135deg,
-    var(--bg-elevated),
-    color-mix(in srgb, var(--bg-elevated) 84%, var(--accent) 16%)
-  );
-  color: var(--text-main);
-  font-size: 0.95rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
-}
-
-.upload-trigger:hover {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color) 55%);
-  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.12);
-}
-
-.upload-trigger__count {
-  min-width: 1.5rem;
-  padding: 0.12rem 0.4rem;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 0.78rem;
-}
-
-.upload-dropdown {
-  position: absolute;
-  top: calc(100% + 0.75rem);
-  left: 0;
-  right: 0;
-  z-index: 30;
-  padding: 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: 1rem;
-  background: color-mix(in srgb, var(--bg-elevated) 96%, var(--bg-main) 4%);
-  box-shadow: var(--shadow-lg);
-  backdrop-filter: blur(16px);
-}
-
-.upload-dropdown__item {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.9rem 0.95rem;
-  border: none;
-  border-radius: 0.85rem;
-  background: transparent;
-  color: var(--text-main);
-  font: inherit;
-  cursor: pointer;
-  transition: background-color 0.2s ease, color 0.2s ease;
-}
-
-.upload-dropdown__item:hover {
-  background: var(--bg-input);
-}
-
-.upload-dropdown__footer {
-  margin-top: 0.6rem;
-  padding: 0.8rem;
-  border-radius: 0.9rem;
-  background: var(--bg-input);
-}
-
-.upload-dropdown__label {
-  display: block;
-  margin-bottom: 0.45rem;
-  color: var(--text-secondary);
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-
-.upload-dropdown__select {
-  width: 100%;
-  padding: 0.75rem 0.8rem;
-  border: 1px solid var(--border-color);
-  border-radius: 0.8rem;
-  background: var(--bg-elevated);
-  color: var(--text-main);
-}
-
-.upload-dropdown__hint {
-  margin-top: 0.55rem;
-  color: var(--text-secondary);
-  font-size: 0.78rem;
-  line-height: 1.5;
-}
-
-.upload-error {
-  margin-top: 0.7rem;
-  color: #dc2626;
-  font-size: 0.82rem;
-  line-height: 1.5;
-}
-
-.upload-float {
-  position: fixed;
-  right: clamp(1rem, 2vw, 1.5rem);
-  bottom: clamp(1rem, 2vw, 1.5rem);
-  z-index: 120;
-  width: min(24rem, calc(100vw - 1.5rem));
-}
-
-.upload-panel {
-  margin: 0;
-  padding: 0.95rem;
-  border: 1px solid var(--border-color);
-  border-radius: 1rem;
-  background: color-mix(in srgb, var(--bg-elevated) 96%, var(--bg-main) 4%);
-  box-shadow: var(--shadow-lg);
-  backdrop-filter: blur(16px);
-}
-
-.upload-panel__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.upload-panel__heading {
-  min-width: 0;
-}
-
-.upload-panel__heading strong {
-  display: block;
-  color: var(--text-main);
-  font-size: 1rem;
-  font-weight: 800;
-}
-
-.upload-panel__heading p {
-  margin-top: 0.3rem;
-  color: var(--text-secondary);
-  font-size: 0.78rem;
-  line-height: 1.45;
-}
-
-.upload-panel__actions {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  flex-shrink: 0;
-}
-
-.upload-panel__icon {
-  width: 2.15rem;
-  height: 2.15rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border-color);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
-}
-
-.upload-panel__icon:hover {
-  background: var(--bg-input);
-  border-color: var(--border-strong);
-  color: var(--text-main);
-}
-
-.upload-panel__cancel {
-  flex-shrink: 0;
-  padding: 0.55rem 0.8rem;
-  border: 1px solid color-mix(in srgb, #dc2626 45%, var(--border-color) 55%);
-  border-radius: 999px;
-  background: transparent;
-  color: #dc2626;
-  font-size: 0.8rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.upload-panel__clear {
-  flex-shrink: 0;
-  padding: 0.42rem 0.62rem;
-  border: 1px solid var(--border-color);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 0.72rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.upload-panel__clear:hover {
-  background: var(--bg-input);
-  color: var(--text-main);
-}
-
-.upload-panel__list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-  max-height: min(22rem, 60vh);
-  margin-top: 0.85rem;
-  overflow-y: auto;
-}
-
-.upload-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.75rem;
-  align-items: center;
-  padding: 0.85rem;
-  border-radius: 0.95rem;
-  background: var(--bg-input);
-}
-
-.upload-item__main {
-  min-width: 0;
-}
-
-.upload-item__name {
-  color: var(--text-main);
-  font-size: 0.9rem;
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.upload-item__status {
-  margin-top: 0.3rem;
-  color: var(--text-secondary);
-  font-size: 0.78rem;
-  line-height: 1.45;
-}
-
-.upload-item__speed {
-  margin-top: 0.2rem;
-  color: var(--text-main);
-  font-size: 0.76rem;
-  font-weight: 700;
-}
-
-.upload-item__bar {
-  margin-top: 0.6rem;
-  height: 0.42rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--border-color) 68%, transparent 32%);
-  overflow: hidden;
-}
-
-.upload-item__fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #ffffff 40%));
-}
-
-.upload-item__percent {
-  min-width: 3rem;
-  text-align: right;
-  color: var(--text-secondary);
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-
-.upload-item__percent.is-completed {
-  color: #16a34a;
-}
-
-.upload-item__percent.is-canceled,
-.upload-item__percent.is-failed {
-  color: #dc2626;
-}
-
-.upload-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-  background: transparent;
-}
-
-.upload-exit {
-  position: fixed;
-  inset: 0;
-  z-index: 180;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.5rem;
-  background: rgba(15, 23, 42, 0.42);
-  backdrop-filter: blur(10px);
-}
-
-.upload-exit__dialog {
-  width: min(26rem, calc(100vw - 2rem));
-  padding: 1.3rem;
-  border: 1px solid var(--border-color);
-  border-radius: 1.1rem;
-  background: var(--bg-elevated);
-  box-shadow: var(--shadow-lg);
-}
-
-.upload-exit__title {
-  display: block;
-  color: var(--text-main);
-  font-size: 1.02rem;
-  font-weight: 800;
-}
-
-.upload-exit__description {
-  margin-top: 0.55rem;
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-  line-height: 1.55;
-}
-
-.upload-exit__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.6rem;
-  margin-top: 1.2rem;
-}
-
-.upload-exit__button {
-  min-width: 5.5rem;
-  padding: 0.68rem 1rem;
-  border-radius: 0.8rem;
-  font-size: 0.88rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: transform 0.18s ease, opacity 0.18s ease, border-color 0.18s ease;
-}
-
-.upload-exit__button:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.upload-exit__button--secondary {
-  border: 1px solid var(--border-color);
-  background: transparent;
-  color: var(--text-main);
-}
-
-.upload-exit__button--primary {
-  border: 1px solid color-mix(in srgb, #dc2626 38%, var(--border-color) 62%);
-  background: color-mix(in srgb, #dc2626 12%, var(--bg-elevated) 88%);
-  color: #dc2626;
-}
-
-@media (max-width: 640px) {
-  .upload-float {
-    right: 0.75rem;
-    left: 0.75rem;
-    width: auto;
-  }
-
-  .upload-panel__header {
-    align-items: stretch;
-  }
-
-  .upload-panel__actions {
-    justify-content: flex-end;
-  }
-
-  .upload-panel__cancel {
-    padding-inline: 0.65rem;
-  }
-}
-</style>
+<style src="./FilesUploadWidget.css"></style>

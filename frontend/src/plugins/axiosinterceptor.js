@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { reissueAccessToken } from '@/api/authSession.js'
+import { refreshAccessToken } from '@/api/authSession.js'
 import { useAuthStore } from '@/stores/useAuthStore.js'
 import { API_BASE_URL } from '@/utils/backendUrl.js'
 
@@ -9,10 +9,16 @@ export const api = axios.create({
   timeout: 5000,
 })
 
+const isAuthLifecycleRequest = (config = {}) => {
+  const url = String(config.url || '')
+  return url.includes('/auth/reissue') || url.includes('/auth/logout')
+}
+
 api.interceptors.request.use(
   (config) => {
     const authStore = useAuthStore()
     const token = authStore.token
+    config.headers = config.headers || {}
 
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`
@@ -43,19 +49,25 @@ api.interceptors.response.use(
     const originalRequest = error.config
     const authStore = useAuthStore()
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (
+      originalRequest &&
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      !isAuthLifecycleRequest(originalRequest)
+    ) {
       originalRequest._retry = true
 
       try {
-        const { accessToken: newAccessToken } = await reissueAccessToken()
+        const { accessToken: newAccessToken } = await refreshAccessToken()
 
         if (newAccessToken) {
           authStore.setToken(newAccessToken)
+          originalRequest.headers = originalRequest.headers || {}
           originalRequest.headers['Authorization'] = `Bearer ${newAccessToken}`
           return api(originalRequest)
         }
       } catch (refreshError) {
-        await authStore.logout({ unsubscribe: false })
+        await authStore.logout({ remote: false, unsubscribe: false })
         window.location.href = '/login'
         return Promise.reject(refreshError)
       }

@@ -39,12 +39,3 @@ export const decodeTokenPayload = (tokenValue) => {
     return null
   }
 }
-
-export const readStoredUserInfo = () => {
-  try {
-    const stored = localStorage.getItem('USERINFO')
-    return stored ? JSON.parse(stored) : null
-  } catch {
-    return null
-  }
-}

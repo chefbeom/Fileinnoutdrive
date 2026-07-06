@@ -1,6 +1,5 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { useRoute, useRouter } from 'vue-router' // route와 router 추가
 import { useAuthStore } from '@/stores/useAuthStore.js' // 스토어 추가
 import Sidebar from '../components/Sidebar.vue'
 import Header from '../components/Header.vue'
@@ -9,8 +8,6 @@ import { registerPushNotification } from '@/utils/pushNotification.js'
 import { api } from '@/plugins/axiosinterceptor.js'
 
 const isChatOpen = ref(false)
-const route = useRoute()
-const router = useRouter()
 const authStore = useAuthStore()
 
 const handleOpenChatRoom = (event) => {
@@ -20,23 +17,7 @@ const handleOpenChatRoom = (event) => {
   isChatOpen.value = true
 }
 
-onMounted(async() => {
-  // 1. URL 쿼리 파라미터에서 token 추출 (백엔드가 주는 파라미터명 확인 필요)
-  // 예: ?token=... 혹은 ?accessToken=...
-  const token = route.query.token || route.query.accessToken
-
-  if (token) {
-    console.log("OAuth2 토큰 발견:", token)
-    
-    // 2. 스토어의 login 함수를 호출하여 로컬 스토리지에 저장 및 로그인 상태 활성화
-    authStore.login(token)
-
-    // 3. URL에서 토큰을 지워주기 위해 쿼리 파라미터를 제거한 주소로 replace
-    // (보안 및 주소창 깔끔하게 유지)
-    await router.replace({ name: 'home' })
-    return
-  }
-  // 일반 로그인 + 소셜 로그인 모두 커버
+onMounted(async () => {
   if (authStore.token) {
     try {
       await registerPushNotification()

@@ -1,0 +1,135 @@
+import { useWorkspaceDocumentActionSetup } from './useWorkspaceDocumentActionSetup.js'
+import { useWorkspaceDocumentActions } from './useWorkspaceDocumentActions.js'
+import { useWorkspaceDocumentSections } from './useWorkspaceDocumentSections.js'
+import { useWorkspaceRevisionActions } from './useWorkspaceRevisionActions.js'
+
+export const useWorkspaceDocumentOperationsSetup = ({
+  platform = {},
+  state = {},
+  access = {},
+  propertyOptions = {},
+  preferences = {},
+  workspace = {},
+  guards = {},
+  editor = {},
+  refreshers = {},
+  metadata = {},
+  normalizers = {},
+  ui = {},
+  messages = {},
+  documentIdFor,
+} = {}) => {
+  const documentActions = useWorkspaceDocumentActionSetup({
+    platform,
+    state: {
+      currentWorkspaceKey: state.currentWorkspaceKey,
+      editorApi: state.editorApi,
+      isEditorLoading: state.isEditorLoading,
+      workspaceMarkdownExporting: state.workspaceMarkdownExporting,
+      canModifyWorkspacePage: access.canModifyWorkspacePage,
+      title: state.title,
+      workspacePropertyStatusOption: state.workspacePropertyStatusOption,
+      workspacePropertyPriorityOption: state.workspacePropertyPriorityOption,
+      workspacePropertyOwnerEmail: state.workspacePropertyOwnerEmail,
+      workspacePropertyOwnerName: state.workspacePropertyOwnerName,
+      workspacePropertyDueDate: state.workspacePropertyDueDate,
+      workspacePropertyTags: state.workspacePropertyTags,
+      workspaceId: state.workspaceId,
+      workspaceAccessRole: state.workspaceAccessRole,
+      workspaceSubpageInput: state.workspaceSubpageInput,
+      workspaceSubpageTitle: state.workspaceSubpageTitle,
+      workspaceSubpageCreating: state.workspaceSubpageCreating,
+      workspaceSubpageError: state.workspaceSubpageError,
+      canStartWorkspaceSubpage: access.canStartWorkspaceSubpage,
+      canCreateWorkspaceSubpage: access.canCreateWorkspaceSubpage,
+      isWorkspacePanelCollapsed: state.isWorkspacePanelCollapsed,
+      activeWorkspacePanelTab: state.activeWorkspacePanelTab,
+    },
+    propertyOptions,
+    preferences: {
+      favoriteWorkspaceDocumentIds: preferences.favoriteWorkspaceDocumentIds,
+      trackRecentWorkspaceDocument: preferences.trackRecentWorkspaceDocument,
+      persistFavoriteWorkspaceDocuments: preferences.persistFavoriteWorkspaceDocuments,
+    },
+    workspace: {
+      workspaceDocumentById: workspace.workspaceDocumentById,
+      currentWorkspaceProperties: workspace.currentWorkspaceProperties,
+      ensureWorkspacePersisted: workspace.ensureWorkspacePersisted,
+      persistWorkspace: workspace.persistWorkspace,
+    },
+    guards: { confirmDiscardIfNeeded: guards.confirmDiscardIfNeeded },
+    editor: { setupEditor: editor.setupEditor },
+    refreshers: {
+      refreshWorkspaceDocuments: refreshers.refreshWorkspaceDocuments,
+      refreshWorkspacePageIndex: refreshers.refreshWorkspacePageIndex,
+    },
+    ui: { showWorkspaceNotice: ui.showWorkspaceNotice },
+    documentIdFor,
+  })
+
+  const sections = useWorkspaceDocumentSections({
+    workspaceDocumentSections: state.workspaceDocumentSections,
+    workspaceSectionNameDraft: state.workspaceSectionNameDraft,
+    workspaceSectionEditingId: state.workspaceSectionEditingId,
+    workspaceSectionEditDraft: state.workspaceSectionEditDraft,
+    workspaceSectionEditInput: state.workspaceSectionEditInput,
+    persistWorkspaceDocumentSections: preferences.persistWorkspaceDocumentSections,
+    requestWorkspaceConfirm: ui.requestWorkspaceConfirm,
+    showWorkspaceNotice: ui.showWorkspaceNotice,
+    messages: messages.sectionMessages,
+  })
+
+  const collectionActions = useWorkspaceDocumentActions({
+    api: platform.api,
+    router: platform.router,
+    currentWorkspaceKey: state.currentWorkspaceKey,
+    documentIdFor,
+    confirmDiscardIfNeeded: guards.confirmDiscardIfNeeded,
+    allowNextRouteLeave: guards.allowNextRouteLeave,
+    refreshWorkspaceDocuments: refreshers.refreshWorkspaceDocuments,
+    requestWorkspaceConfirm: ui.requestWorkspaceConfirm,
+    showWorkspaceNotice: ui.showWorkspaceNotice,
+    messages: messages.actionMessages,
+  })
+
+  const revisions = useWorkspaceRevisionActions({
+    workspaceId: state.workspaceId,
+    workspaceRevisions: state.workspaceRevisions,
+    workspaceRevisionLoading: state.workspaceRevisionLoading,
+    workspaceRevisionError: state.workspaceRevisionError,
+    activeWorkspaceRevision: state.activeWorkspaceRevision,
+    workspaceRevisionDiff: state.workspaceRevisionDiff,
+    workspaceRevisionPreviewLoading: state.workspaceRevisionPreviewLoading,
+    workspaceRevisionRestoring: state.workspaceRevisionRestoring,
+    canModifyWorkspacePage: access.canModifyWorkspacePage,
+    hasUnsavedChanges: state.hasUnsavedChanges,
+    title: state.title,
+    titleDirty: state.titleDirty,
+    editorApi: state.editorApi,
+    workspaceAccessRole: state.workspaceAccessRole,
+    workspaceShareStatus: state.workspaceShareStatus,
+    workspaceUuid: state.workspaceUuid,
+    saveState: state.saveState,
+    lastSavedAt: state.lastSavedAt,
+    loadWorkspaceRevisions: (targetWorkspaceId) => platform.api?.getWorkspaceRevisions?.(targetWorkspaceId),
+    loadWorkspaceRevision: (targetWorkspaceId, revisionId) => platform.api?.getWorkspaceRevision?.(targetWorkspaceId, revisionId),
+    restoreWorkspaceRevisionApi: (targetWorkspaceId, revisionId) => platform.api?.restoreWorkspaceRevision?.(targetWorkspaceId, revisionId),
+    normalizeWorkspaceRevision: normalizers.normalizeWorkspaceRevision,
+    buildWorkspaceRevisionDiff: normalizers.buildWorkspaceRevisionDiff,
+    applyWorkspaceProperties: metadata.applyWorkspaceProperties,
+    applyWorkspaceParentPage: metadata.applyWorkspaceParentPage,
+    extractWorkspacePropertiesFromContents: metadata.extractWorkspacePropertiesFromContents,
+    extractWorkspaceParentFromContents: metadata.extractWorkspaceParentFromContents,
+    normalizeWorkspaceShareStatus: normalizers.normalizeWorkspaceShareStatus,
+    refreshWorkspaceDocuments: refreshers.refreshWorkspaceDocuments,
+    requestWorkspaceConfirm: ui.requestWorkspaceConfirm,
+    showWorkspaceNotice: ui.showWorkspaceNotice,
+  })
+
+  return {
+    ...documentActions,
+    ...sections,
+    ...collectionActions,
+    ...revisions,
+  }
+}

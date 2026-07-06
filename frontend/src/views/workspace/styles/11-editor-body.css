@@ -1,0 +1,78 @@
+.editor-body {
+  position: relative;
+  min-height: 60vh;
+  padding: 20px;
+}
+
+.editor-body--locked .editor-holder {
+  filter: saturate(0.86);
+  opacity: 0.72;
+}
+
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.editor-holder {
+  min-height: 48vh;
+  border-radius: 12px;
+  border: 1px solid var(--editor-border);
+  padding: 18px;
+  font-size: 16px;
+  background: var(--editor-bg);
+}
+
+.editor-holder :deep(.workspace-block-anchor-highlight) {
+  border-radius: 10px;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+  transition: box-shadow 0.2s ease;
+}
+
+.editor-holder :deep(.ce-block.workspace-block-has-comments) {
+  position: relative;
+}
+
+.editor-holder :deep(.ce-block.workspace-block-has-comments::before) {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: -8px;
+  width: 3px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.22);
+}
+
+.editor-holder :deep(.workspace-block-comment-badge) {
+  position: absolute;
+  top: 6px;
+  right: -10px;
+  display: inline-flex;
+  min-width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--editor-bg);
+  border-radius: 999px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.24);
+  z-index: 4;
+}
+
+.editor-holder :deep(.workspace-block-comment-badge:hover) {
+  background: #1d4ed8;
+}
+
+:deep(.ce-block h1) { font-size: 40px !important; font-weight: 700; }
+

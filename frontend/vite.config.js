@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: '/',
-    plugins: [vue(), vueDevTools(), tailwindcss()],
+    plugins: [vue(), process.env.VITE_DISABLE_DEVTOOLS === 'true' ? null : vueDevTools(), tailwindcss()].filter(Boolean),
     define: {
       global: 'globalThis',
     },
@@ -38,6 +38,40 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
       },
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            const normalizedId = id.replaceAll('\\', '/')
+            if (normalizedId.includes('/src/views/workspace/composables/')) {
+              return 'workspace-composables'
+            }
+            if (normalizedId.includes('/src/views/workspace/components/')) {
+              return 'workspace-components'
+            }
+            if (normalizedId.includes('/src/views/workspace/services/')) {
+              return 'workspace-services'
+            }
+            if (!id.includes('node_modules')) return undefined
+            if (id.includes('/@editorjs/') || id.includes('\\@editorjs\\') || id.includes('/editorjs-') || id.includes('\\editorjs-')) {
+              return 'editor-tools'
+            }
+            if (id.includes('/yjs/') || id.includes('\\yjs\\') || id.includes('/y-websocket/') || id.includes('\\y-websocket\\') || id.includes('/lib0/') || id.includes('\\lib0\\')) {
+              return 'editor-realtime'
+            }
+            if (id.includes('/stompjs/') || id.includes('\\stompjs\\')) {
+              return 'stomp-client'
+            }
+            return undefined
+          },
+        },
+      },
+    },
+    test: {
+      environment: 'happy-dom',
+      include: ['src/**/*.test.{js,ts}'],
+      restoreMocks: true,
     },
   }
 })
