@@ -37,6 +37,41 @@ namespace FileInNOutDesktop
         public int FolderCount;
     }
 
+    internal sealed class DesktopUpdateResult
+    {
+        public readonly string CurrentVersion;
+        public readonly string LatestVersion;
+        public readonly string DownloadUrl;
+        public readonly string ReleaseNotes;
+        public readonly string Sha256;
+        public readonly bool Mandatory;
+        public readonly string ManifestUrl;
+        public readonly bool HasUpdate;
+        public readonly bool CurrentVersionIsLocal;
+
+        public DesktopUpdateResult(
+            string currentVersion,
+            string latestVersion,
+            string downloadUrl,
+            string releaseNotes,
+            string sha256,
+            bool mandatory,
+            string manifestUrl,
+            bool hasUpdate,
+            bool currentVersionIsLocal)
+        {
+            CurrentVersion = currentVersion ?? "";
+            LatestVersion = latestVersion ?? "";
+            DownloadUrl = downloadUrl ?? "";
+            ReleaseNotes = releaseNotes ?? "";
+            Sha256 = sha256 ?? "";
+            Mandatory = mandatory;
+            ManifestUrl = manifestUrl ?? "";
+            HasUpdate = hasUpdate;
+            CurrentVersionIsLocal = currentVersionIsLocal;
+        }
+    }
+
     internal sealed class CommandResult
     {
         public readonly int ExitCode;

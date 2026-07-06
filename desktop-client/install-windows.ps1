@@ -26,11 +26,68 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $clientSource = Join-Path $scriptDir "fileinnout_desktop.py"
 $clientConstantsSource = Join-Path $scriptDir "fileinnout_desktop_constants.py"
 $clientModelsSource = Join-Path $scriptDir "fileinnout_desktop_models.py"
+$clientPathsSource = Join-Path $scriptDir "fileinnout_desktop_paths.py"
+$clientApiSource = Join-Path $scriptDir "fileinnout_desktop_api.py"
+$clientSecuritySource = Join-Path $scriptDir "fileinnout_desktop_security.py"
+$clientWindowsSource = Join-Path $scriptDir "fileinnout_desktop_windows.py"
+$clientStateSource = Join-Path $scriptDir "fileinnout_desktop_state.py"
+$clientConfigSource = Join-Path $scriptDir "fileinnout_desktop_config.py"
+$clientFilesSource = Join-Path $scriptDir "fileinnout_desktop_files.py"
+$clientRemoteSource = Join-Path $scriptDir "fileinnout_desktop_remote.py"
+$clientWebSource = Join-Path $scriptDir "fileinnout_desktop_web.py"
+$clientDriveSource = Join-Path $scriptDir "fileinnout_desktop_drive.py"
+$clientDriveHubSource = Join-Path $scriptDir "fileinnout_desktop_drive_hub.py"
+$clientProfilesSource = Join-Path $scriptDir "fileinnout_desktop_profiles.py"
+$clientDiagnosticsSource = Join-Path $scriptDir "fileinnout_desktop_diagnostics.py"
+$clientSharingSource = Join-Path $scriptDir "fileinnout_desktop_sharing.py"
+$clientSyncSource = Join-Path $scriptDir "fileinnout_desktop_sync.py"
+$clientParserSource = Join-Path $scriptDir "fileinnout_desktop_parser.py"
+$clientAccountCommandsSource = Join-Path $scriptDir "fileinnout_desktop_account_commands.py"
+$clientStatusCommandsSource = Join-Path $scriptDir "fileinnout_desktop_status_commands.py"
+$clientShareCommandsSource = Join-Path $scriptDir "fileinnout_desktop_share_commands.py"
+$clientSyncLocalSource = Join-Path $scriptDir "fileinnout_desktop_sync_local.py"
+$clientSyncSharedSource = Join-Path $scriptDir "fileinnout_desktop_sync_shared.py"
+$clientSyncMovesSource = Join-Path $scriptDir "fileinnout_desktop_sync_moves.py"
+$clientDriveAdoptionSource = Join-Path $scriptDir "fileinnout_desktop_drive_adoption.py"
 $trayExeSource = Join-Path $scriptDir "FileInNOutDesktop.exe"
 $trayIconSource = Join-Path $scriptDir "FileInNOutDesktop.ico"
+$desktopProgramSource = Join-Path $scriptDir "DesktopProgram.cs"
 $traySource = Join-Path $scriptDir "FileInNOutDesktopTray.cs"
+$desktopTrayControllerActionsSource = Join-Path $scriptDir "DesktopTrayControllerActions.cs"
+$settingsFormSource = Join-Path $scriptDir "SettingsForm.cs"
+$settingsFormActionsSource = Join-Path $scriptDir "SettingsFormActions.cs"
+$desktopUiControlsSource = Join-Path $scriptDir "DesktopUiControls.cs"
+$desktopTrayMenuSource = Join-Path $scriptDir "DesktopTrayMenu.cs"
+$desktopTrayVisualsSource = Join-Path $scriptDir "DesktopTrayVisuals.cs"
+$desktopSettingsTextSource = Join-Path $scriptDir "DesktopSettingsText.cs"
+$desktopSettingsDialogTextSource = Join-Path $scriptDir "DesktopSettingsDialogText.cs"
 $desktopModelsSource = Join-Path $scriptDir "DesktopModels.cs"
+$desktopSyncTextSource = Join-Path $scriptDir "DesktopSyncText.cs"
+$desktopUpdateServiceSource = Join-Path $scriptDir "DesktopUpdateService.cs"
+$desktopExplorerTextSource = Join-Path $scriptDir "DesktopExplorerText.cs"
+$desktopExplorerBrandingSource = Join-Path $scriptDir "DesktopExplorerBranding.cs"
+$desktopExplorerNamespaceSource = Join-Path $scriptDir "DesktopExplorerNamespace.cs"
+$desktopDriveHubLinksSource = Join-Path $scriptDir "DesktopDriveHubLinks.cs"
+$desktopDriveHubMaintenanceSource = Join-Path $scriptDir "DesktopDriveHubMaintenance.cs"
+$desktopDriveMappingSource = Join-Path $scriptDir "DesktopDriveMapping.cs"
+$desktopProcessRunnerSource = Join-Path $scriptDir "DesktopProcessRunner.cs"
+$desktopPathRulesSource = Join-Path $scriptDir "DesktopPathRules.cs"
+$desktopDataReaderSource = Join-Path $scriptDir "DesktopDataReader.cs"
+$desktopTrayConfigStoreSource = Join-Path $scriptDir "DesktopTrayConfigStore.cs"
+$desktopTrayPreferencesSource = Join-Path $scriptDir "DesktopTrayPreferences.cs"
+$desktopFolderProfileRulesSource = Join-Path $scriptDir "DesktopFolderProfileRules.cs"
+$desktopFileSearchSource = Join-Path $scriptDir "DesktopFileSearch.cs"
+$desktopSearchServiceSource = Join-Path $scriptDir "DesktopSearchService.cs"
+$desktopSyncStateSource = Join-Path $scriptDir "DesktopSyncState.cs"
+$desktopChangeTrackerSource = Join-Path $scriptDir "DesktopChangeTracker.cs"
+$desktopSyncCommandRunnerSource = Join-Path $scriptDir "DesktopSyncCommandRunner.cs"
+$explorerDriveLauncherSource = Join-Path $scriptDir "ExplorerDriveLauncher.cs"
+$cloudFilesIntegrationSource = Join-Path $scriptDir "CloudFilesIntegration.cs"
 $uninstallerSource = Join-Path $scriptDir "uninstall-windows.ps1"
+$shellInstallerHelper = Join-Path $scriptDir "install-windows-shell.ps1"
+$driveHubInstallerHelper = Join-Path $scriptDir "install-windows-drive-hub.ps1"
+$payloadInstallerHelper = Join-Path $scriptDir "install-windows-payload.ps1"
+$packageManifestSource = Join-Path $scriptDir "manifest.json"
 $configBase = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } elseif ($env:APPDATA) { $env:APPDATA } else { $env:USERPROFILE }
 $configDir = Join-Path $configBase "FileInNOutDesktop"
 $configPath = Join-Path (Join-Path $configBase "FileInNOutDesktop") "config.json"
@@ -49,6 +106,15 @@ if (-not (Test-Path $clientSource)) {
 }
 if (-not (Test-Path $uninstallerSource)) {
   throw "Cannot find uninstall-windows.ps1 next to this installer."
+}
+if (-not (Test-Path $shellInstallerHelper)) {
+  throw "Cannot find install-windows-shell.ps1 next to this installer."
+}
+if (-not (Test-Path $driveHubInstallerHelper)) {
+  throw "Cannot find install-windows-drive-hub.ps1 next to this installer."
+}
+if (-not (Test-Path $payloadInstallerHelper)) {
+  throw "Cannot find install-windows-payload.ps1 next to this installer."
 }
 
 function Resolve-CSharpCompiler {
@@ -70,6 +136,67 @@ function Resolve-CSharpCompiler {
   return ""
 }
 
+function New-FileInNOutIcon {
+  param([string]$Path)
+
+  Add-Type -AssemblyName System.Drawing
+  $bitmap = New-Object System.Drawing.Bitmap 32, 32
+  $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+  try {
+    $graphics.Clear([System.Drawing.Color]::Transparent)
+    $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $tab = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(21, 128, 61))
+    $body = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(22, 163, 74))
+    $shine = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(110, 231, 183))
+    $border = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(22, 101, 52)), 1
+    try {
+      $graphics.FillRectangle($tab, 5, 7, 11, 6)
+      $graphics.FillRectangle($body, 3, 11, 26, 17)
+      $graphics.DrawRectangle($border, 3, 11, 26, 17)
+      $graphics.FillRectangle($shine, 6, 14, 20, 3)
+    } finally {
+      $tab.Dispose()
+      $body.Dispose()
+      $shine.Dispose()
+      $border.Dispose()
+    }
+
+    $pngStream = New-Object System.IO.MemoryStream
+    try {
+      $bitmap.Save($pngStream, [System.Drawing.Imaging.ImageFormat]::Png)
+      $png = $pngStream.ToArray()
+    } finally {
+      $pngStream.Dispose()
+    }
+  } finally {
+    $graphics.Dispose()
+    $bitmap.Dispose()
+  }
+
+  $output = New-Object System.IO.FileStream $Path, ([System.IO.FileMode]::Create), ([System.IO.FileAccess]::Write)
+  try {
+    $writer = New-Object System.IO.BinaryWriter $output
+    try {
+      $writer.Write([UInt16]0)
+      $writer.Write([UInt16]1)
+      $writer.Write([UInt16]1)
+      $writer.Write([byte]32)
+      $writer.Write([byte]32)
+      $writer.Write([byte]0)
+      $writer.Write([byte]0)
+      $writer.Write([UInt16]1)
+      $writer.Write([UInt16]32)
+      $writer.Write([UInt32]$png.Length)
+      $writer.Write([UInt32]22)
+      $writer.Write($png)
+    } finally {
+      $writer.Dispose()
+    }
+  } finally {
+    $output.Dispose()
+  }
+}
+. $payloadInstallerHelper
 if ($Interval -lt 5) {
   throw "Interval must be at least 5 seconds."
 }
@@ -96,6 +223,21 @@ function Normalize-FileInNOutDriveLetter {
 }
 
 $DriveLetter = Normalize-FileInNOutDriveLetter $DriveLetter
+function Get-FileInNOutPackageVersion {
+  param([string]$ManifestPath)
+
+  if (Test-Path -LiteralPath $ManifestPath) {
+    try {
+      $manifest = Get-Content -Raw -LiteralPath $ManifestPath | ConvertFrom-Json
+      if ($manifest.version) {
+        return [string]$manifest.version
+      }
+    } catch {
+    }
+  }
+  return "local"
+}
+# Get-FileInNOutPackageVersionEarlyMarker
 
 if ($PythonRuntimeDir) {
   if (-not (Test-Path -LiteralPath $PythonRuntimeDir)) {
@@ -125,68 +267,7 @@ if ($RemoveStartupTask) {
   }
 }
 
-New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-$existingTrayPath = Join-Path ([System.IO.Path]::GetFullPath($InstallDir)) "FileInNOutDesktop.exe"
-Get-Process -Name FileInNOutDesktop -ErrorAction SilentlyContinue |
-  Where-Object {
-    try {
-      $_.Path -and $_.Path.Equals($existingTrayPath, [System.StringComparison]::OrdinalIgnoreCase)
-    } catch {
-      $false
-    }
-  } |
-  ForEach-Object {
-    Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
-  }
-Start-Sleep -Milliseconds 300
-Copy-Item -Force -Path $clientSource -Destination (Join-Path $InstallDir "fileinnout_desktop.py")
-if (Test-Path -LiteralPath $clientConstantsSource) {
-  Copy-Item -Force -Path $clientConstantsSource -Destination (Join-Path $InstallDir "fileinnout_desktop_constants.py")
-}
-if (Test-Path -LiteralPath $clientModelsSource) {
-  Copy-Item -Force -Path $clientModelsSource -Destination (Join-Path $InstallDir "fileinnout_desktop_models.py")
-}
-Copy-Item -Force -Path $uninstallerSource -Destination (Join-Path $InstallDir "uninstall-windows.ps1")
-if (Test-Path -LiteralPath $trayExeSource) {
-  Copy-Item -Force -Path $trayExeSource -Destination (Join-Path $InstallDir "FileInNOutDesktop.exe")
-} elseif (Test-Path -LiteralPath $traySource) {
-  $csc = Resolve-CSharpCompiler
-  if ($csc) {
-    $trayBuildOutput = Join-Path $InstallDir "FileInNOutDesktop.exe"
-    $trayBuildArgs = @(
-      "/nologo",
-      "/codepage:65001",
-      "/target:winexe",
-      "/out:$trayBuildOutput",
-      "/reference:System.Windows.Forms.dll",
-      "/reference:System.Drawing.dll",
-      "/reference:System.Web.Extensions.dll"
-    )
-    if (Test-Path -LiteralPath $trayIconSource) {
-      $trayBuildArgs += "/win32icon:$trayIconSource"
-    }
-    $trayBuildArgs += $traySource
-    if (Test-Path -LiteralPath $desktopModelsSource) {
-      $trayBuildArgs += $desktopModelsSource
-    }
-    & $csc @trayBuildArgs
-    if ($LASTEXITCODE -ne 0) {
-      Write-Warning "Could not build FileInNOutDesktop.exe; command-line shortcuts will still be installed."
-    }
-  } else {
-    Write-Warning "C# compiler was not found; command-line shortcuts will still be installed."
-  }
-}
-if (Test-Path -LiteralPath $trayIconSource) {
-  Copy-Item -Force -Path $trayIconSource -Destination (Join-Path $InstallDir "FileInNOutDesktop.ico")
-}
-if (Test-Path -LiteralPath $traySource) {
-  Copy-Item -Force -Path $traySource -Destination (Join-Path $InstallDir "FileInNOutDesktopTray.cs")
-}
-if (Test-Path -LiteralPath $desktopModelsSource) {
-  Copy-Item -Force -Path $desktopModelsSource -Destination (Join-Path $InstallDir "DesktopModels.cs")
-}
-
+Install-FileInNOutPayloadFiles
 if ($resolvedPythonRuntimeDir) {
   $runtimeInstallDir = Join-Path $InstallDir "python-runtime"
   if (Test-Path -LiteralPath $runtimeInstallDir) {
@@ -225,6 +306,8 @@ exit /b 9009
 $cmdContent | Set-Content -Encoding ASCII -Path $cmdPath
 $trayExePath = Join-Path $InstallDir "FileInNOutDesktop.exe"
 $trayIconPath = Join-Path $InstallDir "FileInNOutDesktop.ico"
+$installedManifestPath = Join-Path $InstallDir "manifest.json"
+$packageVersion = Get-FileInNOutPackageVersion $installedManifestPath
 $shortcutIcon = if (Test-Path -LiteralPath $trayIconPath) { $trayIconPath } elseif (Test-Path -LiteralPath $trayExePath) { $trayExePath } else { $cmdPath }
 
 $watchCmd = Join-Path $InstallDir "fileinnout-watch.cmd"
@@ -403,790 +486,8 @@ command = Chr(34) & scriptDir & "\fileinnout-context.cmd" & Chr(34) & " " & Chr(
 shell.Run command, 0, False
 '@ | Set-Content -Encoding ASCII -Path $contextHidden
 
-function New-FileInNOutShortcut {
-  param(
-    [string]$Path,
-    [string]$TargetPath,
-    [string]$Arguments = "",
-    [string]$WorkingDirectory = "",
-    [string]$IconLocation = ""
-  )
-
-  $shell = New-Object -ComObject WScript.Shell
-  $shortcut = $shell.CreateShortcut($Path)
-  $shortcut.TargetPath = $TargetPath
-  if ($Arguments) {
-    $shortcut.Arguments = $Arguments
-  }
-  if ($WorkingDirectory) {
-    $shortcut.WorkingDirectory = $WorkingDirectory
-  }
-  if ($IconLocation) {
-    $shortcut.IconLocation = $IconLocation
-  }
-  $shortcut.Save()
-}
-
-function Set-FileInNOutExplorerFolder {
-  param(
-    [string]$Path,
-    [string]$IconPath = "",
-    [string]$DisplayName = "FileInNOut",
-    [string]$InfoTip = ""
-  )
-
-  if ([string]::IsNullOrWhiteSpace($Path)) {
-    return
-  }
-
-  New-Item -ItemType Directory -Force -Path $Path | Out-Null
-  $desktopIni = Join-Path $Path "desktop.ini"
-  $safeDisplayName = if ([string]::IsNullOrWhiteSpace($DisplayName)) { "FileInNOut" } else { $DisplayName.Trim() }
-  $safeInfoTip = if ([string]::IsNullOrWhiteSpace($InfoTip)) { ConvertFrom-FileInNOutUtf8Base64 "RmlsZUluTk91dCDrj5nquLDtmZQg7Y+0642U" } else { $InfoTip.Trim() }
-  $lines = @(
-    "[.ShellClassInfo]",
-    "LocalizedResourceName=$safeDisplayName",
-    "InfoTip=$safeInfoTip"
-  )
-  if ($IconPath -and (Test-Path -LiteralPath $IconPath)) {
-    $lines += "IconResource=$IconPath,0"
-    $lines += "IconFile=$IconPath"
-    $lines += "IconIndex=0"
-  }
-  $lines += ""
-  $lines | Set-Content -Encoding Unicode -Path $desktopIni
-
-  & attrib +h +s $desktopIni 2>$null
-  & attrib +r +s $Path 2>$null
-}
-
-function Get-FileInNOutCurrentUserSubKeyPath {
-  param(
-    [string]$Path
-  )
-
-  $subKeyPath = $Path -replace '^HKCU:\\', ''
-  if ($subKeyPath -eq $Path) {
-    throw "Only HKCU registry paths are supported here: $Path"
-  }
-  return $subKeyPath
-}
-
-function New-FileInNOutRegistryKey {
-  param(
-    [string]$Path
-  )
-
-  $subKeyPath = Get-FileInNOutCurrentUserSubKeyPath -Path $Path
-  $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($subKeyPath)
-  if (-not $key) {
-    throw "Cannot open registry key for writing: $Path"
-  }
-  try {
-    return
-  } finally {
-    $key.Close()
-  }
-}
-
-function Set-FileInNOutRegistryValue {
-  param(
-    [string]$Path,
-    [AllowEmptyString()][string]$Name,
-    [object]$Value,
-    [Microsoft.Win32.RegistryValueKind]$Kind = [Microsoft.Win32.RegistryValueKind]::String
-  )
-
-  $subKeyPath = Get-FileInNOutCurrentUserSubKeyPath -Path $Path
-  $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($subKeyPath)
-  if (-not $key) {
-    throw "Cannot open registry key for writing: $Path"
-  }
-  try {
-    $key.SetValue($Name, $Value, $Kind)
-  } finally {
-    $key.Close()
-  }
-}
-
-function Set-RegistryDefaultValue {
-  param(
-    [string]$Path,
-    [string]$Value
-  )
-
-  Set-FileInNOutRegistryValue -Path $Path -Name "" -Value $Value
-}
-
-function ConvertFrom-FileInNOutUtf8Base64 {
-  param([string]$Value)
-  return [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($Value))
-}
-
-function Register-FileInNOutExplorerNamespace {
-  param(
-    [string]$Guid,
-    [string]$TargetPath,
-    [string]$IconPath = ""
-  )
-
-  if ([string]::IsNullOrWhiteSpace($TargetPath)) {
-    return
-  }
-
-  $resolvedTarget = (Resolve-Path -LiteralPath $TargetPath).Path
-  $displayIcon = if ($IconPath -and (Test-Path -LiteralPath $IconPath)) { "$IconPath,0" } else { "%SystemRoot%\System32\shell32.dll,3" }
-  $clsidPath = "HKCU:\Software\Classes\CLSID\$Guid"
-  $defaultIconPath = Join-Path $clsidPath "DefaultIcon"
-  $inProcPath = Join-Path $clsidPath "InProcServer32"
-  $instancePath = Join-Path $clsidPath "Instance"
-  $propertyBagPath = Join-Path $instancePath "InitPropertyBag"
-  $shellFolderPath = Join-Path $clsidPath "ShellFolder"
-  $desktopNamespacePath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Desktop\NameSpace\$Guid"
-  $myComputerNamespacePath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\$Guid"
-  $hideDesktopIconPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel"
-
-  New-Item -Path $clsidPath -Force | Out-Null
-  Set-RegistryDefaultValue -Path $clsidPath -Value "FileInNOut"
-  New-ItemProperty -Path $clsidPath -Name "System.IsPinnedToNameSpaceTree" -Value 1 -PropertyType DWord -Force | Out-Null
-  New-ItemProperty -Path $clsidPath -Name "SortOrderIndex" -Value 66 -PropertyType DWord -Force | Out-Null
-  New-ItemProperty -Path $clsidPath -Name "ThisPCPolicy" -Value "Show" -PropertyType String -Force | Out-Null
-
-  New-Item -Path $defaultIconPath -Force | Out-Null
-  Set-RegistryDefaultValue -Path $defaultIconPath -Value $displayIcon
-
-  New-Item -Path $inProcPath -Force | Out-Null
-  Set-RegistryDefaultValue -Path $inProcPath -Value "%SystemRoot%\System32\shell32.dll"
-  New-ItemProperty -Path $inProcPath -Name "ThreadingModel" -Value "Both" -PropertyType String -Force | Out-Null
-
-  New-Item -Path $instancePath -Force | Out-Null
-  New-ItemProperty -Path $instancePath -Name "CLSID" -Value "{0E5AAE11-A475-4C5B-AB00-C66DE400274E}" -PropertyType String -Force | Out-Null
-  New-Item -Path $propertyBagPath -Force | Out-Null
-  New-ItemProperty -Path $propertyBagPath -Name "Attributes" -Value 17 -PropertyType DWord -Force | Out-Null
-  New-ItemProperty -Path $propertyBagPath -Name "TargetFolderPath" -Value $resolvedTarget -PropertyType String -Force | Out-Null
-
-  New-Item -Path $shellFolderPath -Force | Out-Null
-  New-ItemProperty -Path $shellFolderPath -Name "FolderValueFlags" -Value 40 -PropertyType DWord -Force | Out-Null
-  New-ItemProperty -Path $shellFolderPath -Name "Attributes" -Value 4034920525 -PropertyType DWord -Force | Out-Null
-
-  New-Item -Path $desktopNamespacePath -Force | Out-Null
-  Set-RegistryDefaultValue -Path $desktopNamespacePath -Value "FileInNOut"
-  New-Item -Path $myComputerNamespacePath -Force | Out-Null
-  Set-RegistryDefaultValue -Path $myComputerNamespacePath -Value "FileInNOut"
-  New-Item -Path $hideDesktopIconPath -Force | Out-Null
-  New-ItemProperty -Path $hideDesktopIconPath -Name $Guid -Value 1 -PropertyType DWord -Force | Out-Null
-}
-
-function Register-FileInNOutShellSyncRoot {
-  param(
-    [string]$Guid,
-    [string]$TargetPath,
-    [string]$IconPath = "",
-    [string]$AccountId = "default"
-  )
-
-  if ([string]::IsNullOrWhiteSpace($TargetPath)) {
-    return
-  }
-
-  try {
-    $resolvedTarget = (Resolve-Path -LiteralPath $TargetPath).Path
-    $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-    $safeAccount = ([string]$AccountId).Trim()
-    if (-not $safeAccount) {
-      $safeAccount = "default"
-    }
-    $safeAccount = ($safeAccount -replace '[\\/:*?"<>|!]', '_')
-    $syncRootId = "FileInNOut!$sid!$safeAccount"
-    $syncRootManagerPath = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Explorer\SyncRootManager\$syncRootId"
-    $userSyncRootsPath = Join-Path $syncRootManagerPath "UserSyncRoots"
-    $iconValue = if ($IconPath -and (Test-Path -LiteralPath $IconPath)) { "$IconPath,0" } else { "%SystemRoot%\System32\shell32.dll,3" }
-
-    New-Item -Path $syncRootManagerPath -Force | Out-Null
-    New-ItemProperty -Path $syncRootManagerPath -Name "DisplayNameResource" -Value "FileInNOut" -PropertyType String -Force | Out-Null
-    New-ItemProperty -Path $syncRootManagerPath -Name "IconResource" -Value $iconValue -PropertyType ExpandString -Force | Out-Null
-    New-ItemProperty -Path $syncRootManagerPath -Name "NamespaceCLSID" -Value $Guid -PropertyType String -Force | Out-Null
-    New-Item -Path $userSyncRootsPath -Force | Out-Null
-    New-ItemProperty -Path $userSyncRootsPath -Name $sid -Value $resolvedTarget -PropertyType ExpandString -Force | Out-Null
-    Write-Host "Registered Shell sync root provider: $syncRootId"
-  } catch {
-    Write-Warning "Shell sync root provider registration was skipped: $($_.Exception.Message)"
-  }
-}
-
-function New-FileInNOutContextAction {
-  param(
-    [string]$ParentPath,
-    [string]$ActionKey,
-    [string]$Label,
-    [string]$Action,
-    [string]$TargetPlaceholder,
-    [string]$IconPath = ""
-  )
-
-  $actionPath = Join-Path (Join-Path $ParentPath "shell") $ActionKey
-  $commandPath = Join-Path $actionPath "command"
-  $iconValue = if ($IconPath -and (Test-Path -LiteralPath $IconPath)) { "$IconPath,0" } else { "" }
-
-  New-FileInNOutRegistryKey -Path $actionPath
-  Set-FileInNOutRegistryValue -Path $actionPath -Name "MUIVerb" -Value $Label
-  if ($iconValue) {
-    Set-FileInNOutRegistryValue -Path $actionPath -Name "Icon" -Value $iconValue
-  }
-
-  New-FileInNOutRegistryKey -Path $commandPath
-  Set-RegistryDefaultValue -Path $commandPath -Value "wscript.exe `"$contextHidden`" $Action `"$TargetPlaceholder`""
-}
-
-function Register-FileInNOutContextMenuRoot {
-  param(
-    [string]$RootPath,
-    [string]$TargetPlaceholder,
-    [string]$IconPath = ""
-  )
-
-  $iconValue = if ($IconPath -and (Test-Path -LiteralPath $IconPath)) { "$IconPath,0" } else { "" }
-  New-FileInNOutRegistryKey -Path $RootPath
-  Set-FileInNOutRegistryValue -Path $RootPath -Name "MUIVerb" -Value "FileInNOut"
-  Set-FileInNOutRegistryValue -Path $RootPath -Name "SubCommands" -Value ""
-  Set-FileInNOutRegistryValue -Path $RootPath -Name "Position" -Value "Top"
-  if ($iconValue) {
-    Set-FileInNOutRegistryValue -Path $RootPath -Name "Icon" -Value $iconValue
-  }
-
-  New-FileInNOutContextAction -ParentPath $RootPath -ActionKey "sync" -Label (ConvertFrom-FileInNOutUtf8Base64 "7KeA6riIIOuPmeq4sO2ZlA==") -Action "sync" -TargetPlaceholder $TargetPlaceholder -IconPath $IconPath
-  New-FileInNOutContextAction -ParentPath $RootPath -ActionKey "drive" -Label (ConvertFrom-FileInNOutUtf8Base64 "RmlsZUluTk91dCDrk5zrnbzsnbTruIwg7Je06riw") -Action "drive" -TargetPlaceholder $TargetPlaceholder -IconPath $IconPath
-  New-FileInNOutContextAction -ParentPath $RootPath -ActionKey "open" -Label (ConvertFrom-FileInNOutUtf8Base64 "642w7Iqk7YGs7YaxIOyVsSDsl7TquLA=") -Action "app" -TargetPlaceholder $TargetPlaceholder -IconPath $IconPath
-  New-FileInNOutContextAction -ParentPath $RootPath -ActionKey "web" -Label (ConvertFrom-FileInNOutUtf8Base64 "7Ju57JeQ7IScIOyXtOq4sA==") -Action "web" -TargetPlaceholder $TargetPlaceholder -IconPath $IconPath
-  New-FileInNOutContextAction -ParentPath $RootPath -ActionKey "copy-link" -Label (ConvertFrom-FileInNOutUtf8Base64 "66eB7YGsIOuzteyCrA==") -Action "copy-link" -TargetPlaceholder $TargetPlaceholder -IconPath $IconPath
-  New-FileInNOutContextAction -ParentPath $RootPath -ActionKey "share" -Label (ConvertFrom-FileInNOutUtf8Base64 "6rO17JygLi4u") -Action "share" -TargetPlaceholder $TargetPlaceholder -IconPath $IconPath
-  New-FileInNOutContextAction -ParentPath $RootPath -ActionKey "add-sync-folder" -Label (ConvertFrom-FileInNOutUtf8Base64 "64+Z6riw7ZmUIO2PtOuNlCDstpTqsIA=") -Action "add-sync-folder" -TargetPlaceholder $TargetPlaceholder -IconPath $IconPath
-  New-FileInNOutContextAction -ParentPath $RootPath -ActionKey "status" -Label (ConvertFrom-FileInNOutUtf8Base64 "64+Z6riw7ZmUIOyDge2DnCDtmZXsnbg=") -Action "status" -TargetPlaceholder $TargetPlaceholder -IconPath $IconPath
-}
-
-function Register-FileInNOutContextMenus {
-  param([string]$IconPath = "")
-
-  Register-FileInNOutContextMenuRoot -RootPath "HKCU:\Software\Classes\Directory\shell\FileInNOut" -TargetPlaceholder "%1" -IconPath $IconPath
-  Register-FileInNOutContextMenuRoot -RootPath "HKCU:\Software\Classes\Directory\Background\shell\FileInNOut" -TargetPlaceholder "%V" -IconPath $IconPath
-  Register-FileInNOutContextMenuRoot -RootPath "HKCU:\Software\Classes\Drive\shell\FileInNOut" -TargetPlaceholder "%1" -IconPath $IconPath
-  Register-FileInNOutContextMenuRoot -RootPath "HKCU:\Software\Classes\*\shell\FileInNOut" -TargetPlaceholder "%1" -IconPath $IconPath
-}
-
-function Register-FileInNOutUrlProtocol {
-  param(
-    [string]$CmdPath,
-    [string]$IconPath = ""
-  )
-
-  if ([string]::IsNullOrWhiteSpace($CmdPath)) {
-    return
-  }
-
-  $protocolPath = "HKCU:\Software\Classes\fileinnout"
-  $defaultIconPath = Join-Path $protocolPath "DefaultIcon"
-  $commandPath = Join-Path $protocolPath "shell\open\command"
-  $iconValue = if ($IconPath -and (Test-Path -LiteralPath $IconPath)) { "$IconPath,0" } else { "$CmdPath,0" }
-
-  New-FileInNOutRegistryKey -Path $protocolPath
-  Set-RegistryDefaultValue -Path $protocolPath -Value "URL:FileInNOut shared folder"
-  Set-FileInNOutRegistryValue -Path $protocolPath -Name "URL Protocol" -Value ""
-
-  New-FileInNOutRegistryKey -Path $defaultIconPath
-  Set-RegistryDefaultValue -Path $defaultIconPath -Value $iconValue
-
-  New-FileInNOutRegistryKey -Path $commandPath
-  Set-RegistryDefaultValue -Path $commandPath -Value "`"$CmdPath`" open-address --address `"%1`""
-}
-
-function Get-FileInNOutSubstTarget {
-  param([string]$Letter)
-
-  $normalized = Normalize-FileInNOutDriveLetter $Letter
-  if (-not $normalized) {
-    return ""
-  }
-
-  $output = & subst 2>$null
-  foreach ($line in $output) {
-    if ($line -match ("^" + [regex]::Escape($normalized) + ":\\: => (.+)$")) {
-      return $Matches[1].Trim()
-    }
-  }
-  return ""
-}
-
-function Get-FileInNOutDriveLetterCandidates {
-  param([string]$PreferredLetter)
-
-  $normalized = Normalize-FileInNOutDriveLetter $PreferredLetter
-  $letters = @()
-  if ($normalized) {
-    $letters += $normalized
-    $start = [int][char]$normalized
-    for ($code = $start + 1; $code -le [int][char]"Z"; $code++) {
-      $letters += [string][char]$code
-    }
-  }
-  foreach ($fallback in @("G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z")) {
-    $letters += $fallback
-  }
-  return $letters | Where-Object { $_ -and $_ -match "^[A-Z]$" } | Select-Object -Unique
-}
-
-function Mount-FileInNOutDrive {
-  param(
-    [string]$Letter,
-    [string]$TargetPath
-  )
-
-  $normalized = Normalize-FileInNOutDriveLetter $Letter
-  if (-not $normalized -or [string]::IsNullOrWhiteSpace($TargetPath)) {
-    return ""
-  }
-
-  $resolvedTarget = (Resolve-Path -LiteralPath $TargetPath).Path
-  foreach ($candidate in Get-FileInNOutDriveLetterCandidates $normalized) {
-    $driveName = "${candidate}:"
-    $driveRoot = "${candidate}:\"
-    $existingSubst = Get-FileInNOutSubstTarget $candidate
-
-    if ($existingSubst) {
-      try {
-        $resolvedExisting = (Resolve-Path -LiteralPath $existingSubst).Path
-      } catch {
-        $resolvedExisting = $existingSubst
-      }
-      if ($resolvedExisting.Equals($resolvedTarget, [System.StringComparison]::OrdinalIgnoreCase)) {
-        return $candidate
-      }
-      continue
-    } elseif (Test-Path -LiteralPath $driveRoot) {
-      if ($candidate -eq $normalized) {
-        Write-Warning "Drive ${driveName} is already in use; trying another FileInNOut drive letter."
-      }
-      continue
-    }
-
-    & subst $driveName $resolvedTarget
-    if ($LASTEXITCODE -eq 0) {
-      return $candidate
-    }
-    Write-Warning "Could not map FileInNOut drive ${driveName} to $resolvedTarget."
-  }
-  return ""
-}
-
-function Register-FileInNOutDriveAppearance {
-  param(
-    [string]$Letter,
-    [string]$IconPath = ""
-  )
-
-  $normalized = Normalize-FileInNOutDriveLetter $Letter
-  if (-not $normalized) {
-    return
-  }
-
-  $displayIcon = if ($IconPath -and (Test-Path -LiteralPath $IconPath)) { "$IconPath,0" } else { "%SystemRoot%\System32\shell32.dll,3" }
-  $driveIconPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\DriveIcons\$normalized"
-  $defaultIconPath = Join-Path $driveIconPath "DefaultIcon"
-  $defaultLabelPath = Join-Path $driveIconPath "DefaultLabel"
-
-  New-Item -Path $defaultIconPath -Force | Out-Null
-  Set-RegistryDefaultValue -Path $defaultIconPath -Value $displayIcon
-  New-Item -Path $defaultLabelPath -Force | Out-Null
-  Set-RegistryDefaultValue -Path $defaultLabelPath -Value "FileInNOut"
-}
-
-function ConvertTo-FileInNOutDriveLinkName {
-  param(
-    [string]$PreferredName,
-    [string]$TargetPath
-  )
-
-  $name = ([string]$PreferredName).Trim()
-  if (-not $name) {
-    $name = Split-Path -Leaf $TargetPath
-  }
-  if (-not $name) {
-    $name = "Sync folder"
-  }
-
-  foreach ($invalid in [System.IO.Path]::GetInvalidFileNameChars()) {
-    $name = $name.Replace([string]$invalid, "_")
-  }
-  $name = $name.Trim().TrimEnd(".")
-  if (-not $name) {
-    return "Sync folder"
-  }
-  return $name
-}
-
-function New-FileInNOutDriveJunction {
-  param(
-    [string]$RootPath,
-    [string]$LinkName,
-    [string]$TargetPath
-  )
-
-  $resolvedTarget = (Resolve-Path -LiteralPath $TargetPath).Path
-  New-Item -ItemType Directory -Force -Path $RootPath | Out-Null
-  $linkPath = Join-Path $RootPath $LinkName
-  if (Test-Path -LiteralPath $linkPath) {
-    $item = Get-Item -LiteralPath $linkPath -Force
-    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-      & cmd.exe /d /c rmdir "$linkPath" 2>$null
-      if (Test-Path -LiteralPath $linkPath) {
-        Remove-Item -LiteralPath $linkPath -Force -ErrorAction SilentlyContinue
-      }
-    } elseif (-not (Remove-FileInNOutEmptyHubConflictDirectory -Path $linkPath)) {
-      return
-    }
-  }
-
-  try {
-    New-Item -ItemType Junction -Path $linkPath -Target $resolvedTarget -Force | Out-Null
-  } catch {
-    & cmd.exe /d /c mklink /J "$linkPath" "$resolvedTarget" | Out-Null
-  }
-}
-
-function Test-FileInNOutDirectoryHasUserContent {
-  param([string]$Path)
-
-  if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Container)) {
-    return $false
-  }
-
-  try {
-    foreach ($item in Get-ChildItem -LiteralPath $Path -Force -ErrorAction Stop) {
-      if ($item.Name -ieq "desktop.ini") {
-        continue
-      }
-      return $true
-    }
-  } catch {
-    return $true
-  }
-  return $false
-}
-
-function Remove-FileInNOutEmptyHubConflictDirectory {
-  param([string]$Path)
-
-  if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Container)) {
-    return $false
-  }
-
-  try {
-    $item = Get-Item -LiteralPath $Path -Force
-    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-      return $false
-    }
-    if (Test-FileInNOutDirectoryHasUserContent -Path $Path) {
-      return $false
-    }
-
-    $desktopIniPath = Join-Path $Path "desktop.ini"
-    if (Test-Path -LiteralPath $desktopIniPath) {
-      Remove-Item -LiteralPath $desktopIniPath -Force -ErrorAction SilentlyContinue
-    }
-    if (Test-FileInNOutDirectoryHasUserContent -Path $Path) {
-      return $false
-    }
-    Remove-Item -LiteralPath $Path -Force -ErrorAction Stop
-    return $true
-  } catch {
-    return $false
-  }
-}
-
-function Remove-FileInNOutLegacyDriveJunction {
-  param(
-    [string]$RootPath,
-    [string]$LinkName
-  )
-
-  if ([string]::IsNullOrWhiteSpace($RootPath) -or [string]::IsNullOrWhiteSpace($LinkName)) {
-    return
-  }
-
-  $linkPath = Join-Path $RootPath $LinkName
-  if (-not (Test-Path -LiteralPath $linkPath)) {
-    return
-  }
-
-  try {
-    $item = Get-Item -LiteralPath $linkPath -Force
-    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-      & cmd.exe /d /c rmdir "$linkPath" 2>$null
-      if (Test-Path -LiteralPath $linkPath) {
-        Remove-Item -LiteralPath $linkPath -Force -ErrorAction SilentlyContinue
-      }
-    }
-  } catch {
-  }
-}
-
-function Get-FileInNOutObjectValue {
-  param(
-    [object]$Object,
-    [string]$Name
-  )
-
-  if (-not $Object) {
-    return $null
-  }
-  $property = $Object.PSObject.Properties[$Name]
-  if ($property) {
-    return $property.Value
-  }
-  return $null
-}
-
-function Test-FileInNOutSharedRemotePath {
-  param([string]$RemotePath)
-
-  $normalized = (([string]$RemotePath).Trim() -replace "\\", "/").Trim("/")
-  return $normalized.StartsWith("Shared/", [System.StringComparison]::OrdinalIgnoreCase)
-}
-
-function Get-FileInNOutSharedRemoteParts {
-  param([string]$RemotePath)
-
-  $normalized = (([string]$RemotePath).Trim() -replace "\\", "/").Trim("/")
-  if (-not $normalized.StartsWith("Shared/", [System.StringComparison]::OrdinalIgnoreCase)) {
-    return @()
-  }
-  return @($normalized.Split("/", [System.StringSplitOptions]::RemoveEmptyEntries))
-}
-
-function Get-FileInNOutSharedOwnerLinkName {
-  param([string]$RemotePath)
-
-  $parts = Get-FileInNOutSharedRemoteParts -RemotePath $RemotePath
-  if (@($parts).Count -lt 3) {
-    return ""
-  }
-  return ConvertTo-FileInNOutDriveLinkName -PreferredName $parts[1] -TargetPath $parts[1]
-}
-
-function Get-FileInNOutSharedFolderLinkName {
-  param(
-    [object]$Profile
-  )
-
-  $remotePath = [string]$Profile.RemotePath
-  $parts = Get-FileInNOutSharedRemoteParts -RemotePath $remotePath
-  $owner = if (@($parts).Count -ge 3) { ConvertTo-FileInNOutDriveLinkName -PreferredName $parts[1] -TargetPath $parts[1] } else { "" }
-  $name = ([string]$Profile.Name).Trim()
-  $ownerSuffix = if ($owner) { " ($owner)" } else { "" }
-  if ($ownerSuffix -and $name.EndsWith($ownerSuffix, [System.StringComparison]::OrdinalIgnoreCase)) {
-    $name = $name.Substring(0, $name.Length - $ownerSuffix.Length).Trim()
-  }
-  $partCount = @($parts).Count
-  if (-not $name -and $partCount -ge 3) {
-    $name = $parts[$partCount - 1]
-  }
-  return ConvertTo-FileInNOutDriveLinkName -PreferredName $name -TargetPath $Profile.LocalPath
-}
-
-function Get-FileInNOutSyncFolderProfiles {
-  param(
-    [string]$ConfigPath,
-    [string]$DefaultSyncDir
-  )
-
-  $profiles = @()
-  $hasConfiguredProfiles = $false
-  $config = $null
-  if ($ConfigPath -and (Test-Path -LiteralPath $ConfigPath)) {
-    try {
-      $config = Get-Content -Raw -Path $ConfigPath | ConvertFrom-Json
-    } catch {
-      $config = $null
-    }
-  }
-
-  $syncFolders = if ($config) { Get-FileInNOutObjectValue -Object $config -Name "syncFolders" } else { $null }
-  if ($syncFolders) {
-    foreach ($folder in @($syncFolders)) {
-      if (-not $folder) {
-        continue
-      }
-
-      $localPath = [string](Get-FileInNOutObjectValue -Object $folder -Name "localPath")
-      if (-not $localPath) {
-        $localPath = [string](Get-FileInNOutObjectValue -Object $folder -Name "syncDir")
-      }
-      $localPath = [Environment]::ExpandEnvironmentVariables($localPath.Trim())
-      if (-not $localPath) {
-        continue
-      }
-
-      $hasConfiguredProfiles = $true
-      if (-not (Test-Path -LiteralPath $localPath)) {
-        continue
-      }
-
-      $enabledValue = Get-FileInNOutObjectValue -Object $folder -Name "enabled"
-      $enabled = $true
-      if ($null -ne $enabledValue -and $enabledValue -eq $false) {
-        $enabled = $false
-      }
-
-      $resolvedLocal = (Resolve-Path -LiteralPath $localPath).Path
-      $name = [string](Get-FileInNOutObjectValue -Object $folder -Name "name")
-      $remotePath = [string](Get-FileInNOutObjectValue -Object $folder -Name "remotePath")
-      $profiles += [pscustomobject]@{
-        Name = $name
-        LocalPath = $resolvedLocal
-        RemotePath = $remotePath
-        Enabled = $enabled
-      }
-    }
-  }
-
-  if (-not $hasConfiguredProfiles) {
-    $legacyDir = ""
-    if ($config) {
-      $legacyDir = [string](Get-FileInNOutObjectValue -Object $config -Name "syncDir")
-    }
-    if (-not $legacyDir) {
-      $legacyDir = $DefaultSyncDir
-    }
-    $legacyDir = [Environment]::ExpandEnvironmentVariables(([string]$legacyDir).Trim())
-    if ($legacyDir -and (Test-Path -LiteralPath $legacyDir)) {
-      $legacyName = ConvertTo-FileInNOutDriveLinkName -PreferredName (Split-Path -Leaf $legacyDir) -TargetPath $legacyDir
-      $profiles += [pscustomobject]@{
-        Name = $legacyName
-        LocalPath = (Resolve-Path -LiteralPath $legacyDir).Path
-        RemotePath = $legacyName
-        Enabled = $true
-      }
-    }
-  }
-
-  return $profiles
-}
-
-function Remove-FileInNOutStaleDriveHubLinks {
-  param(
-    [string]$RootPath,
-    [System.Collections.Generic.Dictionary[string,string]]$DesiredLinks,
-    [switch]$Recurse
-  )
-
-  if ([string]::IsNullOrWhiteSpace($RootPath) -or -not (Test-Path -LiteralPath $RootPath)) {
-    return
-  }
-
-  Get-ChildItem -LiteralPath $RootPath -Directory -Force -ErrorAction SilentlyContinue | ForEach-Object {
-    try {
-      if (($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) {
-        return
-      }
-      if ($DesiredLinks.ContainsKey($_.FullName)) {
-        return
-      }
-      & cmd.exe /d /c rmdir "$($_.FullName)" 2>$null
-      if (Test-Path -LiteralPath $_.FullName) {
-        Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
-      }
-    } catch {
-    }
-  }
-
-  if ($Recurse) {
-    Get-ChildItem -LiteralPath $RootPath -Directory -Force -ErrorAction SilentlyContinue | ForEach-Object {
-      try {
-        if (($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-          return
-        }
-        Remove-FileInNOutStaleDriveHubLinks -RootPath $_.FullName -DesiredLinks $DesiredLinks
-      } catch {
-      }
-    }
-  }
-}
-
-function Sync-FileInNOutDriveHubLinks {
-  param(
-    [string]$ConfigPath,
-    [string]$DriveRootDir,
-    [string]$DefaultSyncDir,
-    [string]$IconPath = ""
-  )
-
-  if ([string]::IsNullOrWhiteSpace($DriveRootDir)) {
-    return
-  }
-
-  $myDriveHubName = ([string][char]0xB0B4) + " " + ([string][char]0xB4DC) + ([string][char]0xB77C) + ([string][char]0xC774) + ([string][char]0xBE0C)
-  $sharedDriveHubName = ([string][char]0xACF5) + ([string][char]0xC720) + " " + ([string][char]0xBB38) + ([string][char]0xC11C) + ([string][char]0xD568)
-  $myDriveHubDir = Join-Path $DriveRootDir $myDriveHubName
-  $sharedDriveHubDir = Join-Path $DriveRootDir $sharedDriveHubName
-  $driveRootInfoTip = ConvertFrom-FileInNOutUtf8Base64 "RmlsZUluTk91dCDrk5zrnbzsnbTruIwgLSDrgrQg65Oc65287J2067iM7JmAIOqzteycoCDrrLjshJztlag="
-  $myDriveInfoTip = ConvertFrom-FileInNOutUtf8Base64 "64K06rCAIOuPmeq4sO2ZlO2VmOuKlCDtj7TrjZQ="
-  $sharedDriveInfoTip = ConvertFrom-FileInNOutUtf8Base64 "6rO17Jyg67Cb7J2AIOuPmeq4sO2ZlCDtj7TrjZQ="
-  $sharedOwnerInfoTip = ConvertFrom-FileInNOutUtf8Base64 "RmlsZUluTk91dCDqs7XsnKAg66y47ISc7ZWoIOyGjOycoOyekCDtj7TrjZQ="
-
-  New-Item -ItemType Directory -Force -Path $DriveRootDir | Out-Null
-  Set-FileInNOutExplorerFolder -Path $DriveRootDir -IconPath $IconPath -DisplayName "FileInNOut" -InfoTip $driveRootInfoTip
-  New-Item -ItemType Directory -Force -Path $myDriveHubDir | Out-Null
-  New-Item -ItemType Directory -Force -Path $sharedDriveHubDir | Out-Null
-  Set-FileInNOutExplorerFolder -Path $myDriveHubDir -IconPath $IconPath -DisplayName $myDriveHubName -InfoTip $myDriveInfoTip
-  Set-FileInNOutExplorerFolder -Path $sharedDriveHubDir -IconPath $IconPath -DisplayName $sharedDriveHubName -InfoTip $sharedDriveInfoTip
-
-  $desired = New-Object "System.Collections.Generic.Dictionary[string,string]" ([System.StringComparer]::OrdinalIgnoreCase)
-  foreach ($profile in Get-FileInNOutSyncFolderProfiles -ConfigPath $ConfigPath -DefaultSyncDir $DefaultSyncDir) {
-    if (-not $profile.Enabled -or -not (Test-Path -LiteralPath $profile.LocalPath)) {
-      continue
-    }
-
-    $hubDir = $myDriveHubDir
-    $baseName = ConvertTo-FileInNOutDriveLinkName -PreferredName $profile.Name -TargetPath $profile.LocalPath
-    if (Test-FileInNOutSharedRemotePath -RemotePath $profile.RemotePath) {
-      $ownerLinkName = Get-FileInNOutSharedOwnerLinkName -RemotePath $profile.RemotePath
-      $hubDir = if ($ownerLinkName) { Join-Path $sharedDriveHubDir $ownerLinkName } else { $sharedDriveHubDir }
-      $baseName = Get-FileInNOutSharedFolderLinkName -Profile $profile
-    }
-    $uniqueName = $baseName
-    $suffix = 2
-    $linkPath = Join-Path $hubDir $uniqueName
-    while ($desired.ContainsKey($linkPath) -and -not $desired[$linkPath].Equals($profile.LocalPath, [System.StringComparison]::OrdinalIgnoreCase)) {
-      $uniqueName = "$baseName $suffix"
-      $linkPath = Join-Path $hubDir $uniqueName
-      $suffix += 1
-    }
-    $desired[$linkPath] = $profile.LocalPath
-  }
-
-  Remove-FileInNOutStaleDriveHubLinks -RootPath $DriveRootDir -DesiredLinks $desired
-  Remove-FileInNOutStaleDriveHubLinks -RootPath $myDriveHubDir -DesiredLinks $desired
-  Remove-FileInNOutStaleDriveHubLinks -RootPath $sharedDriveHubDir -DesiredLinks $desired -Recurse
-
-  $trimChars = [char[]]@([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
-  $normalizedSharedHubDir = [System.IO.Path]::GetFullPath($sharedDriveHubDir).TrimEnd($trimChars)
-  $brandedSharedOwnerDirs = New-Object "System.Collections.Generic.HashSet[string]" ([System.StringComparer]::OrdinalIgnoreCase)
-  foreach ($linkPath in $desired.Keys) {
-    $linkParent = Split-Path -Parent $linkPath
-    New-FileInNOutDriveJunction -RootPath $linkParent -LinkName (Split-Path -Leaf $linkPath) -TargetPath $desired[$linkPath]
-
-    if ($linkParent) {
-      $ownerParent = Split-Path -Parent $linkParent
-      if ($ownerParent) {
-        $normalizedOwnerParent = [System.IO.Path]::GetFullPath($ownerParent).TrimEnd($trimChars)
-        if ($normalizedOwnerParent.Equals($normalizedSharedHubDir, [System.StringComparison]::OrdinalIgnoreCase)) {
-          if ($brandedSharedOwnerDirs.Add($linkParent)) {
-            Set-FileInNOutExplorerFolder -Path $linkParent -IconPath $IconPath -DisplayName (Split-Path -Leaf $linkParent) -InfoTip $sharedOwnerInfoTip
-          }
-        }
-      }
-    }
-  }
-}
+. $shellInstallerHelper
+. $driveHubInstallerHelper
 
 function Register-FileInNOutApp {
   param(
@@ -1194,6 +495,7 @@ function Register-FileInNOutApp {
     [string]$InstallLocation,
     [string]$UninstallerPath,
     [string]$DisplayIcon,
+    [string]$DisplayVersion,
     [string]$KeyName,
     [string]$ScheduledTaskName,
     [string]$NamespaceGuid,
@@ -1212,7 +514,7 @@ function Register-FileInNOutApp {
   $driveRootArgument = if ($DriveRootPath) { " -DriveRootDir `"$DriveRootPath`"" } else { "" }
   $uninstallCommand = "powershell.exe -ExecutionPolicy Bypass -File `"$UninstallerPath`" -RegistryKeyName `"$KeyName`" -TaskName `"$ScheduledTaskName`" -ExplorerNamespaceGuid `"$NamespaceGuid`"$driveArgument$driveRootArgument"
   Set-ItemProperty -Path $Path -Name "DisplayName" -Value "FileInNOut Desktop"
-  Set-ItemProperty -Path $Path -Name "DisplayVersion" -Value "local"
+  Set-ItemProperty -Path $Path -Name "DisplayVersion" -Value $(if ($DisplayVersion) { $DisplayVersion } else { "local" })
   Set-ItemProperty -Path $Path -Name "Publisher" -Value "FileInNOut"
   Set-ItemProperty -Path $Path -Name "InstallLocation" -Value $resolvedInstall
   Set-ItemProperty -Path $Path -Name "DisplayIcon" -Value $DisplayIcon
@@ -1224,9 +526,16 @@ function Register-FileInNOutApp {
 }
 
 function Invoke-FileInNOutClient {
-  param([string[]]$Arguments)
+  param(
+    [string[]]$Arguments,
+    [string]$StandardInput = $null
+  )
 
-  & $cmdPath @Arguments
+  if ($null -ne $StandardInput) {
+    $StandardInput | & $cmdPath @Arguments
+  } else {
+    & $cmdPath @Arguments
+  }
   if ($LASTEXITCODE -ne 0) {
     throw "fileinnout-desktop.cmd failed with exit code $LASTEXITCODE"
   }
@@ -1315,9 +624,11 @@ if ($Configure -or $Server -or $Email) {
 
     $loginArgs = @("login", "--server", $Server, "--email", $Email)
     if ($Password) {
-      $loginArgs += @("--password", $Password)
+      $loginArgs += @("--password-stdin")
+      Invoke-FileInNOutClient -Arguments $loginArgs -StandardInput $Password
+    } else {
+      Invoke-FileInNOutClient -Arguments $loginArgs
     }
-    Invoke-FileInNOutClient $loginArgs
   }
 }
 
@@ -1436,6 +747,7 @@ if (-not $NoRegisterApp) {
     -InstallLocation $InstallDir `
     -UninstallerPath (Join-Path $InstallDir "uninstall-windows.ps1") `
     -DisplayIcon $shortcutIcon `
+    -DisplayVersion $packageVersion `
     -KeyName $RegistryKeyName `
     -ScheduledTaskName $TaskName `
     -NamespaceGuid $ExplorerNamespaceGuid `

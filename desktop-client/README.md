@@ -1,128 +1,68 @@
 # FileInNOut Desktop Client
 
-This is the launchable desktop sync client for FileInNOut. It syncs configured
-cloud folders with normal Windows folders and runs from the Windows notification
-tray with a green folder icon.
+FileInNOut Desktop Client는 FileInNOut Drive의 Windows 데스크탑 동기화 클라이언트입니다. 설정한 클라우드 폴더를 일반 Windows 폴더와 동기화하고, Windows 알림 영역의 초록색 폴더 아이콘으로 실행됩니다.
 
-## Install on Windows
+## 빠른 확인
+
+- 설치 패키지는 `package-windows-exe.ps1` 또는 `package-windows.ps1`로 생성합니다.
+- 설치 후 `FileInNOut Desktop`은 Windows 알림 영역 tray에서 실행됩니다.
+- 설치 프로그램은 바탕화면 바로가기, 시작 메뉴 바로가기, Windows 시작 시 실행, 프로그램 설치/제거 등록을 지원합니다.
+- 제거는 설치된 `uninstall-windows.ps1` 또는 Windows 프로그램 설치/제거 목록에서 진행합니다.
+- 패키지 검증은 `verify_windows_package.ps1`, 설치 동작 검증은 `verify_windows_install.ps1`로 확인합니다. 패키지 경로 탐색, 필수 파일 목록, manifest checksum 검증은 `verify_windows_package_helpers.ps1`에 분리되어 있습니다.
+- Python이 `PATH`에 없으면 `-PythonPath` 또는 `-PythonExe`로 실제 `python.exe` 경로를 넘깁니다.
+- 토큰과 로그인 상태는 로컬 설정에 저장됩니다. 민감 값은 명령 인자 대신 표준 입력 또는 보호 저장 방식을 사용합니다.
+
+## Windows 설치
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\desktop-client\install-windows.ps1
 ```
 
-The web setup executable opens a small installer with a progress bar and a
-desktop-shortcut choice. After installation, `FileInNOut Desktop` runs in the
-Windows tray. Double-click the green folder tray icon to open settings and
-management.
+웹 다운로드용 setup 실행 파일은 진행률 표시와 바로가기 선택 옵션이 있는 작은 설치 화면을 엽니다. 설치가 끝나면 `FileInNOut Desktop`이 Windows tray에서 실행됩니다. 초록색 폴더 아이콘을 더블 클릭하면 설정과 관리 화면을 열 수 있습니다.
 
-The installer copies the client to:
+설치 위치는 기본적으로 다음 경로입니다.
 
 ```text
 %LOCALAPPDATA%\FileInNOutDesktop
 ```
 
-Login and sync-folder settings are saved in:
+로그인과 동기화 폴더 설정은 다음 파일에 저장됩니다.
 
 ```text
 %LOCALAPPDATA%\FileInNOutDesktop\config.json
 ```
 
-To create a release zip for a Windows VM or desktop:
+Windows VM 또는 데스크탑 배포용 ZIP을 만들려면 다음 명령을 사용합니다.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\desktop-client\package-windows.ps1
 powershell -ExecutionPolicy Bypass -File .\desktop-client\verify_windows_package.ps1
 ```
 
-To create the web-downloadable desktop ZIP:
+웹 다운로드용 데스크탑 ZIP을 만들 때는 Python runtime을 함께 지정할 수 있습니다.
 
 ```powershell
 $env:FILEINNOUT_PYTHON_RUNTIME="C:\Path\To\PortablePython"
 powershell -ExecutionPolicy Bypass -File .\desktop-client\package-windows-exe.ps1
 ```
 
-The downloadable ZIP is written to
-`frontend\public\downloads\FileInNOutDesktop.zip` and also copied to a
-versioned `FileInNOutDesktop-<version>.zip` file. The frontend download button
-uses the versioned ZIP path to avoid stale browser downloads that still point
-at the old EXE installer route. The server also serves that legacy EXE route as
-a ZIP download, so direct or cached old links no longer download an EXE file.
-This public ZIP contains
-`FileInNOutDesktopSetup.exe` and a short README. The setup executable is also
-generated under `desktop-client\dist\` for local verification. When a Python
-runtime is bundled, the installer copies it into
-`%LOCALAPPDATA%\FileInNOutDesktop\python-runtime` and the installed command
-works even when Python is not installed on `PATH`.
+다운로드 ZIP은 `frontend\public\downloads\FileInNOutDesktop.zip`에 생성되고, 버전이 붙은 `FileInNOutDesktop-<version>.zip` 파일도 함께 생성됩니다. 프론트엔드 다운로드 버튼은 캐시된 예전 EXE 경로가 남지 않도록 버전이 붙은 ZIP 경로를 사용합니다.
 
-Explorer "sync now" actions write their CLI result to the desktop context log
-and show a localized success or failure dialog instead of finishing silently.
+## 설치 옵션
 
-The Explorer drive view prunes empty shared-owner folders after the last shared
-folder from that owner is removed or disabled, while preserving any user-created
-content.
-
-Start Menu shortcuts for opening the FileInNOut drive call the desktop app's
-dynamic open-drive command, so they follow the current configured drive letter
-after a runtime remap instead of opening a stale install-time path.
-If that letter is unavailable, the command maps the next available FileInNOut
-drive letter and saves it before opening Explorer.
-It also creates the `My Drive` and `Shared` hub folders and reapplies Explorer
-folder branding even when the tray app is not already running.
-Configured sync folders are relinked into those hubs on open as well, so the
-drive view does not appear empty after launching from Start Menu alone.
-The Python command path also refreshes those hub junctions during local drive
-preparation, so sync, share, and open-web actions keep the Explorer drive view
-aligned with the current multi-folder configuration.
-If an expected hub link is blocked by an empty regular folder, the installer,
-tray app, and command path replace that empty folder with the correct junction;
-folders with user content are preserved and reported by diagnostics.
-If an older config only has `syncDir`, that folder is treated as the default
-My Drive folder and linked into the drive view with the same folder name during
-install and runtime refresh.
-
-Shared folders received with WRITE permission can be shared onward from the
-desktop app and Explorer context flow. READ-only received folders remain
-view-only and cannot be re-shared.
-
-Opening a shared-owner folder such as `공유 문서함\owner@example.com` from
-Explorer now sends the web app a `Shared/owner@example.com` desktop path, so the
-shared library focuses the same owner scope instead of treating it as a loose
-search label.
-
-The internal package zip written under `desktop-client\dist\` contains the
-installer script, uninstaller, client script, install smoke verifier, README,
-and manifest. The manifest records each packaged file's SHA-256 checksum and
-byte size. Package verification checks those hashes, then runs the installer in
-temporary directories and checks that the generated command wrapper can execute
-`--help` and `init`. It also verifies Start Menu shortcuts, current-user
-installed-app registration, logon startup entry creation, and uninstall cleanup
-while preserving the sync folder and config by default. Extract the internal zip
-on the Windows desktop, then run:
-
-If Python is installed but not on `PATH`, pass
-`-PythonPath C:\Path\To\python.exe` to `verify_windows_package.ps1`.
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install-windows.ps1
-```
-
-If Python is installed but not on `PATH`, pass the absolute interpreter path to
-the installer:
+Python이 설치되어 있지만 `PATH`에 없으면 설치 시 절대 경로를 지정합니다.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install-windows.ps1 -PythonExe C:\Path\To\python.exe
 ```
 
-One-command setup is also available. It installs the client, registers it in
-Windows installed apps for the current user, creates Start Menu shortcuts,
-saves the sync folder, logs in, creates a Windows logon startup entry for the
-tray app, and starts FileInNOut Desktop now:
+한 번에 설치, 로그인, 동기화 폴더 설정, 시작 프로그램 등록, 즉시 실행까지 진행할 수 있습니다.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\desktop-client\install-windows.ps1 `
   -Configure `
   -SyncDir C:\FileInNOut `
-  -Server http://192.168.35.151/api `
+  -Server http://YOUR_HOST/api `
   -Email admin@fileinnout.local `
   -PythonExe C:\Path\To\python.exe `
   -InstallStartupTask `
@@ -130,111 +70,88 @@ powershell -ExecutionPolicy Bypass -File .\desktop-client\install-windows.ps1 `
   -CreateDesktopShortcut
 ```
 
-Add `-Password "<password>"` for unattended setup. Without it, the login step
-prompts for a password.
+무인 설치가 필요하면 `-Password "<password>"`를 추가할 수 있습니다. 설치 프로그램은 비밀번호를 자식 프로세스 인자가 아니라 표준 입력으로 전달합니다.
 
-The installer creates a `FileInNOut Desktop` Start Menu folder with shortcuts to
-open the tray settings app, open the sync folder, run `sync`, run
-`doctor --local-only`, and uninstall the client. Pass
-`-NoStartMenuShortcuts` to skip those shortcuts.
-It also registers `FileInNOut Desktop` under the current user's Windows
-installed apps list. Pass `-NoRegisterApp` to skip that registration.
+환경별 기본 서버는 `-Server http://YOUR_HOST/api` 또는 `FILEINNOUT_DESKTOP_SERVER`로 지정합니다. 내장 fallback은 로컬 개발용 `http://localhost/api`입니다. 운영 패키지는 실제 backend URL을 주입해야 합니다.
 
-## Tray app
+설치 프로그램은 `FileInNOut Desktop` 시작 메뉴 폴더를 만들고, tray 설정 열기, 동기화 폴더 열기, 수동 sync, `doctor --local-only`, 제거 바로가기를 생성합니다. `-NoStartMenuShortcuts`로 시작 메뉴 바로가기를 건너뛸 수 있습니다. 현재 사용자 기준 Windows 설치 앱 목록 등록은 `-NoRegisterApp`으로 건너뛸 수 있습니다.
 
-After installation, look for the green FileInNOut folder icon in the Windows
-notification tray.
+## Tray 앱 사용
 
-- Double-click the icon to open FileInNOut Desktop settings.
-- Use `Open sync folder` to open the configured local folder.
-- Use `Sync now` to immediately upload local changes and download cloud changes.
-- Use `Open FileInNOut web` to jump to the web app.
-- In File Explorer, right-click a synced file or folder and use `FileInNOut`
-  to sync that target, open it on the web, copy its web link, or check status.
-- Use `Pause sync` / `Resume sync` from the tray menu or the settings header to
-  stop or restart background syncing. `Sync now` still runs a manual sync.
-- Toggle `Auto sync` to keep syncing every 20 seconds and after local folder changes.
-- Toggle `Notifications` to show sync result notifications. Automatic sync
-  stays quiet when there were no file changes, so a healthy idle folder does
-  not raise a toast every 20 seconds.
+설치 후 Windows 알림 영역에서 초록색 FileInNOut 폴더 아이콘을 확인합니다.
 
-The settings window hides the raw server URL from normal users. It opens with a
-clean green FileInNOut login screen when signed out, then shows saved user info,
-drive capacity, configured sync folders, sync direction, sharing controls,
-current status, diagnostics, recent sync activity, and combined local/cloud
-search across configured sync folders and shared cloud folders. The sync
-folder list shows each folder's live state and shared permission, including
-normal, pending local changes, missing folders, and sync errors. Explorer
-folder tooltips also include the shared owner and permission when available.
-The activity panel surfaces sync
-issues first; conflict copies can be double-clicked to reveal them in Explorer.
+- 아이콘 더블 클릭: FileInNOut Desktop 설정 열기
+- `Open sync folder`: 설정된 로컬 동기화 폴더 열기
+- `Sync now`: 로컬 변경 업로드와 클라우드 변경 다운로드 즉시 실행
+- `Open FileInNOut web`: 웹 앱 열기
+- `Pause sync` / `Resume sync`: 백그라운드 자동 동기화 중지 또는 재개
+- `Auto sync`: 20초 주기와 로컬 변경 감지 기반 자동 동기화
+- `Notifications`: 동기화 결과 알림 표시
 
-## Uninstall on Windows
+설정 창은 로그인 전에는 초록색 FileInNOut 로그인 화면을 표시하고, 로그인 후에는 사용자 정보, 드라이브 용량, 동기화 폴더, 동기화 방향, 공유 제어, 현재 상태, 진단 정보, 최근 동기화 활동, 로컬/클라우드 통합 검색을 보여줍니다.
 
-The installer copies an uninstaller into the install directory:
+Explorer에서는 동기화된 파일이나 폴더를 우클릭해 `FileInNOut` 메뉴를 사용할 수 있습니다. 대상 sync, 웹에서 열기, 링크 복사, 상태 확인, 공유, 동기화 폴더 추가를 실행할 수 있습니다.
+
+## 제거
+
+설치된 제거 스크립트는 다음 경로에 복사됩니다.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\FileInNOutDesktop\uninstall-windows.ps1"
 ```
 
-By default this removes the command wrappers, client script, and startup task
-while keeping the saved config and sync folder. To remove all local app config
-and the initialized sync folder too:
+기본 제거는 command wrapper, client script, 시작 프로그램 등록을 제거하고 저장된 설정과 동기화 폴더는 보존합니다. 로컬 앱 설정과 초기화된 동기화 폴더까지 제거하려면 다음 옵션을 사용합니다.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\FileInNOutDesktop\uninstall-windows.ps1" -RemoveConfig -RemoveSyncDir
 ```
 
-`-RemoveSyncDir` refuses to delete a folder unless it contains
-`.fileinnout\state.json`.
+`-RemoveSyncDir`은 대상 폴더에 `.fileinnout\state.json`이 있을 때만 삭제를 허용합니다.
 
-## Login
+## 로그인
 
-Use the backend URL directly. In the two-VM deployment this is normally:
+backend URL을 직접 사용합니다.
 
 ```powershell
-%LOCALAPPDATA%\FileInNOutDesktop\fileinnout-desktop.cmd login --server http://192.168.35.151/api --email admin@fileinnout.local
+%LOCALAPPDATA%\FileInNOutDesktop\fileinnout-desktop.cmd login --server http://YOUR_HOST/api --email admin@fileinnout.local
 ```
 
-## Create a local sync folder
+## 로컬 동기화 폴더 생성
 
 ```powershell
 mkdir C:\FileInNOut
 %LOCALAPPDATA%\FileInNOutDesktop\fileinnout-desktop.cmd init --dir C:\FileInNOut
 ```
 
-After `init`, the sync folder is saved in the user config. Later commands can
-omit `--dir`.
+`init` 이후에는 동기화 폴더가 사용자 설정에 저장되므로 이후 명령에서 `--dir`을 생략할 수 있습니다.
 
-## Sync once
+## 1회 동기화
 
 ```powershell
 %LOCALAPPDATA%\FileInNOutDesktop\fileinnout-desktop.cmd sync-configured
 ```
 
-Check local sync-folder state without contacting the backend:
+backend에 접속하지 않고 로컬 상태만 확인하려면 다음 명령을 사용합니다.
 
 ```powershell
 %LOCALAPPDATA%\FileInNOutDesktop\fileinnout-desktop.cmd status --local-only
 ```
 
-For a fuller local diagnostic report, use:
+더 자세한 로컬 진단은 다음 명령을 사용합니다.
 
 ```powershell
 %LOCALAPPDATA%\FileInNOutDesktop\fileinnout-desktop.cmd doctor --local-only
 ```
 
-This also works before `init`; in that case it reports the missing sync-folder
-configuration instead of failing. After login, omit `--local-only` to also
-verify backend health and remote file list access.
+로그인 후 `--local-only`를 생략하면 backend health와 원격 파일 목록 접근도 함께 확인합니다.
 
-## Keep syncing
+## 계속 동기화
 
 ```powershell
 %LOCALAPPDATA%\FileInNOutDesktop\fileinnout-desktop.cmd watch-configured --interval 20
 ```
 
-The installer can create a Windows logon task for this watcher:
+설치 프로그램으로 Windows 로그온 시 watcher를 등록할 수 있습니다.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\desktop-client\install-windows.ps1 `
@@ -242,193 +159,87 @@ powershell -ExecutionPolicy Bypass -File .\desktop-client\install-windows.ps1 `
   -InstallStartupTask
 ```
 
-## Share a folder
+## 폴더 공유
 
-The desktop UI can share a configured sync folder directly. From the command
-line, first put or create a folder inside the sync directory and push it:
+데스크탑 UI에서 설정된 동기화 폴더를 직접 공유할 수 있습니다. CLI에서는 먼저 동기화 폴더 안에 폴더를 만들고 push합니다.
 
 ```powershell
 %LOCALAPPDATA%\FileInNOutDesktop\fileinnout-desktop.cmd push
 ```
 
-Then share by relative path:
+상대 경로로 공유합니다.
 
 ```powershell
 %LOCALAPPDATA%\FileInNOutDesktop\fileinnout-desktop.cmd share --path TeamFolder --email teammate@example.com --permission WRITE
 ```
 
-For a newly created local folder, `--push-first` uploads it before sharing:
+새로 만든 로컬 폴더는 `--push-first`로 먼저 업로드한 뒤 공유할 수 있습니다.
 
 ```powershell
 %LOCALAPPDATA%\FileInNOutDesktop\fileinnout-desktop.cmd share --path TeamFolder --email teammate@example.com --permission WRITE --push-first
 ```
 
-Repeat `--email` or use comma-separated addresses to share with multiple
-recipients in one command.
+여러 수신자는 `--email`을 반복하거나 쉼표로 구분해 전달합니다.
 
-Share commands print a `fileinnout://shared/<owner-email>/<folder>` address.
-Explorer `FileInNOut > Share...` copies that shared-folder address to the
-clipboard after a successful share. After installation, a recipient can paste
-that address into Windows Run, File Explorer, the desktop settings window's
-shared-address field, or the command below:
+공유 명령은 `fileinnout://shared/<owner-email>/<folder>` 형식의 주소를 출력합니다. 받는 사람은 Windows Run, File Explorer, 데스크탑 설정 창의 shared-address 입력, 또는 다음 명령으로 주소를 열 수 있습니다.
 
 ```powershell
 %LOCALAPPDATA%\FileInNOutDesktop\fileinnout-desktop.cmd open-address --address "fileinnout://shared/owner%40example.com/TeamFolder"
 ```
 
-The desktop client accepts the pending share when needed, creates or refreshes
-the shared-folder sync profile, syncs it, links it into the FileInNOut drive
-under `Shared\<owner-email>\...`, and opens the folder in Explorer. Use
-`--no-accept` to require manual acceptance first or `--no-sync` to create the
-folder link without an immediate sync.
+클라이언트는 필요한 경우 pending share를 수락하고, 공유 폴더 동기화 profile을 만들거나 갱신하고, 즉시 동기화한 뒤 FileInNOut drive의 `Shared\<owner-email>\...` 아래에 연결합니다.
 
-Windows Explorer also gets a `FileInNOut > Share...` context menu during
-installation. Right-click a configured sync file or folder, enter recipient
-emails, choose a permission (`READ`, `DOWNLOAD`, `UPLOAD`, or `WRITE`), and the
-desktop client syncs the selected item first if needed before sharing it.
-Explorer also includes `FileInNOut > Add sync folder` for ordinary local
-folders. It adds the selected folder to the configured sync-folder list, starts
-an immediate best-effort sync when the user is logged in, and wakes the tray app
-so the new folder appears in the desktop UI. Explorer context actions use
-Korean success/failure feedback for copy-link, share, add-sync-folder, and
-status dialogs, and the context runner enables delayed expansion so selected
-paths and result files are passed reliably.
+## 현재 동작 기준
 
-Folder sharing is recursive on the backend: sharing a folder shares the folder,
-all current children, and later children created under that folder. Recipients
-can pull shared items under:
+- 로컬 파일 업로드는 웹 앱과 같은 presigned upload 흐름을 사용합니다.
+- 원격 파일 다운로드는 인증된 backend download endpoint를 사용합니다.
+- 로그인 시 받은 refresh token을 저장합니다. access token 만료로 HTTP 401이 발생하면 `/auth/reissue`로 새 token을 받고 원래 요청을 재시도합니다.
+- backend는 refresh token을 email 단일 값으로 덮어쓰지 않고 login session 단위로 저장합니다. 같은 계정의 웹 로그인과 데스크탑 로그인이 서로를 무효화하지 않습니다.
+- `sync-configured`는 전체 cloud drive가 아니라 설정된 folder mapping만 동기화합니다. 각 mapping은 `two-way`, `upload`, `download` 중 하나를 사용할 수 있습니다.
+- `.fileinnout` state 파일, 임시 다운로드 파일, Office lock 파일, `.crdownload`, `.tmp`, `.part`, `.swp` 같은 로컬 임시 파일은 무시합니다.
+- 로컬 파일 삭제는 같은 파일이 이전 동기화 state에 있고 원격에도 남아 있을 때 remote trash로 반영됩니다.
+- 수신한 READ-only 공유 파일은 로컬에서 read-only 속성을 적용하고, 쓰기 권한이 없는 변경은 업로드하지 않습니다.
+- WRITE 권한으로 받은 공유 폴더는 다시 공유할 수 있습니다.
 
-```text
-C:\FileInNOut\Shared\<owner-email>\
-```
+## 검증
 
-If the folder was shared with `--permission WRITE`, recipients can add files and
-folders inside that shared tree. The desktop client uploads those changes back
-to the owner's cloud folder.
-
-## Current behavior
-
-- Local files are uploaded with the same presigned upload flow as the web app.
-- Remote files are downloaded through authenticated backend download endpoints.
-- The desktop client saves the refresh token issued at login. If a sync request
-  receives HTTP 401 because the short-lived access token expired, the client
-  reissues tokens through `/auth/reissue`, saves the new tokens, and retries the
-  original request automatically.
-- The backend stores refresh tokens per login session instead of overwriting by
-  email, so web login and one or more desktop logins for the same account do not
-  invalidate one another.
-- `sync-configured` only syncs configured folder mappings instead of pulling the
-  whole cloud drive. Each mapping can be `two-way`, `upload`, or `download`.
-- When an old full-drive state file is reused with a new folder mapping, the
-  local state is reset for that mapping so existing local files are not mistaken
-  for cloud deletions.
-- Common local-only temporary files are ignored, including Office lock files
-  like `~$draft.docx`, partial browser downloads like `.crdownload`, and
-  transient `.tmp`/`.part`/`.swp` files.
-- Desktop watcher events from `.fileinnout` state files and temporary download
-  files are ignored so the app does not immediately re-sync because of its own
-  sync metadata.
-- The tray status list uses millisecond local file signatures when available,
-  matching the sync engine so rapid same-second edits still show as pending.
-- Remote files and folders removed by another desktop are removed locally on the
-  next pull when the local copy still matches the last synced state.
-- Existing remote files with the same path are moved to trash before a changed
-  local copy is uploaded.
-- If both the local file and the matching remote file changed since the last
-  sync, the local edit is preserved as `name (conflict YYYYMMDD-HHMMSS).ext`
-  and the original path is restored to the current remote version.
-- Files and folders deleted locally after a previous sync are moved to trash on
-  the cloud drive when the remote item still matches the last synced item.
-- Shared folders with `READ` or `DOWNLOAD` permission are treated as
-  read-only locally. The client skips local writes/deletes for those shares and
-  marks downloaded files with the local read-only attribute after sync. If a
-  local program bypasses that attribute, the next pull restores the cloud copy
-  or removes unauthorized local-only content for non-downloadable shares.
-- Shared folders with `WRITE` permission accept recipient-created files and
-  folders. When a file with the same name exists in the target shared folder,
-  the backend moves the previous file record to trash and stores the new copy.
-- Concurrent edits inside writable shared folders use the same conflict-copy
-  behavior, so a recipient never silently overwrites another user's newer
-  remote version.
-- Files and folders deleted inside writable shared folders are moved to trash
-  in the owner's cloud drive.
-- `install-windows.ps1 -InstallStartupTask` registers `FileInNOutDesktopSync`
-  so Windows starts the watcher at logon. It uses a scheduled task when
-  permitted, and falls back to a current-user Startup folder shortcut that runs
-  a hidden `wscript.exe` watcher launcher when Task Scheduler registration is
-  denied. Logs are written to
-  `%LOCALAPPDATA%\FileInNOutDesktop\logs\watch.log`.
-- The tray app keeps the 20-second full safety sync, but file-system watcher
-  events first run `sync-target` for the changed Explorer scope. Multiple
-  events inside the same configured folder, `내 드라이브`, `공유 문서함`, or a
-  `공유 문서함\<owner-email>` hub are coalesced into one targeted sync. If a
-  deleted or moved path can no longer be resolved, it falls back to
-  `sync-configured`.
-- `install-windows.ps1` creates Start Menu shortcuts by default so users can
-  open the sync folder, sync now, run diagnostics, or uninstall without
-  remembering the command path.
-- `install-windows.ps1` registers the app under the current user's installed
-  apps list, and `uninstall-windows.ps1` removes that registration.
-- Explorer `desktop.ini` metadata is refreshed as files change and after sync
-  runs, so configured sync folders expose their current status and cloud path
-  in the folder description/tooltip.
-- Folders created or dropped directly into the FileInNOut drive root or the
-  `내 드라이브` hub are adopted as configured sync folders before the client
-  contacts the server, so the local folder mapping is preserved even if the
-  user needs to log in again or the backend is temporarily unreachable.
-- Shared sync folders are exposed under `공유 문서함\<owner-email>\...` in the
-  FileInNOut drive, matching the cloud path structure and keeping multiple
-  shared folders with the same display name understandable in Explorer.
-- Opening configured folders or local search results prefers the FileInNOut
-  drive hub path, including nested files and folders, so Explorer keeps the
-  drive-shaped view instead of jumping back to the underlying storage path.
-- Explorer sync/status actions respect drive hub scope: the whole drive
-  targets every enabled folder, `내 드라이브` targets owned folders, `공유 문서함`
-  targets shared folders, and `공유 문서함\<owner-email>` targets only that
-  owner's shared folders.
-- Nested paths under those hubs inherit the same scope, so a direct target such
-  as `내 드라이브\New Folder\file.txt` or
-  `공유 문서함\owner@example.com\Manual Folder\file.txt` still resolves to the
-  right owned/shared sync set before falling back to a full configured sync.
-- Explorer web/share actions re-resolve drive-root targets after local
-  adoption, so a newly created drive-root folder opens and shares as its
-  adopted cloud folder instead of a loose fallback target.
-- Explorer folder info tips prioritize actionable sync issues such as errors,
-  failed downloads, and conflict checks before routine pending local changes.
-- `pull`, `push`, `sync`, `sync-configured`, `watch`, and `watch-configured`
-  use `.fileinnout\sync.lock` so only one sync process can mutate a sync folder
-  at a time. `status` prints the current lock state.
-- File watchers use a larger Windows watcher buffer and fall back to a full
-  configured-folder sync if watcher events overflow, so bulk Explorer changes
-  are reconciled even when individual events are missed.
-- The latest sync success/error state is stored in `.fileinnout\state.json` as
-  `syncStatus` and is shown by `status`.
-- Per-file download failures are tracked separately as `downloadFailed` so the
-  tray can show retryable download issues without labeling them as local
-  conflicts.
-- `doctor` prints install/config paths, sync-folder state, lock state, latest
-  sync status, watcher log path, stricter drive readiness checks, hub link
-  consistency, drive-root items waiting for adoption, shared-hub manual items,
-  and optional backend connectivity checks.
-
-## Live verification
-
-Use `verify_live_desktop_sync.py` against a running backend with two
-login-capable users. Admin-only deployments should temporarily run with
-`FILEINNOUT_ADMIN_ONLY=false` or use two already-login-capable accounts.
+패키지 생성과 검증:
 
 ```powershell
-python .\desktop-client\verify_live_desktop_sync.py `
-  --server http://192.168.35.151/api `
-  --owner-email owner@example.com `
-  --owner-password "<owner-password>" `
-  --recipient-email recipient@example.com `
-  --recipient-password "<recipient-password>"
+powershell -ExecutionPolicy Bypass -File .\desktop-client\package-windows.ps1 -Version local-check
+powershell -ExecutionPolicy Bypass -File .\desktop-client\verify_windows_package.ps1 -PackagePath .\desktop-client\dist\FileInNOutDesktop-local-check.zip
 ```
 
-The live verifier creates two temporary local sync folders, uploads an owner
-folder, shares it as `WRITE`, verifies recipient pull, verifies owner-created
-post-share child inheritance, verifies recipient upload into the shared folder,
-verifies owner pull, verifies shared deletion round trip, verifies that a
-`READ` shared folder blocks recipient local writes/deletes, then cleans up the
-test folders.
+Python 모듈 컴파일:
+
+```powershell
+cd desktop-client
+Get-ChildItem -Filter *.py | ForEach-Object { python -m py_compile $_.FullName }
+```
+
+오프라인 클라이언트 검증:
+
+```powershell
+python desktop-client\verify_desktop_client.py
+```
+
+단위 테스트:
+
+```powershell
+cd desktop-client
+python -m unittest discover -p "test_fileinnout_desktop_*.py"
+```
+
+## 패키지 구성
+
+내부 패키지 ZIP에는 installer script, installer helper scripts, uninstaller, Python client modules, 설치 smoke verifier, README, manifest가 포함됩니다. Installer helper는 shell/Explorer 등록, drive hub 구성, payload 복사와 source-install tray fallback build로 분리되어 있습니다. Python modules는 config, path, file attribute, API, token security, local state/lock, account command, remote item/path state, web/share-address, pending share helper, sync profile rules, diagnostics, Windows drive integration, sync engine으로 분리되어 있습니다.
+
+tray package에는 desktop settings form, UI controls, CLI/hidden command execution, shared drive/path rules, Explorer text/desktop.ini branding helpers, sync state/activity/issue helper, local search, data reading/storage and pending-share parsing, update check helper, dynamic Explorer drive launching, Windows Cloud Files registration helper가 포함됩니다. manifest는 각 파일의 SHA-256 checksum과 byte size를 기록합니다.
+
+## 문제 대응
+
+- 설치 후 tray icon이 보이지 않으면 시작 메뉴의 `FileInNOut Desktop`을 실행합니다.
+- Python을 찾지 못하면 `-PythonExe C:\Path\To\python.exe`를 지정합니다.
+- 시작 프로그램 task 등록이 권한 문제로 실패하면 installer는 Startup folder shortcut fallback을 사용합니다.
+- 동기화가 반복 실패하면 `doctor --local-only`로 로컬 상태를 확인하고, 로그인 뒤에는 `doctor`로 backend 접근까지 확인합니다.
+- 공유 폴더가 보이지 않으면 `pending-shares`, `accept-share`, `open-address` 명령으로 수락 상태와 로컬 연결 상태를 확인합니다.

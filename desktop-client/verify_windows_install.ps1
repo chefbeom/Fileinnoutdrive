@@ -232,8 +232,25 @@ try {
   $cmdPath = Join-Path $installDir "fileinnout-desktop.cmd"
   $trayExePath = Join-Path $installDir "FileInNOutDesktop.exe"
   $trayIconPath = Join-Path $installDir "FileInNOutDesktop.ico"
+  $desktopProgramPath = Join-Path $installDir "DesktopProgram.cs"
   $traySourcePath = Join-Path $installDir "FileInNOutDesktopTray.cs"
+  $settingsFormPath = Join-Path $installDir "SettingsForm.cs"
+  $desktopUiControlsPath = Join-Path $installDir "DesktopUiControls.cs"
   $desktopModelsPath = Join-Path $installDir "DesktopModels.cs"
+  $desktopSyncTextPath = Join-Path $installDir "DesktopSyncText.cs"
+  $desktopUpdateServicePath = Join-Path $installDir "DesktopUpdateService.cs"
+  $desktopExplorerTextPath = Join-Path $installDir "DesktopExplorerText.cs"
+  $desktopExplorerBrandingPath = Join-Path $installDir "DesktopExplorerBranding.cs"
+  $desktopProcessRunnerPath = Join-Path $installDir "DesktopProcessRunner.cs"
+  $desktopPathRulesPath = Join-Path $installDir "DesktopPathRules.cs"
+  $desktopDataReaderPath = Join-Path $installDir "DesktopDataReader.cs"
+  $desktopTrayConfigStorePath = Join-Path $installDir "DesktopTrayConfigStore.cs"
+  $desktopFileSearchPath = Join-Path $installDir "DesktopFileSearch.cs"
+  $desktopSyncStatePath = Join-Path $installDir "DesktopSyncState.cs"
+  $desktopChangeTrackerPath = Join-Path $installDir "DesktopChangeTracker.cs"
+  $desktopSyncCommandRunnerPath = Join-Path $installDir "DesktopSyncCommandRunner.cs"
+  $explorerDriveLauncherPath = Join-Path $installDir "ExplorerDriveLauncher.cs"
+  $cloudFilesIntegrationPath = Join-Path $installDir "CloudFilesIntegration.cs"
   $watchPath = Join-Path $installDir "fileinnout-watch.cmd"
   $watchHiddenPath = Join-Path $installDir "fileinnout-watch-hidden.vbs"
   $contextPath = Join-Path $installDir "fileinnout-context.cmd"
@@ -241,9 +258,32 @@ try {
   $clientPath = Join-Path $installDir "fileinnout_desktop.py"
   $clientConstantsPath = Join-Path $installDir "fileinnout_desktop_constants.py"
   $clientModelsPath = Join-Path $installDir "fileinnout_desktop_models.py"
+  $clientPathsPath = Join-Path $installDir "fileinnout_desktop_paths.py"
+  $clientApiPath = Join-Path $installDir "fileinnout_desktop_api.py"
+  $clientSecurityPath = Join-Path $installDir "fileinnout_desktop_security.py"
+  $clientWindowsPath = Join-Path $installDir "fileinnout_desktop_windows.py"
+  $clientStatePath = Join-Path $installDir "fileinnout_desktop_state.py"
+  $clientConfigPath = Join-Path $installDir "fileinnout_desktop_config.py"
+  $clientFilesPath = Join-Path $installDir "fileinnout_desktop_files.py"
+  $clientRemotePath = Join-Path $installDir "fileinnout_desktop_remote.py"
+  $clientWebPath = Join-Path $installDir "fileinnout_desktop_web.py"
+  $clientDrivePath = Join-Path $installDir "fileinnout_desktop_drive.py"
+  $clientDriveHubPath = Join-Path $installDir "fileinnout_desktop_drive_hub.py"
+  $clientProfilesPath = Join-Path $installDir "fileinnout_desktop_profiles.py"
+  $clientDiagnosticsPath = Join-Path $installDir "fileinnout_desktop_diagnostics.py"
+  $clientSharingPath = Join-Path $installDir "fileinnout_desktop_sharing.py"
+  $clientSyncPath = Join-Path $installDir "fileinnout_desktop_sync.py"
+  $clientParserPath = Join-Path $installDir "fileinnout_desktop_parser.py"
+  $clientAccountCommandsPath = Join-Path $installDir "fileinnout_desktop_account_commands.py"
+  $clientStatusCommandsPath = Join-Path $installDir "fileinnout_desktop_status_commands.py"
+  $clientShareCommandsPath = Join-Path $installDir "fileinnout_desktop_share_commands.py"
+  $clientSyncLocalPath = Join-Path $installDir "fileinnout_desktop_sync_local.py"
+  $clientSyncSharedPath = Join-Path $installDir "fileinnout_desktop_sync_shared.py"
+  $clientSyncMovesPath = Join-Path $installDir "fileinnout_desktop_sync_moves.py"
+  $clientDriveAdoptionPath = Join-Path $installDir "fileinnout_desktop_drive_adoption.py"
   $uninstallerPath = Join-Path $installDir "uninstall-windows.ps1"
 
-  foreach ($path in @($cmdPath, $trayExePath, $trayIconPath, $traySourcePath, $desktopModelsPath, $watchPath, $watchHiddenPath, $contextPath, $contextHiddenPath, $clientPath, $clientConstantsPath, $clientModelsPath, $uninstallerPath)) {
+  foreach ($path in @($cmdPath, $trayExePath, $trayIconPath, $desktopProgramPath, $traySourcePath, $settingsFormPath, $desktopUiControlsPath, $desktopModelsPath, $desktopSyncTextPath, $desktopUpdateServicePath, $desktopExplorerTextPath, $desktopExplorerBrandingPath, $desktopProcessRunnerPath, $desktopPathRulesPath, $desktopDataReaderPath, $desktopFileSearchPath, $desktopSyncStatePath, $desktopChangeTrackerPath, $desktopSyncCommandRunnerPath, $explorerDriveLauncherPath, $cloudFilesIntegrationPath, $watchPath, $watchHiddenPath, $contextPath, $contextHiddenPath, $clientPath, $clientConstantsPath, $clientModelsPath, $clientPathsPath, $clientApiPath, $clientSecurityPath, $clientWindowsPath, $clientStatePath, $clientConfigPath, $clientFilesPath, $clientRemotePath, $clientWebPath, $clientDrivePath, $clientDriveHubPath, $clientProfilesPath, $clientDiagnosticsPath, $clientSharingPath, $clientSyncPath, $clientParserPath, $clientAccountCommandsPath, $clientStatusCommandsPath, $clientShareCommandsPath, $clientSyncLocalPath, $clientSyncSharedPath, $clientSyncMovesPath, $clientDriveAdoptionPath, $uninstallerPath)) {
     if (-not (Test-Path -LiteralPath $path)) {
       throw "Expected installed file is missing: $path"
     }
@@ -616,7 +656,7 @@ try {
     throw "uninstall-windows.ps1 failed with exit code $LASTEXITCODE"
   }
 
-  foreach ($path in @($cmdPath, $trayExePath, $trayIconPath, $traySourcePath, $watchPath, $watchHiddenPath, $contextPath, $contextHiddenPath, $clientPath)) {
+  foreach ($path in @($cmdPath, $trayExePath, $trayIconPath, $desktopProgramPath, $traySourcePath, $settingsFormPath, $desktopUiControlsPath, $desktopModelsPath, $desktopSyncTextPath, $desktopUpdateServicePath, $desktopExplorerTextPath, $desktopExplorerBrandingPath, $desktopProcessRunnerPath, $desktopPathRulesPath, $desktopDataReaderPath, $desktopTrayConfigStorePath, $desktopFileSearchPath, $desktopSyncStatePath, $desktopChangeTrackerPath, $desktopSyncCommandRunnerPath, $explorerDriveLauncherPath, $cloudFilesIntegrationPath, $watchPath, $watchHiddenPath, $contextPath, $contextHiddenPath, $clientPath, $clientConstantsPath, $clientModelsPath, $clientPathsPath, $clientApiPath, $clientSecurityPath, $clientWindowsPath, $clientStatePath, $clientConfigPath, $clientFilesPath, $clientRemotePath, $clientWebPath, $clientDrivePath, $clientDriveHubPath, $clientProfilesPath, $clientDiagnosticsPath, $clientSharingPath, $clientSyncPath, $clientParserPath, $clientAccountCommandsPath, $clientStatusCommandsPath, $clientShareCommandsPath, $clientSyncLocalPath, $clientSyncSharedPath, $clientSyncMovesPath, $clientDriveAdoptionPath)) {
     if (Test-Path -LiteralPath $path) {
       throw "Uninstall did not remove installed file: $path"
     }

@@ -19,7 +19,7 @@ import fileinnout_desktop as desktop
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Verify live FileInNOut Desktop sync behavior.")
-    parser.add_argument("--server", required=True, help="Backend base URL, e.g. http://192.168.35.151/api")
+    parser.add_argument("--server", required=True, help="Backend base URL, e.g. https://drive.example.com/api")
     parser.add_argument("--owner-email", required=True)
     parser.add_argument("--owner-password")
     parser.add_argument("--owner-token")
