@@ -35,6 +35,24 @@ public class SecurityConfig {
     @Value("${app.admin-only:false}")
     private boolean adminOnly;
 
+    @Value("${spring.security.oauth2.client.registration.google.client-id:}")
+    private String googleClientId;
+
+    @Value("${spring.security.oauth2.client.registration.google.client-secret:}")
+    private String googleClientSecret;
+
+    @Value("${spring.security.oauth2.client.registration.kakao.client-id:}")
+    private String kakaoClientId;
+
+    @Value("${spring.security.oauth2.client.registration.kakao.client-secret:}")
+    private String kakaoClientSecret;
+
+    @Value("${spring.security.oauth2.client.registration.naver.client-id:}")
+    private String naverClientId;
+
+    @Value("${spring.security.oauth2.client.registration.naver.client-secret:}")
+    private String naverClientSecret;
+
     @Value("${app.docs.public-openapi:false}")
     private boolean publicOpenApi;
 
@@ -54,7 +72,7 @@ public class SecurityConfig {
                 .formLogin(AbstractHttpConfigurer::disable);
         http.sessionManagement(session ->
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
-        if (adminOnly) {
+        if (adminOnly || !hasConfiguredOAuthProvider()) {
             http.oauth2Login(AbstractHttpConfigurer::disable);
         } else {
             http.oauth2Login(config -> {
@@ -99,6 +117,27 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
+    }
+
+    private boolean hasConfiguredOAuthProvider() {
+        return hasConfiguredOAuthProvider(googleClientId, googleClientSecret)
+                || hasConfiguredOAuthProvider(kakaoClientId, kakaoClientSecret)
+                || hasConfiguredOAuthProvider(naverClientId, naverClientSecret);
+    }
+
+    private boolean hasConfiguredOAuthProvider(String clientId, String clientSecret) {
+        return isConfiguredCredential(clientId) && isConfiguredCredential(clientSecret);
+    }
+
+    private boolean isConfiguredCredential(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+
+        String normalized = value.trim().toLowerCase();
+        return !normalized.equals("disabled")
+                && !normalized.equals("dummy")
+                && !normalized.startsWith("dummy-");
     }
 
     private List<String> resolveAllowedOriginPatterns() {

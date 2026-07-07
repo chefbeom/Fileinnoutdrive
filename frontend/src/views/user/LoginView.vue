@@ -7,51 +7,95 @@ import { apiPath } from '@/utils/backendUrl.js'
 
 const ADMIN_EMAIL = 'admin@fileinnout.local'
 
-const router = useRouter()
-const authStore = useAuthStore()
-
-const isLoading = ref(false)
-const socialLoadingProvider = ref('')
-const loginErrorMessage = ref('')
-const socialProviders = ref([])
-
-const loginForm = reactive({
-  email: ADMIN_EMAIL,
-  password: '',
-})
-
 const providerCatalog = [
   { id: 'google', label: 'Google', mark: 'G', className: 'provider-google' },
   { id: 'kakao', label: 'Kakao', mark: 'K', className: 'provider-kakao' },
   { id: 'naver', label: 'Naver', mark: 'N', className: 'provider-naver' },
 ]
 
+const createProviderState = (provider, overrides = {}) => ({
+  ...provider,
+  enabled: false,
+  authorizationUrl: `/oauth2/authorization/${provider.id}`,
+  disabledReason: 'OAuth 설정 필요',
+  ...overrides,
+})
+
+const router = useRouter()
+const authStore = useAuthStore()
+
+const isLoading = ref(false)
+const socialLoadingProvider = ref('')
+const loginErrorMessage = ref('')
+const oauthAdminOnly = ref(false)
+const oauthStatusLoaded = ref(false)
+const socialProviders = ref(
+  providerCatalog.map((provider) => createProviderState(provider, {
+    disabledReason: '소셜 로그인 상태 확인 중',
+  })),
+)
+
+const loginForm = reactive({
+  email: ADMIN_EMAIL,
+  password: '',
+})
+
 const isFormValid = computed(() => loginForm.password.trim().length > 0)
 const hasSocialProviders = computed(() => socialProviders.value.length > 0)
+const socialStatusMessage = computed(() => {
+  if (!oauthStatusLoaded.value) return ''
+  if (oauthAdminOnly.value) {
+    return '관리자 전용 모드가 켜져 있어 소셜 로그인이 비활성화되어 있습니다.'
+  }
+  if (socialProviders.value.every((provider) => !provider.enabled)) {
+    return 'OAuth 클라이언트 ID와 Secret을 설정하면 소셜 로그인이 활성화됩니다.'
+  }
+  return ''
+})
 
 const loadOAuthProviders = async () => {
+  oauthStatusLoaded.value = false
+
   try {
     const res = await getOAuthProviders()
-    const providers = Array.isArray(res.data?.providers) ? res.data.providers : []
+    const data = res.data || {}
+    const providers = Array.isArray(data.providers) ? data.providers : []
     const providerById = new Map(providers.map((provider) => [provider.id, provider]))
+    oauthAdminOnly.value = Boolean(data.adminOnly)
 
-    socialProviders.value = providerCatalog
-      .map((provider) => {
-        const status = providerById.get(provider.id)
-        return {
-          ...provider,
-          enabled: Boolean(status?.enabled),
-          authorizationUrl: status?.authorizationUrl || `/oauth2/authorization/${provider.id}`,
-        }
+    socialProviders.value = providerCatalog.map((provider) => {
+      const status = providerById.get(provider.id)
+      const enabled = Boolean(status?.enabled)
+      return createProviderState(provider, {
+        enabled,
+        authorizationUrl: enabled
+          ? (status?.authorizationUrl || `/oauth2/authorization/${provider.id}`)
+          : `/oauth2/authorization/${provider.id}`,
+        disabledReason: enabled
+          ? ''
+          : (oauthAdminOnly.value ? '관리자 전용 모드' : 'OAuth 설정 필요'),
       })
-      .filter((provider) => provider.enabled)
+    })
   } catch (error) {
-    socialProviders.value = []
+    oauthAdminOnly.value = false
+    socialProviders.value = providerCatalog.map((provider) => createProviderState(provider, {
+      disabledReason: '상태 확인 실패',
+    }))
+  } finally {
+    oauthStatusLoaded.value = true
   }
 }
 
 const handleSocialLogin = (provider) => {
-  if (socialLoadingProvider.value || !provider?.enabled) return
+  if (socialLoadingProvider.value) return
+  if (!provider?.enabled) {
+    loginErrorMessage.value = provider?.disabledReason
+      ? `소셜 로그인 비활성화: ${provider.disabledReason}`
+      : '소셜 로그인이 비활성화되어 있습니다.'
+    return
+  }
+
+  loginErrorMessage.value = ''
   socialLoadingProvider.value = provider.id
   window.location.assign(apiPath(provider.authorizationUrl))
 }
@@ -108,14 +152,16 @@ onMounted(() => {
             type="button"
             class="social-button"
             :class="provider.className"
-            :disabled="!!socialLoadingProvider"
+            :disabled="!!socialLoadingProvider || !provider.enabled"
+            :title="provider.enabled ? `${provider.label} login` : provider.disabledReason"
             @click="handleSocialLogin(provider)"
           >
             <span class="provider-mark">{{ provider.mark }}</span>
             <span>
-              {{ socialLoadingProvider === provider.id ? 'Connecting...' : `Continue with ${provider.label}` }}
+              {{ socialLoadingProvider === provider.id ? '연결 중...' : `${provider.label}로 계속` }}
             </span>
           </button>
+          <p v-if="socialStatusMessage" class="social-status-message">{{ socialStatusMessage }}</p>
         </div>
 
         <div v-if="hasSocialProviders" class="section-divider">
@@ -340,6 +386,16 @@ input:read-only {
 input:focus {
   border-color: #2563eb;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+}
+
+.social-status-message {
+  margin: 0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .error-message {

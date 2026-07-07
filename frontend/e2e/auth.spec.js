@@ -117,7 +117,7 @@ const ADMIN_SESSIONS = [{
   expiresAt: '2026-07-05T13:00:00Z',
 }];
 
-async function mockApi(page, { loginToken = createAccessToken(), refreshToken = null } = {}) {
+async function mockApi(page, { loginToken = createAccessToken(), refreshToken = null, oauthProviders = [] } = {}) {
   let adminUserStatus = 'ACTIVE';
   let adminSessions = ADMIN_SESSIONS.map((session) => ({ ...session }));
 
@@ -130,7 +130,7 @@ async function mockApi(page, { loginToken = createAccessToken(), refreshToken = 
     const path = url.pathname.replace(/^\/api/, '') || '/';
 
     if (path === '/auth/oauth2/providers') {
-      return jsonResponse(route, { providers: [] });
+      return jsonResponse(route, { adminOnly: false, providers: oauthProviders });
     }
 
     if (path === '/auth/reissue') {
@@ -225,6 +225,27 @@ test.describe('authentication flow', () => {
 
     await expect(page).toHaveURL(/\/login$/);
     await expect(page.getByRole('heading', { name: 'Login' })).toBeVisible();
+  });
+
+  test('shows configured social login providers and starts the OAuth flow', async ({ page }) => {
+    await mockApi(page, {
+      oauthProviders: [
+        { id: 'google', label: 'Google', enabled: true, authorizationUrl: '/oauth2/authorization/google' },
+        { id: 'kakao', label: 'Kakao', enabled: false },
+        { id: 'naver', label: 'Naver', enabled: false },
+      ],
+    });
+
+    await page.goto('/login');
+
+    const googleButton = page.locator('.provider-google');
+    await expect(googleButton).toBeEnabled();
+    await expect(page.locator('.provider-kakao')).toBeDisabled();
+    await expect(page.locator('.provider-naver')).toBeDisabled();
+
+    await googleButton.click();
+
+    await expect(page).toHaveURL(/\/api\/oauth2\/authorization\/google$/);
   });
 
   test('logs in with the administrator form and opens the main area', async ({ page }) => {

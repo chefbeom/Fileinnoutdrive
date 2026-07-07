@@ -16,8 +16,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "REDIS_HOST=127.0.0.1",
         "REDIS_PORT=6379",
         "spring.security.oauth2.client.registration.google.client-id=google-client",
+        "spring.security.oauth2.client.registration.google.client-secret=google-secret",
         "spring.security.oauth2.client.registration.kakao.client-id=kakao-client",
-        "spring.security.oauth2.client.registration.naver.client-id=disabled"
+        "spring.security.oauth2.client.registration.kakao.client-secret=kakao-secret",
+        "spring.security.oauth2.client.registration.naver.client-id=naver-client",
+        "spring.security.oauth2.client.registration.naver.client-secret=disabled"
 })
 @ActiveProfiles("test")
 @AutoConfigureMockMvc

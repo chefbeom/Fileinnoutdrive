@@ -33,11 +33,20 @@ public class AuthController {
     @Value("${spring.security.oauth2.client.registration.google.client-id:}")
     private String googleClientId;
 
+    @Value("${spring.security.oauth2.client.registration.google.client-secret:}")
+    private String googleClientSecret;
+
     @Value("${spring.security.oauth2.client.registration.kakao.client-id:}")
     private String kakaoClientId;
 
+    @Value("${spring.security.oauth2.client.registration.kakao.client-secret:}")
+    private String kakaoClientSecret;
+
     @Value("${spring.security.oauth2.client.registration.naver.client-id:}")
     private String naverClientId;
+
+    @Value("${spring.security.oauth2.client.registration.naver.client-secret:}")
+    private String naverClientSecret;
 
     @GetMapping("/oauth2/providers")
     @Operation(summary = "OAuth2 provider status", description = "Returns public social-login provider availability.")
@@ -45,9 +54,9 @@ public class AuthController {
         return ResponseEntity.ok(new OAuthProviderStatusRes(
                 adminOnly,
                 List.of(
-                        provider("google", "Google", googleClientId),
-                        provider("kakao", "Kakao", kakaoClientId),
-                        provider("naver", "Naver", naverClientId)
+                        provider("google", "Google", googleClientId, googleClientSecret),
+                        provider("kakao", "Kakao", kakaoClientId, kakaoClientSecret),
+                        provider("naver", "Naver", naverClientId, naverClientSecret)
                 )
         ));
     }
@@ -96,8 +105,8 @@ public class AuthController {
         return ResponseEntity.ok().body("로그아웃 완료");
     }
 
-    private OAuthProviderRes provider(String id, String label, String clientId) {
-        boolean enabled = !adminOnly && isConfiguredClientId(clientId);
+    private OAuthProviderRes provider(String id, String label, String clientId, String clientSecret) {
+        boolean enabled = !adminOnly && isConfiguredCredential(clientId) && isConfiguredCredential(clientSecret);
         return new OAuthProviderRes(
                 id,
                 label,
@@ -106,7 +115,7 @@ public class AuthController {
         );
     }
 
-    private boolean isConfiguredClientId(String value) {
+    private boolean isConfiguredCredential(String value) {
         if (value == null || value.isBlank()) {
             return false;
         }
