@@ -75,6 +75,7 @@ export const useFileStore = defineStore("file", () => {
   const storageSummary = ref(null);
   const storageLoading = ref(false);
   const storageError = ref("");
+  let storageSummaryRequest = null;
   const isAdministrator = computed(() => {
     const currentUser = authStore.user;
     const role = String(currentUser?.role || "").toUpperCase();
@@ -185,23 +186,36 @@ export const useFileStore = defineStore("file", () => {
     return sentSharedLibraryFiles.value;
   };
 
-  const fetchStorageSummary = async () => {
+  const fetchStorageSummary = () => {
+    if (storageSummaryRequest) {
+      return storageSummaryRequest;
+    }
+
     storageLoading.value = true;
     storageError.value = "";
 
-    try {
-      const summary = await fetchStorageSummaryApi();
-      storageSummary.value = summary;
-      return summary;
-    } catch (error) {
-      storageError.value =
-        error?.response?.data?.message ||
-        error?.message ||
-        "저장 공간 정보를 불러오지 못했습니다.";
-      throw error;
-    } finally {
-      storageLoading.value = false;
-    }
+    const request = Promise.resolve()
+      .then(() => fetchStorageSummaryApi())
+      .then((summary) => {
+        storageSummary.value = summary;
+        return summary;
+      })
+      .catch((error) => {
+        storageError.value =
+          error?.response?.data?.message ||
+          error?.message ||
+          "저장 공간 정보를 불러오지 못했습니다.";
+        throw error;
+      })
+      .finally(() => {
+        if (storageSummaryRequest === request) {
+          storageSummaryRequest = null;
+          storageLoading.value = false;
+        }
+      });
+
+    storageSummaryRequest = request;
+    return request;
   };
 
   const fetchFiles = async () => {

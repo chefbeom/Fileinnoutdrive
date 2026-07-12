@@ -4,7 +4,6 @@ import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/useAuthStore.js";
 import { fetchSettingsProfile } from "@/api/featerApi.js";
 import loadpost from "./workspace/loadpost.js";
-import sseApi from "@/api/sseApi.js";
 import {
   FILE_SIZE_OPTIONS,
   FILE_STATUS_OPTIONS,
@@ -66,7 +65,6 @@ const lastFetchedAt = ref(0);
 const CACHE_TTL_MS = 2 * 60 * 1000; // 2분
 
 let broadcastChannel = null;
-let sseEventSource = null;
 
 const isDarkMode = ref(false);
 const themeIcon = ref("fa-solid fa-moon");
@@ -182,6 +180,10 @@ const pushNewNotification = (data) => {
   }
 
   updateNotifBadge();
+};
+
+const handleSseNotification = (event) => {
+  pushNewNotification(event?.detail);
 };
 
 const markNotificationAsRead = async (notification) => {
@@ -508,47 +510,6 @@ const handleClickOutside = (event) => {
   if (!event.target.closest("#header-search-container")) showSearchDropdown.value = false;
 };
 
-// ─── SSE ─────────────────────────────────────────────────────────────────────
-const stopSse = () => {
-  sseApi.closeSse(sseEventSource);
-  sseEventSource = null;
-};
-
-const startSse = () => {
-  stopSse();
-  sseEventSource = sseApi.connectNotificationSse({
-    accessToken: authStore.token,
-    onNotification: (payload) => {
-      pushNewNotification(payload);
-    },
-    onNewMessage: (payload) => {
-      pushNewNotification(payload);
-      window.dispatchEvent(new CustomEvent("sse-new-message", { detail: payload }));
-    },
-    onError: () => {
-      sseEventSource = null;
-      if (authStore.user?.idx) {
-        setTimeout(() => startSse(), 5000);
-      }
-    },
-  });
-
-  sseEventSource.addEventListener("chat-preview-update", (e) => {
-    try {
-      const payload = JSON.parse(e.data);
-      window.dispatchEvent(new CustomEvent("sse-chat-preview-update", { detail: payload }));
-    } catch {}
-  });
-
-  sseEventSource.onerror = () => {
-    stopSse();
-    // 재연결 (5초 후)
-    if (authStore.user?.idx) {
-      setTimeout(() => startSse(), 5000);
-    }
-  };
-};
-
 watch(() => route.fullPath, () => {
   showSearchDropdown.value = false;
 });
@@ -557,7 +518,6 @@ watch(
   () => authStore.user?.idx,
   async (userIdx) => {
     if (!userIdx) {
-      stopSse();
       notifications.value = [];
       lastFetchedAt.value = 0;
       updateNotifBadge();
@@ -565,7 +525,6 @@ watch(
     }
 
     await fetchNotifications();
-    startSse();
 
     if (!fileStore.storageSummary && !fileStore.storageLoading) {
       fileStore.fetchStorageSummary().catch(() => {});
@@ -585,6 +544,7 @@ onMounted(() => {
   authStore.ensureSession().catch(() => {});
   loadSettingsProfile();
   setupNotificationChannel();
+  window.addEventListener("sse-notification", handleSseNotification);
   if (!fileStore.storageSummary && !fileStore.storageLoading) {
     fileStore.fetchStorageSummary().catch(() => {});
   }
@@ -593,6 +553,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener("click", handleClickOutside);
+  window.removeEventListener("sse-notification", handleSseNotification);
   if (broadcastChannel) {
     broadcastChannel.close();
     broadcastChannel = null;
@@ -600,7 +561,6 @@ onBeforeUnmount(() => {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.removeEventListener("message", swDirectMessageHandler);
   }
-  stopSse();
 });
 </script>
 

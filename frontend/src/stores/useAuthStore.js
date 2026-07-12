@@ -1,17 +1,96 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, shallowRef } from 'vue'
 import { logoutSession, refreshAccessToken } from '@/api/authSession.js'
 import postApi from '@/api/postApi.js'
 import sseApi from '@/api/sseApi.js'
 
 const TOKEN_REFRESH_SKEW_MS = 30 * 1000
+const SSE_RECONNECT_DELAY_MS = 5 * 1000
 const LEGACY_SESSION_KEYS = ['USERINFO', 'ACCESS_TOKEN']
 
 export const useAuthStore = defineStore('auth', () => {
   const isLogin = ref(false)
   const user = ref(null)
   const token = ref(null)
-  const sseInstance = ref(null)
+  const sseInstance = shallowRef(null)
+  let sseReconnectTimer = null
+  let sseConnectionVersion = 0
+  let activeSseUserId = null
+  let activeSseAccessToken = null
+
+  const dispatchSseEvent = (eventName, detail) => {
+    globalThis.window?.dispatchEvent(new CustomEvent(eventName, { detail }))
+  }
+
+  const clearSseReconnectTimer = () => {
+    if (sseReconnectTimer == null) return
+    globalThis.clearTimeout(sseReconnectTimer)
+    sseReconnectTimer = null
+  }
+
+  const stopSseConnection = () => {
+    sseConnectionVersion += 1
+    clearSseReconnectTimer()
+
+    const activeConnection = sseInstance.value
+    sseInstance.value = null
+    activeSseUserId = null
+    activeSseAccessToken = null
+
+    if (activeConnection) {
+      sseApi.closeSse(activeConnection)
+    }
+  }
+
+  const scheduleSseReconnect = (userId, accessToken, connectionVersion) => {
+    clearSseReconnectTimer()
+    sseReconnectTimer = globalThis.setTimeout(() => {
+      sseReconnectTimer = null
+      if (connectionVersion !== sseConnectionVersion) return
+      if (user.value?.idx !== userId || token.value !== accessToken) return
+      startSseConnection(userId)
+    }, SSE_RECONNECT_DELAY_MS)
+  }
+
+  const startSseConnection = (userId) => {
+    const accessToken = token.value
+    if (!userId || !accessToken) {
+      stopSseConnection()
+      return
+    }
+
+    if (sseInstance.value && activeSseUserId === userId && activeSseAccessToken === accessToken) {
+      return
+    }
+
+    stopSseConnection()
+    const connectionVersion = sseConnectionVersion
+    activeSseUserId = userId
+    activeSseAccessToken = accessToken
+
+    sseInstance.value = sseApi.connectWorkspaceSse({
+      userId,
+      accessToken,
+      onConnect: () => {
+        if (import.meta.env.DEV) console.debug('[SSE] user ' + userId + ' connected')
+      },
+      onNotification: (payload) => dispatchSseEvent('sse-notification', payload),
+      onNewMessage: (payload) => {
+        dispatchSseEvent('sse-notification', payload)
+        dispatchSseEvent('sse-new-message', payload)
+      },
+      onTitleUpdated: (payload) => dispatchSseEvent('sse-title-updated', payload),
+      onRoleChanged: (payload) => dispatchSseEvent('sse-role-changed', payload),
+      onChatPreviewUpdated: (payload) => dispatchSseEvent('sse-chat-preview-update', payload),
+      onError: () => {
+        if (connectionVersion !== sseConnectionVersion) return
+        sseInstance.value = null
+        activeSseUserId = null
+        activeSseAccessToken = null
+        scheduleSseReconnect(userId, accessToken, connectionVersion)
+      },
+    })
+  }
 
   const decodeToken = (tokenStr) => {
     try {
@@ -141,29 +220,6 @@ export const useAuthStore = defineStore('auth', () => {
       console.error('Logout API failed:', error)
     } finally {
       clearLocalSession()
-    }
-  }
-
-  const startSseConnection = (userId) => {
-    if (sseInstance.value) return
-
-    sseInstance.value = sseApi.connectWorkspaceSse({
-      userId,
-      accessToken: token.value,
-      onConnect: () => { if (import.meta.env.DEV) console.debug(`[SSE] user ${userId} connected`) },
-      onTitleUpdated: (updatedData) => {
-        window.dispatchEvent(new CustomEvent('sse-title-updated', { detail: updatedData }))
-      },
-      onError: () => {
-        sseInstance.value = null
-      },
-    })
-  }
-
-  const stopSseConnection = () => {
-    if (sseInstance.value) {
-      sseApi.closeSse(sseInstance.value)
-      sseInstance.value = null
     }
   }
 

@@ -5,66 +5,32 @@ const SSE_OPTIONS = {
   heartbeatTimeout: 3600000,
 }
 
-const getAuthHeaders = (accessToken) => (
+const getAuthHeaders = (accessToken) =>
   accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
-)
 
 const isFatalError = (eventSource) => eventSource.readyState === EventSourcePolyfill.CLOSED
 
-const connectNotificationSse = ({ accessToken, onNotification, onNewMessage, onError } = {}) => {
-  const eventSource = new EventSourcePolyfill(apiPath('/sse/connect'), {
-    headers: getAuthHeaders(accessToken),
-    withCredentials: true,
-    ...SSE_OPTIONS,
-  })
-
-  eventSource.addEventListener('notification', (e) => {
+const addJsonEventListener = (eventSource, eventName, callback) => {
+  eventSource.addEventListener(eventName, (event) => {
     try {
-      const payload = JSON.parse(e.data)
-      if (onNotification) onNotification(payload)
-    } catch (err) {
-      console.error('[SSE:notification] 이벤트 파싱 오류:', err)
+      callback?.(JSON.parse(event.data))
+    } catch (error) {
+      console.error('[SSE:' + eventName + '] Failed to parse event payload:', error)
     }
   })
-
-  eventSource.addEventListener('new-message', (e) => {
-    try {
-      const payload = JSON.parse(e.data)
-      if (onNewMessage) onNewMessage(payload)
-    } catch (err) {
-      console.error('[SSE:new-message] 이벤트 파싱 오류:', err)
-    }
-  })
-
-  eventSource.addEventListener('title-updated', (e) => {
-    try {
-      const payload = JSON.parse(e.data)
-      window.dispatchEvent(new CustomEvent('sse-title-updated', { detail: payload }))
-    } catch (err) {
-      console.error('[SSE:title-updated] 이벤트 파싱 오류:', err)
-    }
-  })
-
-  eventSource.addEventListener('role-changed', (e) => {
-    try {
-      const payload = JSON.parse(e.data)
-      window.dispatchEvent(new CustomEvent('sse-role-changed', { detail: payload }))
-    } catch (err) {
-      console.error('[SSE:role-changed] 이벤트 파싱 오류:', err)
-    }
-  })
-
-  eventSource.onerror = (error) => {
-    if (!isFatalError(eventSource)) return
-    console.error('[SSE] 연결 오류 (fatal):', error)
-    eventSource.close()
-    if (onError) onError(error)
-  }
-
-  return eventSource
 }
 
-const connectWorkspaceSse = ({ userId, accessToken, onConnect, onTitleUpdated, onError } = {}) => {
+const connectWorkspaceSse = ({
+  userId,
+  accessToken,
+  onConnect,
+  onNotification,
+  onNewMessage,
+  onTitleUpdated,
+  onRoleChanged,
+  onChatPreviewUpdated,
+  onError,
+} = {}) => {
   const eventSource = new EventSourcePolyfill(apiPath('/sse/connect'), {
     headers: getAuthHeaders(accessToken),
     withCredentials: true,
@@ -72,28 +38,15 @@ const connectWorkspaceSse = ({ userId, accessToken, onConnect, onTitleUpdated, o
   })
 
   eventSource.onopen = (event) => {
-    if (import.meta.env.DEV) console.debug('[SSE] 워크스페이스 연결 성공 (userId:', userId, ')');
+    if (import.meta.env.DEV) console.debug('[SSE] 워크스페이스 연결 성공 (userId:', userId, ')')
     if (onConnect) onConnect(event)
   }
 
-  eventSource.addEventListener('title-updated', (event) => {
-    try {
-      const updatedData = JSON.parse(event.data)
-      window.dispatchEvent(new CustomEvent('sse-title-updated', { detail: updatedData }))
-      if (onTitleUpdated) onTitleUpdated(updatedData)
-    } catch (e) {
-      console.error('[SSE:title-updated] 이벤트 파싱 오류:', e)
-    }
-  })
-
-  eventSource.addEventListener('role-changed', (e) => {
-    try {
-      const payload = JSON.parse(e.data)
-      window.dispatchEvent(new CustomEvent('sse-role-changed', { detail: payload }))
-    } catch (err) {
-      console.error('[SSE:role-changed] 이벤트 파싱 오류:', err)
-    }
-  })
+  addJsonEventListener(eventSource, 'notification', onNotification)
+  addJsonEventListener(eventSource, 'new-message', onNewMessage)
+  addJsonEventListener(eventSource, 'title-updated', onTitleUpdated)
+  addJsonEventListener(eventSource, 'role-changed', onRoleChanged)
+  addJsonEventListener(eventSource, 'chat-preview-update', onChatPreviewUpdated)
 
   eventSource.onerror = (error) => {
     if (!isFatalError(eventSource)) return
@@ -108,12 +61,11 @@ const connectWorkspaceSse = ({ userId, accessToken, onConnect, onTitleUpdated, o
 const closeSse = (eventSource) => {
   if (eventSource && typeof eventSource.close === 'function') {
     eventSource.close()
-    if (import.meta.env.DEV) console.debug('[SSE] 연결을 정상적으로 종료했습니다.');
+    if (import.meta.env.DEV) console.debug('[SSE] 연결을 정상적으로 종료했습니다.')
   }
 }
 
 export default {
-  connectNotificationSse,
   connectWorkspaceSse,
   closeSse,
 }
