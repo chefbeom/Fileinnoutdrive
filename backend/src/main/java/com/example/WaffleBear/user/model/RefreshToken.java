@@ -23,8 +23,9 @@ public class RefreshToken {
     @Column(nullable = false)
     private String email;
 
-    @Column(nullable = false, length = 512)
-    private String token;
+    // The database stores a one-way SHA-256 fingerprint, never the usable JWT.
+    @Column(name = "token", nullable = false, length = 64)
+    private String tokenHash;
 
     @Column(nullable = false)
     private LocalDateTime expiryDate;
@@ -43,8 +44,8 @@ public class RefreshToken {
         }
     }
 
-    public void updateToken(String token, LocalDateTime expiryDate) {
-        this.token = token;
+    public void updateTokenHash(String tokenHash, LocalDateTime expiryDate) {
+        this.tokenHash = tokenHash;
         this.expiryDate = expiryDate;
         this.updatedAt = LocalDateTime.now();
     }

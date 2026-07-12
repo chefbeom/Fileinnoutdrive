@@ -8,6 +8,7 @@ import com.example.WaffleBear.administrator.storage.DataTransferSource;
 import com.example.WaffleBear.administrator.storage.DataTransferStatus;
 import com.example.WaffleBear.administrator.storage.StorageAnalyticsConfig;
 import com.example.WaffleBear.administrator.storage.StorageAnalyticsConfigRepository;
+import com.example.WaffleBear.administrator.storage.TransferAggregate;
 import com.example.WaffleBear.chat.ChatMessageRepository;
 import com.example.WaffleBear.common.exception.BaseException;
 import com.example.WaffleBear.common.model.BaseResponseStatus;
@@ -62,6 +63,7 @@ public class StorageAnalyticsService {
         List<User> trackedUsers = users.stream()
                 .filter(user -> !storagePlanService.isAdministrator(user))
                 .toList();
+        Map<Long, StoragePlanService.StorageQuota> quotasByUser = storagePlanService.resolveQuotas(trackedUsers);
 
         Map<Long, Long> driveStoredBytesByUser = new HashMap<>();
         Map<Long, Long> workspaceStoredBytesByUser = new HashMap<>();
@@ -72,8 +74,7 @@ public class StorageAnalyticsService {
         long chatStoredBytes = accumulateChatStorage(chatStoredBytesByUser);
         long providerUsedBytes = driveStoredBytes + workspaceStoredBytes + chatStoredBytes;
 
-        long allocatedUserQuotaBytes = trackedUsers.stream()
-                .map(storagePlanService::resolveQuota)
+        long allocatedUserQuotaBytes = quotasByUser.values().stream()
                 .mapToLong(StoragePlanService.StorageQuota::totalQuotaBytes)
                 .sum();
         long allocatedUserUsedBytes = trackedUsers.stream()
@@ -95,7 +96,7 @@ public class StorageAnalyticsService {
         );
         long providerRemainingBytes = Math.max(0L, providerCapacityBytes - providerUsedBytes);
 
-        List<DataTransferLedger> ledgers = loadTransferLedgers(window.startedAt());
+        List<TransferAggregate> ledgers = loadTransferAggregates(window.startedAt());
         TransferAccumulator transferAccumulator = new TransferAccumulator();
         ledgers.forEach(transferAccumulator::add);
 
@@ -156,6 +157,7 @@ public class StorageAnalyticsService {
                 .transferBreakdown(transferAccumulator.toResponses())
                 .users(buildUserTransferStats(
                         trackedUsers,
+                        quotasByUser,
                         driveStoredBytesByUser,
                         workspaceStoredBytesByUser,
                         chatStoredBytesByUser,
@@ -284,6 +286,7 @@ public class StorageAnalyticsService {
 
     private List<AdministratorDto.UserTransferStatRes> buildUserTransferStats(
             List<User> users,
+            Map<Long, StoragePlanService.StorageQuota> quotasByUser,
             Map<Long, Long> driveStoredBytesByUser,
             Map<Long, Long> workspaceStoredBytesByUser,
             Map<Long, Long> chatStoredBytesByUser,
@@ -291,7 +294,10 @@ public class StorageAnalyticsService {
     ) {
         return users.stream()
                 .map(user -> {
-                    StoragePlanService.StorageQuota quota = storagePlanService.resolveQuota(user);
+                    StoragePlanService.StorageQuota quota = Objects.requireNonNull(
+                            quotasByUser.get(user.getIdx()),
+                            "Missing storage quota for user " + user.getIdx()
+                    );
                     UserTransferAccumulator transfer = transferByUser.getOrDefault(user.getIdx(), UserTransferAccumulator.empty());
                     return AdministratorDto.UserTransferStatRes.builder()
                             .idx(user.getIdx())
@@ -381,11 +387,8 @@ public class StorageAnalyticsService {
         }
     }
 
-    private List<DataTransferLedger> loadTransferLedgers(LocalDateTime startedAt) {
-        if (startedAt == null) {
-            return dataTransferLedgerRepository.findAllByOrderByCreatedAtDesc();
-        }
-        return dataTransferLedgerRepository.findAllByCreatedAtGreaterThanEqualOrderByCreatedAtDesc(startedAt);
+    private List<TransferAggregate> loadTransferAggregates(LocalDateTime startedAt) {
+        return dataTransferLedgerRepository.aggregateByUserAndTransfer(startedAt);
     }
 
     private double toPercent(long numerator, long denominator) {
@@ -428,34 +431,36 @@ public class StorageAnalyticsService {
         private long canceledIngressBytes;
         private long totalEgressBytes;
 
-        private void add(DataTransferLedger ledger) {
-            if (ledger == null || ledger.getDirection() == null || ledger.getSource() == null || ledger.getStatus() == null) {
+        private void add(TransferAggregate aggregate) {
+            if (aggregate == null || aggregate.getDirection() == null
+                    || aggregate.getSource() == null || aggregate.getStatus() == null) {
                 return;
             }
 
-            long bytes = Math.max(0L, ledger.getBytes() == null ? 0L : ledger.getBytes());
+            long bytes = Math.max(0L, aggregate.getTotalBytes() == null ? 0L : aggregate.getTotalBytes());
+            long eventCount = Math.max(0L, aggregate.getEventCount() == null ? 0L : aggregate.getEventCount());
             if (bytes <= 0L) {
                 return;
             }
 
-            TransferKey key = new TransferKey(ledger.getDirection(), ledger.getSource(), ledger.getStatus());
+            TransferKey key = new TransferKey(aggregate.getDirection(), aggregate.getSource(), aggregate.getStatus());
             grouped.computeIfAbsent(key, ignored -> new long[2]);
-            long[] aggregate = grouped.get(key);
-            aggregate[0] += bytes;
-            aggregate[1] += 1L;
+            long[] summary = grouped.get(key);
+            summary[0] += bytes;
+            summary[1] += eventCount;
 
-            Long userIdx = ledger.getUser() != null ? ledger.getUser().getIdx() : null;
+            Long userIdx = aggregate.getUserIdx();
             if (userIdx != null) {
                 byUser.computeIfAbsent(userIdx, ignored -> UserTransferAccumulator.empty())
-                        .add(ledger.getDirection(), ledger.getStatus(), bytes);
+                        .add(aggregate.getDirection(), aggregate.getStatus(), bytes);
             }
 
-            if (ledger.getDirection() == DataTransferDirection.INGRESS) {
+            if (aggregate.getDirection() == DataTransferDirection.INGRESS) {
                 totalIngressBytes += bytes;
-                if (ledger.getStatus() == DataTransferStatus.COMPLETED) {
+                if (aggregate.getStatus() == DataTransferStatus.COMPLETED) {
                     completedIngressBytes += bytes;
                 }
-                if (ledger.getStatus() == DataTransferStatus.ABORTED) {
+                if (aggregate.getStatus() == DataTransferStatus.ABORTED) {
                     canceledIngressBytes += bytes;
                 }
             } else {

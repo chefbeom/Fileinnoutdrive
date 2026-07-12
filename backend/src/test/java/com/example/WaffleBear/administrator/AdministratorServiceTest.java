@@ -54,7 +54,7 @@ class AdministratorServiceTest {
         RefreshToken token = RefreshToken.builder()
                 .id(10L)
                 .email("user@example.com")
-                .token("raw-refresh-token")
+                .tokenHash("raw-refresh-token")
                 .createdAt(createdAt)
                 .updatedAt(updatedAt)
                 .expiryDate(expiresAt)
@@ -90,7 +90,7 @@ class AdministratorServiceTest {
         RefreshToken token = RefreshToken.builder()
                 .id(10L)
                 .email("user@example.com")
-                .token("raw-refresh-token")
+                .tokenHash("raw-refresh-token")
                 .expiryDate(LocalDateTime.now().plusDays(1))
                 .build();
         when(refreshTokenRepository.findById(10L)).thenReturn(Optional.of(token));
@@ -113,8 +113,8 @@ class AdministratorServiceTest {
                 .accountStatus(UserAccountStatus.ACTIVE)
                 .build();
         List<RefreshToken> sessions = List.of(
-                RefreshToken.builder().id(10L).email(user.getEmail()).token("a").expiryDate(LocalDateTime.now().plusDays(1)).build(),
-                RefreshToken.builder().id(11L).email(user.getEmail()).token("b").expiryDate(LocalDateTime.now().plusDays(1)).build()
+                RefreshToken.builder().id(10L).email(user.getEmail()).tokenHash("a").expiryDate(LocalDateTime.now().plusDays(1)).build(),
+                RefreshToken.builder().id(11L).email(user.getEmail()).tokenHash("b").expiryDate(LocalDateTime.now().plusDays(1)).build()
         );
         when(userRepository.findById(user.getIdx())).thenReturn(Optional.of(user));
         when(refreshTokenRepository.findAllByEmailOrderByIdDesc(user.getEmail())).thenReturn(sessions);

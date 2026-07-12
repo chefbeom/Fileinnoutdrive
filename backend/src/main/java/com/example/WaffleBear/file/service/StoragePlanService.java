@@ -13,8 +13,11 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -215,9 +218,57 @@ public class StoragePlanService {
             return toQuota(PRODUCT_DEFINITIONS.get("ADMIN"), 0L);
         }
 
-        LocalDateTime now = LocalDateTime.now();
         List<Order> orders = orderRepository.findAllByUser_Idx(user.getIdx());
-        ProductDefinition membershipProduct = orders.stream()
+        return resolveQuotaFromOrders(orders, LocalDateTime.now());
+    }
+
+    public Map<Long, StorageQuota> resolveQuotas(List<User> users) {
+        if (users == null || users.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<Long, User> usersById = new LinkedHashMap<>();
+        for (User user : users) {
+            if (user != null && user.getIdx() != null && user.getIdx() > 0L) {
+                usersById.putIfAbsent(user.getIdx(), user);
+            }
+        }
+        if (usersById.isEmpty()) {
+            return Map.of();
+        }
+
+        List<Long> regularUserIds = usersById.values().stream()
+                .filter(user -> !isAdministrator(user))
+                .map(User::getIdx)
+                .toList();
+
+        Map<Long, List<Order>> ordersByUser = new HashMap<>();
+        if (!regularUserIds.isEmpty()) {
+            for (Order order : orderRepository.findAllByUser_IdxIn(regularUserIds)) {
+                Long userIdx = order == null || order.getUser() == null
+                        ? null
+                        : order.getUser().getIdx();
+                if (userIdx != null) {
+                    ordersByUser.computeIfAbsent(userIdx, ignored -> new ArrayList<>())
+                            .add(order);
+                }
+            }
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        Map<Long, StorageQuota> quotasByUser = new LinkedHashMap<>();
+        usersById.forEach((userIdx, user) -> quotasByUser.put(
+                userIdx,
+                isAdministrator(user)
+                        ? toQuota(PRODUCT_DEFINITIONS.get("ADMIN"), 0L)
+                        : resolveQuotaFromOrders(ordersByUser.getOrDefault(userIdx, List.of()), now)
+        ));
+        return Map.copyOf(quotasByUser);
+    }
+
+    private StorageQuota resolveQuotaFromOrders(List<Order> orders, LocalDateTime now) {
+        List<Order> safeOrders = orders == null ? List.of() : orders;
+        ProductDefinition membershipProduct = safeOrders.stream()
                 .filter(this::isCompletedOrder)
                 .filter(order -> CATEGORY_MEMBERSHIP.equals(resolveCategory(order)))
                 .filter(order -> isActive(order, now))
@@ -229,7 +280,7 @@ public class StoragePlanService {
                 .findFirst()
                 .orElse(PRODUCT_DEFINITIONS.get("FREE"));
 
-        long addonBytes = orders.stream()
+        long addonBytes = safeOrders.stream()
                 .filter(this::isCompletedOrder)
                 .filter(order -> CATEGORY_STORAGE.equals(resolveCategory(order)))
                 .filter(order -> isActive(order, now))

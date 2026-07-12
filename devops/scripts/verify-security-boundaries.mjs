@@ -130,6 +130,44 @@ requireContains(boundaryTestPath, boundaryTest, 'testVersionEndpointRejectsAnony
 requireContains(boundaryTestPath, boundaryTest, 'testVersionEndpointIsNotMappedForAuthenticatedRequests')
 requireContains(boundaryTestPath, boundaryTest, 'openApiDocsRejectAnonymousRequestsByDefault')
 
+const authServicePath = 'backend/src/main/java/com/example/WaffleBear/user/service/AuthService.java'
+const authService = read(authServicePath)
+for (const fragment of [
+  '.tokenHash(hashRefreshToken(refresh))',
+  'findFirstByTokenHashOrderByIdDesc(refreshTokenHash)',
+  'deleteByTokenHash(hashRefreshToken(refreshToken))',
+  'MessageDigest.getInstance("SHA-256")',
+]) {
+  requireContains(authServicePath, authService, fragment)
+}
+requireNotContains(authServicePath, authService, '.token(refresh)')
+
+const refreshTokenPath = 'backend/src/main/java/com/example/WaffleBear/user/model/RefreshToken.java'
+const refreshToken = read(refreshTokenPath)
+requireContains(refreshTokenPath, refreshToken, '@Column(name = "token", nullable = false, length = 64)')
+requireContains(refreshTokenPath, refreshToken, 'private String tokenHash;')
+requireNotContains(refreshTokenPath, refreshToken, 'private String token;')
+
+const webSocketConfigPath = 'backend/src/main/java/com/example/WaffleBear/config/WebSocketConfig.java'
+const webSocketConfig = read(webSocketConfigPath)
+requireContains(webSocketConfigPath, webSocketConfig, '!"access".equals(jwtUtil.getCategory(token))')
+requireContains(webSocketConfigPath, webSocketConfig, 'userRepository.findById(idx)')
+requireContains(webSocketConfigPath, webSocketConfig, 'resolveStatus(userEntity) != UserAccountStatus.ACTIVE')
+
+const webSocketConfigTestPath = 'backend/src/test/java/com/example/WaffleBear/config/WebSocketConfigTest.java'
+const webSocketConfigTest = read(webSocketConfigTestPath)
+requireContains(webSocketConfigTestPath, webSocketConfigTest, 'rejectsRefreshTokenDuringStompConnect')
+requireContains(webSocketConfigTestPath, webSocketConfigTest, 'rejectsBlockedUserDuringStompConnect')
+
+const aesPath = 'backend/src/main/java/com/example/WaffleBear/utils/Aes256.java'
+const aes = read(aesPath)
+requireContains(aesPath, aes, 'AES/GCM/NoPadding')
+requireContains(aesPath, aes, 'GCMParameterSpec')
+requireNotContains(aesPath, aes, 'AES/CBC/PKCS5Padding')
+
+const aesTestPath = 'backend/src/test/java/com/example/WaffleBear/utils/Aes256Test.java'
+const aesTest = read(aesTestPath)
+requireContains(aesTestPath, aesTest, 'rejectsTamperedCiphertext')
 
 if (errors.length > 0) {
   console.error('Security boundary verification failed:')

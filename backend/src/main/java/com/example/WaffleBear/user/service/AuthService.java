@@ -13,7 +13,11 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
 import java.time.LocalDateTime;
 
@@ -33,7 +37,7 @@ public class AuthService {
         refreshTokenRepository.save(
                 RefreshToken.builder()
                         .email(email)
-                        .token(refresh)
+                        .tokenHash(hashRefreshToken(refresh))
                         .expiryDate(LocalDateTime.now().plusDays(14))
                         .build()
         );
@@ -54,9 +58,10 @@ public class AuthService {
             throw new IllegalArgumentException("Invalid refresh token category.");
         }
 
-        RefreshToken dbToken = refreshTokenRepository.findFirstByTokenOrderByIdDesc(refreshToken)
+        String refreshTokenHash = hashRefreshToken(refreshToken);
+        RefreshToken dbToken = refreshTokenRepository.findFirstByTokenHashOrderByIdDesc(refreshTokenHash)
                 .orElseThrow(() -> new IllegalArgumentException("Refresh token is not registered."));
-        removeDuplicateRefreshTokenRows(refreshToken, dbToken);
+        removeDuplicateRefreshTokenRows(refreshTokenHash, dbToken);
 
         String email = jwtUtil.getEmail(refreshToken);
         User user = userRepository.findByEmail(email)
@@ -91,7 +96,7 @@ public class AuthService {
                 1209600000L
         );
 
-        dbToken.updateToken(newRefresh, LocalDateTime.now().plusDays(14));
+        dbToken.updateTokenHash(hashRefreshToken(newRefresh), LocalDateTime.now().plusDays(14));
 
         return new TokenDto.AuthTokenResponse(newAccess, newRefresh);
     }
@@ -100,8 +105,8 @@ public class AuthService {
         return user.getAccountStatus() == null ? UserAccountStatus.ACTIVE : user.getAccountStatus();
     }
 
-    private void removeDuplicateRefreshTokenRows(String refreshToken, RefreshToken retainedToken) {
-        List<RefreshToken> duplicates = refreshTokenRepository.findAllByToken(refreshToken);
+    private void removeDuplicateRefreshTokenRows(String refreshTokenHash, RefreshToken retainedToken) {
+        List<RefreshToken> duplicates = refreshTokenRepository.findAllByTokenHash(refreshTokenHash);
         if (duplicates.size() <= 1) {
             return;
         }
@@ -133,6 +138,16 @@ public class AuthService {
         if (refreshToken == null || refreshToken.isBlank()) {
             return;
         }
-        refreshTokenRepository.deleteByToken(refreshToken);
+        refreshTokenRepository.deleteByTokenHash(hashRefreshToken(refreshToken));
+    }
+
+    private String hashRefreshToken(String refreshToken) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(refreshToken.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
     }
 }

@@ -2,6 +2,9 @@ package com.example.WaffleBear.config;
 
 import com.example.WaffleBear.chat.ChatRoomService;
 import com.example.WaffleBear.user.model.AuthUserDetails;
+import com.example.WaffleBear.user.model.User;
+import com.example.WaffleBear.user.model.UserAccountStatus;
+import com.example.WaffleBear.user.repository.UserRepository;
 import com.example.WaffleBear.utils.JwtUtil;
 import com.example.WaffleBear.workspace.repository.UserPostRepository;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +37,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private final ChatRoomService chatRoomService;
     private final JwtUtil jwtUtil;
     private final UserPostRepository userPostRepository;
+    private final UserRepository userRepository;
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
@@ -71,7 +75,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         });
     }
 
-    private Authentication authenticate(StompHeaderAccessor accessor) {
+    Authentication authenticate(StompHeaderAccessor accessor) {
         String token = accessor.getFirstNativeHeader("ATOKEN");
         if (token == null || token.isBlank()) {
             token = accessor.getFirstNativeHeader("Authorization");
@@ -84,7 +88,16 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         }
 
         try {
+            if (!"access".equals(jwtUtil.getCategory(token))) {
+                throw new IllegalArgumentException("Invalid websocket token category");
+            }
             Long idx = jwtUtil.getUserIdx(token);
+            User userEntity = userRepository.findById(idx)
+                    .orElseThrow(() -> new IllegalArgumentException("Websocket user not found"));
+            if (!Boolean.TRUE.equals(userEntity.getEnable())
+                    || resolveStatus(userEntity) != UserAccountStatus.ACTIVE) {
+                throw new IllegalArgumentException("Websocket user access blocked");
+            }
             String email = jwtUtil.getEmail(token);
             String role = jwtUtil.getRole(token);
             AuthUserDetails user = AuthUserDetails.builder()
@@ -136,5 +149,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
             return user;
         }
         throw new RuntimeException("Unauthenticated websocket user");
+    }
+
+    private UserAccountStatus resolveStatus(User user) {
+        return user.getAccountStatus() == null ? UserAccountStatus.ACTIVE : user.getAccountStatus();
     }
 }

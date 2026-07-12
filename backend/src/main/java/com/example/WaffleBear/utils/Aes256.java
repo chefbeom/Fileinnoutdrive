@@ -1,74 +1,74 @@
 package com.example.WaffleBear.utils;
 
-
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.Cipher;
-import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Base64;
 
-/**
- * AES-256/CBC 암호화 유틸리티
- * - 키는 환경 변수(AES_SECRET_KEY)에서 주입 (32자, 운영 환경 필수)
- * - 각 암호화마다 랜덤 IV(16 bytes) 생성 → ECB 패턴 노출 취약점 차단
- * - 암호문 구조: Base64(IV[16] + ciphertext)
- */
 @Component
 public class Aes256 {
 
-    private static String SECRET_KEY;
+    private static final int AES_256_KEY_BYTES = 32;
+    private static final int GCM_NONCE_BYTES = 12;
+    private static final int GCM_TAG_BITS = 128;
+    private static byte[] secretKey;
 
     @Value("${project.aes.key}")
     public void setSecretKey(String key) {
-        if (key == null || key.length() != 32) {
-            throw new IllegalArgumentException("project.aes.key must be exactly 32 characters for AES-256.");
+        byte[] keyBytes = key == null ? new byte[0] : key.getBytes(StandardCharsets.UTF_8);
+        if (keyBytes.length != AES_256_KEY_BYTES) {
+            throw new IllegalArgumentException("project.aes.key must be exactly 32 UTF-8 bytes for AES-256.");
         }
-        SECRET_KEY = key;
+        secretKey = Arrays.copyOf(keyBytes, keyBytes.length);
     }
 
     public static String encrypt(byte[] data) {
         try {
-            byte[] iv = new byte[16];
-            new SecureRandom().nextBytes(iv);
+            byte[] nonce = new byte[GCM_NONCE_BYTES];
+            new SecureRandom().nextBytes(nonce);
 
-            SecretKeySpec keySpec = new SecretKeySpec(SECRET_KEY.getBytes(StandardCharsets.UTF_8), "AES");
-            IvParameterSpec ivSpec = new IvParameterSpec(iv);
-            Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-            cipher.init(Cipher.ENCRYPT_MODE, keySpec, ivSpec);
-            byte[] encrypted = cipher.doFinal(data);
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.ENCRYPT_MODE, keySpec(), new GCMParameterSpec(GCM_TAG_BITS, nonce));
+            byte[] ciphertext = cipher.doFinal(data);
 
-            // IV + 암호문을 합쳐 Base64 인코딩
-            byte[] ivAndEncrypted = new byte[iv.length + encrypted.length];
-            System.arraycopy(iv, 0, ivAndEncrypted, 0, iv.length);
-            System.arraycopy(encrypted, 0, ivAndEncrypted, iv.length, encrypted.length);
+            byte[] nonceAndCiphertext = new byte[nonce.length + ciphertext.length];
+            System.arraycopy(nonce, 0, nonceAndCiphertext, 0, nonce.length);
+            System.arraycopy(ciphertext, 0, nonceAndCiphertext, nonce.length, ciphertext.length);
 
-            return Base64.getEncoder().encodeToString(ivAndEncrypted);
-        } catch (Exception e) {
-            throw new RuntimeException("Encryption error", e);
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(nonceAndCiphertext);
+        } catch (Exception exception) {
+            throw new RuntimeException("Encryption error", exception);
         }
     }
 
     public static byte[] decrypt(byte[] encryptedData) {
         try {
-            byte[] decoded = Base64.getDecoder().decode(encryptedData);
+            byte[] decoded = Base64.getUrlDecoder().decode(encryptedData);
+            if (decoded.length <= GCM_NONCE_BYTES) {
+                throw new IllegalArgumentException("Encrypted payload is too short.");
+            }
 
-            // 앞 16 bytes = IV, 나머지 = 암호문
-            byte[] iv = Arrays.copyOfRange(decoded, 0, 16);
-            byte[] ciphertext = Arrays.copyOfRange(decoded, 16, decoded.length);
+            byte[] nonce = Arrays.copyOfRange(decoded, 0, GCM_NONCE_BYTES);
+            byte[] ciphertext = Arrays.copyOfRange(decoded, GCM_NONCE_BYTES, decoded.length);
 
-            SecretKeySpec keySpec = new SecretKeySpec(SECRET_KEY.getBytes(StandardCharsets.UTF_8), "AES");
-            IvParameterSpec ivSpec = new IvParameterSpec(iv);
-            Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-            cipher.init(Cipher.DECRYPT_MODE, keySpec, ivSpec);
-
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, keySpec(), new GCMParameterSpec(GCM_TAG_BITS, nonce));
             return cipher.doFinal(ciphertext);
-        } catch (Exception e) {
-            throw new RuntimeException("Decryption error", e);
+        } catch (Exception exception) {
+            throw new RuntimeException("Decryption error", exception);
         }
+    }
+
+    private static SecretKeySpec keySpec() {
+        if (secretKey == null) {
+            throw new IllegalStateException("project.aes.key is not configured.");
+        }
+        return new SecretKeySpec(secretKey, "AES");
     }
 }
