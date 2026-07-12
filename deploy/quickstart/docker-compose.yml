@@ -1,0 +1,172 @@
+name: fileinnout-quickstart
+
+services:
+  mariadb:
+    image: mariadb:11.4
+    environment:
+      MARIADB_DATABASE: web
+      MARIADB_ROOT_PASSWORD: ${DB_PASS:?DB_PASS must be set}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uroot -p$${MARIADB_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: minio/minio:${MINIO_IMAGE_TAG:?MINIO_IMAGE_TAG must be set to an explicit release tag}
+    environment:
+      MINIO_ROOT_USER: ${MINIO_NAME:?MINIO_NAME must be set}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET:?MINIO_SECRET must be set}
+    command: server /data --console-address ":9001"
+    ports:
+      - "${MINIO_API_PORT}:9000"
+      - "${MINIO_CONSOLE_PORT}:9001"
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: deploy/two-vm/docker/backend.Dockerfile
+    image: fileinnout/backend:${APP_VERSION:?APP_VERSION must be set}
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_FLYWAY_ENABLED: "false"
+      DB_SERVER: org.mariadb.jdbc.Driver
+      DB_URL: jdbc:mariadb://mariadb:3306/web
+      DB_ID: root
+      DB_PASS: ${DB_PASS}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      JWT_KEY: ${JWT_KEY}
+      JWT_EXPIRE: "86400000"
+      PROJECT_AES_KEY: ${PROJECT_AES_KEY}
+      PORTONE_SECRET: disabled
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_NAME: ${ADMIN_NAME}
+      ADMIN_ROLE: ROLE_ADMIN
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      ADMIN_ADDITIONAL_USERS: ""
+      APP_FRONTEND_URL: ${APP_FRONTEND_URL}
+      APP_BACKEND_URL: ${APP_BACKEND_URL}
+      APP_CORS_ALLOWED_ORIGIN_PATTERNS: ${APP_FRONTEND_URL}
+      APP_CORS_ALLOW_DEVELOPMENT_ORIGIN_PATTERNS: "false"
+      APP_SECURE_COOKIE: "false"
+      APP_COOKIE_SAME_SITE: Lax
+      APP_ADMIN_ONLY: "true"
+      APP_DOCS_PUBLIC_OPENAPI: "false"
+      MANAGEMENT_HEALTH_MAIL_ENABLED: "false"
+      GOOGLE_CLIENT_ID: disabled
+      GOOGLE_CLIENT_SECRET: disabled
+      NAVER_CLIENT_ID: disabled
+      NAVER_CLIENT_SECRET: disabled
+      KAKAO_CLIENT_ID: disabled
+      KAKAO_CLIENT_SECRET: disabled
+      CLIENT_ID: disabled
+      CLIENT_SECRET: disabled
+      MAIL_PORT: "587"
+      MAIL_ID: ""
+      MAIL_PASS: ""
+      STORAGE_PROVIDER: minio
+      MINIO_API: http://minio:9000
+      MINIO_PUBLIC_API: ${MINIO_PUBLIC_API}
+      MINIO_NAME: ${MINIO_NAME}
+      MINIO_SECRET: ${MINIO_SECRET}
+      MINIO_CLOUD_BUCKET: fileinnout
+      MINIO_WORKSPACE_BUCKET: fileinnout-workspace
+      MINIO_REGION: ap-northeast-2
+      S3AMAZON_API: https://s3.ap-northeast-2.amazonaws.com
+      S3AMAZON_PUBLIC_API: https://s3.ap-northeast-2.amazonaws.com
+      S3AMAZON_NAME: ""
+      S3AMAZON_SECRET: ""
+      S3AMAZON_CLOUD_BUCKET: ""
+      S3AMAZON_WORKSPACE_BUCKET: ""
+      S3AMAZON_REGION: ap-northeast-2
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/actuator/health >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 15
+      start_period: 90s
+
+  websocket:
+    build:
+      context: ../..
+      dockerfile: deploy/two-vm/docker/websocket.Dockerfile
+    image: fileinnout/websocket:${APP_VERSION:?APP_VERSION must be set}
+    environment:
+      HOST: 0.0.0.0
+      PORT: "1234"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      BACKEND_HOST: backend
+      BACKEND_PORT: "8080"
+      YJS_AUTH_REQUIRED: "true"
+      YJS_AUTH_TIMEOUT_MS: "3000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:1234/readyz >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: deploy/two-vm/docker/frontend.Dockerfile
+      args:
+        BACKEND_UPSTREAM: backend:8080
+        REALTIME_UPSTREAM: websocket:1234
+        VITE_WEB_PUSH_PUBLIC_KEY: ""
+    image: fileinnout/frontend:${APP_VERSION:?APP_VERSION must be set}
+    ports:
+      - "${APP_PORT}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+      websocket:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  mariadb_data:
+  minio_data:
+  redis_data:

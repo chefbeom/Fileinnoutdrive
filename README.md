@@ -133,6 +133,48 @@ flowchart LR
 | Desktop | C# Windows Tray, Python Sync CLI, PowerShell Installer |
 | DevOps | Docker, Helm, Kubernetes, Jenkins |
 
+## 원클릭 실행
+
+Docker Desktop이 준비된 Windows PC에서는 MariaDB, Redis, MinIO, backend, realtime gateway, frontend를 한 번에 기동합니다.
+
+### Quick Guide
+
+1. Docker Desktop을 설치하고 실행합니다.
+2. 저장소 루트 PowerShell에서 아래 명령을 실행합니다.
+
+```powershell
+.\quickstart.ps1
+```
+
+3. 첫 실행이 끝나면 출력된 주소로 접속합니다.
+
+```text
+App:           http://localhost:8088
+MinIO console: http://localhost:9001
+```
+
+4. 출력된 관리자 이메일과 초기 비밀번호로 로그인합니다. 비밀번호를 잃어버린 경우 로컬 전용 `deploy/quickstart/.env`에서 확인합니다.
+
+첫 실행은 랜덤 로컬 시크릿·관리자 계정 생성, 이미지 build, 컨테이너 기동, backend/realtime/frontend health 확인까지 처리합니다. 생성된 `.env`는 Git에서 제외됩니다.
+
+```powershell
+# 현재 서비스 상태
+.\quickstart.ps1 -Action Status
+
+# 컨테이너 중지. 데이터 유지
+.\quickstart.ps1 -Action Stop
+
+# 컨테이너와 MariaDB·Redis·MinIO 데이터 초기화
+.\quickstart.ps1 -Action Reset
+```
+
+기본 포트 `8088`, `9000`, `9001`이 이미 사용 중이면 첫 실행에서 다른 포트를 지정합니다.
+
+```powershell
+.\quickstart.ps1 -AppPort 8090 -MinioApiPort 9100 -MinioConsolePort 9101
+```
+
+자세한 내용은 [Quickstart 문서](deploy/quickstart/README.md)를 참고합니다.
 ## 로컬 실행
 
 ### 사전 요구 사항

@@ -12,6 +12,13 @@ const publicAutomationRoots = ['deploy/two-vm', 'backend/ngrinder'];
 const legacyReferenceScanRoots = ['backend', 'deploy', 'devops', 'frontend', 'scripts'];
 const composeDeploymentFiles = ['backend/docker-compose.yml', 'devops/Docker/docker-compose.yml'];
 const composeInfrastructureFiles = [...composeDeploymentFiles, 'deploy/two-vm/docker-compose.vm152.yml'];
+const quickstartFiles = [
+  'quickstart.ps1',
+  'deploy/quickstart/docker-compose.yml',
+  'deploy/quickstart/.env.example',
+  'deploy/quickstart/.gitignore',
+  'deploy/quickstart/README.md',
+];
 const appImages = [
   'chefbeom/fileinnoutdrive-backend',
   'chefbeom/fileinnoutdrive-frontend',
@@ -27,6 +34,37 @@ const forbiddenPublicDefaults = [
   [/lumisia\/frontend:latest/i, 'old frontend image'],
 ];
 const errors = [];
+for (const path of quickstartFiles) {
+  if (!exists(path)) {
+    fail(`${path} is required for the Docker Compose quickstart`);
+  }
+}
+
+if (exists('deploy/quickstart/docker-compose.yml')) {
+  const quickstartCompose = read('deploy/quickstart/docker-compose.yml');
+  for (const service of ['mariadb', 'redis', 'minio', 'backend', 'websocket', 'frontend']) {
+    if (!new RegExp(`^  ${service}:`, 'm').test(quickstartCompose)) {
+      fail(`deploy/quickstart/docker-compose.yml must define the ${service} service`);
+    }
+  }
+  if (!quickstartCompose.includes('SPRING_PROFILES_ACTIVE: local')
+      || !quickstartCompose.includes('MANAGEMENT_HEALTH_MAIL_ENABLED: "false"')
+      || !quickstartCompose.includes('MINIO_PUBLIC_API: ${MINIO_PUBLIC_API}')) {
+    fail('deploy/quickstart/docker-compose.yml must keep the local backend health and MinIO public endpoint contract');
+  }
+  if (/minio\/minio:latest\b/.test(quickstartCompose) || !quickstartCompose.includes('MINIO_IMAGE_TAG:?MINIO_IMAGE_TAG must be set to an explicit release tag')) {
+    fail('deploy/quickstart/docker-compose.yml must pin MinIO through an explicit release tag');
+  }
+}
+
+if (exists('quickstart.ps1')) {
+  const quickstartScript = read('quickstart.ps1');
+  for (const requiredText of ['Assert-DockerReady', 'Write-EnvironmentFile', 'Wait-ForHttp', "'Start', 'Stop', 'Reset', 'Status', 'Validate'"]) {
+    if (!quickstartScript.includes(requiredText)) {
+      fail(`quickstart.ps1 must include ${requiredText}`);
+    }
+  }
+}
 const nonAsciiDeploymentContent = /[^\x09\x0A\x0D\x20-\x7E]/;
 
 function read(path) {
