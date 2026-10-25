@@ -3,10 +3,12 @@ import { ref, shallowRef } from 'vue'
 import { logoutSession, refreshAccessToken } from '@/api/authSession.js'
 import postApi from '@/api/postApi.js'
 import sseApi from '@/api/sseApi.js'
+import { apiPath } from '@/utils/backendUrl.js'
 
 const TOKEN_REFRESH_SKEW_MS = 30 * 1000
 const SSE_RECONNECT_DELAY_MS = 5 * 1000
 const LEGACY_SESSION_KEYS = ['USERINFO', 'ACCESS_TOKEN']
+const DEMO_ACCOUNT_EMAIL = 'demo@fileinnout.local'
 
 export const useAuthStore = defineStore('auth', () => {
   const isLogin = ref(false)
@@ -17,6 +19,41 @@ export const useAuthStore = defineStore('auth', () => {
   let sseConnectionVersion = 0
   let activeSseUserId = null
   let activeSseAccessToken = null
+  let demoExitCleanupHandler = null
+
+  const isDemoAccount = (currentUser) => (
+    currentUser?.email?.trim?.().toLowerCase() === DEMO_ACCOUNT_EMAIL
+  )
+
+  const removeDemoExitCleanup = () => {
+    if (!demoExitCleanupHandler) return
+    globalThis.window?.removeEventListener?.('pagehide', demoExitCleanupHandler)
+    demoExitCleanupHandler = null
+  }
+
+  const requestDemoCleanupOnExit = () => {
+    if (!isDemoAccount(user.value)) return
+
+    const endpoint = apiPath('/auth/logout')
+    const sendBeacon = globalThis.navigator?.sendBeacon
+    if (typeof sendBeacon === 'function' && sendBeacon.call(globalThis.navigator, endpoint, '')) {
+      return
+    }
+
+    globalThis.fetch?.(endpoint, {
+      method: 'POST',
+      credentials: 'include',
+      keepalive: true,
+    })
+  }
+
+  const armDemoExitCleanup = () => {
+    removeDemoExitCleanup()
+    if (!isDemoAccount(user.value) || !globalThis.window?.addEventListener) return
+
+    demoExitCleanupHandler = requestDemoCleanupOnExit
+    globalThis.window.addEventListener('pagehide', demoExitCleanupHandler, { once: true })
+  }
 
   const dispatchSseEvent = (eventName, detail) => {
     globalThis.window?.dispatchEvent(new CustomEvent(eventName, { detail }))
@@ -120,6 +157,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const clearLocalSession = () => {
+    removeDemoExitCleanup()
     stopSseConnection()
     isLogin.value = false
     user.value = null
@@ -142,6 +180,7 @@ export const useAuthStore = defineStore('auth', () => {
       startSseConnection(userInfo.idx)
     }
 
+    armDemoExitCleanup()
     return true
   }
 

@@ -171,7 +171,7 @@ const submitInvite = async () => {
     <div class="group-chat-modal__panel">
       <header class="group-chat-modal__header">
         <div>
-          <p class="group-chat-modal__eyebrow">Group Share</p>
+          <p class="group-chat-modal__eyebrow">그룹 공유</p>
           <h2 class="group-chat-modal__title">{{ modalTitle }}</h2>
           <p class="group-chat-modal__description">{{ modalDescription }}</p>
         </div>

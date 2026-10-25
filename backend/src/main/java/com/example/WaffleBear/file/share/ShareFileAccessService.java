@@ -446,8 +446,12 @@ class ShareFileAccessService {
         }
     }
 
-    private void recordSharedDownload(FileShare share) {
-        if (share != null && share.recordDownloadAccess()) {
+    private synchronized void recordSharedDownload(FileShare share) {
+        if (share == null) {
+            return;
+        }
+        SharePolicyRules.ensureShareDownloadAvailable(share);
+        if (share.recordDownloadAccess()) {
             shareRepository.save(share);
         }
     }

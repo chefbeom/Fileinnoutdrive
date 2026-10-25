@@ -174,21 +174,21 @@ const saveCapacity = () => {
           <div class="admin-visual-ring" :style="buildRingStyle(storageVisualSummary.providerUsagePercent, VISUAL_COLORS[0])">
             <div class="admin-visual-ring__inner">
               <span class="admin-visual-ring__value">{{ formatPercent(storageVisualSummary.providerUsagePercent) }}</span>
-              <span class="admin-visual-ring__label">used</span>
+              <span class="admin-visual-ring__label">사용 중</span>
             </div>
           </div>
 
           <div class="admin-visual-stats">
             <div class="admin-visual-stat">
-              <span class="admin-visual-stat__label">Used</span>
+              <span class="admin-visual-stat__label">사용량</span>
               <span class="admin-visual-stat__value">{{ storageVisualSummary.providerUsedLabel }}</span>
             </div>
             <div class="admin-visual-stat">
-              <span class="admin-visual-stat__label">Remaining</span>
+              <span class="admin-visual-stat__label">남은 용량</span>
               <span class="admin-visual-stat__value">{{ storageVisualSummary.providerRemainingLabel }}</span>
             </div>
             <div class="admin-visual-stat">
-              <span class="admin-visual-stat__label">Allocated quota</span>
+              <span class="admin-visual-stat__label">할당 용량</span>
               <span class="admin-visual-stat__value">{{ storageVisualSummary.allocatedQuotaLabel }}</span>
             </div>
           </div>
@@ -255,25 +255,25 @@ const saveCapacity = () => {
           <div class="admin-visual-ring" :style="buildRingStyle(storageVisualSummary.ingressPercent, VISUAL_COLORS[1])">
             <div class="admin-visual-ring__inner">
               <span class="admin-visual-ring__value">{{ formatPercent(storageVisualSummary.ingressPercent) }}</span>
-              <span class="admin-visual-ring__label">ingress</span>
+              <span class="admin-visual-ring__label">업로드</span>
             </div>
           </div>
 
           <div class="admin-visual-stats">
             <div class="admin-visual-stat">
-              <span class="admin-visual-stat__label">Ingress</span>
+              <span class="admin-visual-stat__label">업로드</span>
               <span class="admin-visual-stat__value">{{ storageVisualSummary.ingressLabel }}</span>
             </div>
             <div class="admin-visual-stat">
-              <span class="admin-visual-stat__label">Egress</span>
+              <span class="admin-visual-stat__label">다운로드</span>
               <span class="admin-visual-stat__value">{{ storageVisualSummary.egressLabel }}</span>
             </div>
             <div class="admin-visual-stat">
-              <span class="admin-visual-stat__label">Completed upload</span>
+              <span class="admin-visual-stat__label">완료된 업로드</span>
               <span class="admin-visual-stat__value">{{ storageVisualSummary.completedIngressLabel }}</span>
             </div>
             <div class="admin-visual-stat">
-              <span class="admin-visual-stat__label">Canceled upload</span>
+              <span class="admin-visual-stat__label">취소된 업로드</span>
               <span class="admin-visual-stat__value">{{ storageVisualSummary.canceledIngressLabel }}</span>
             </div>
           </div>
@@ -281,7 +281,7 @@ const saveCapacity = () => {
 
         <div class="admin-visual-meter">
           <div class="admin-visual-meter__meta">
-            <span>Completed ingress share</span>
+            <span>완료된 업로드 공유</span>
             <span>{{ formatPercent(storageVisualSummary.completedIngressPercent) }}</span>
           </div>
           <div class="admin-progress admin-progress--thick">
@@ -291,7 +291,7 @@ const saveCapacity = () => {
 
         <div class="admin-visual-meter">
           <div class="admin-visual-meter__meta">
-            <span>Canceled ingress share</span>
+            <span>취소된 업로드 공유</span>
             <span>{{ formatPercent(storageVisualSummary.canceledIngressPercent) }}</span>
           </div>
           <div class="admin-progress admin-progress--thick admin-progress--warm">

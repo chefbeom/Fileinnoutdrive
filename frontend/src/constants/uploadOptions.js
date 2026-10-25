@@ -1,5 +1,6 @@
 export const PARTITION_SIZE_BYTES = 100 * 1024 * 1024
 export const CHUNK_SIZE_BYTES = 80 * 1024 * 1024
+export const MIN_FINAL_PARTITION_SIZE_BYTES = 10 * 1024 * 1024
 export const DEFAULT_UPLOAD_CONCURRENCY = 3
 export const MAX_UPLOAD_CONCURRENCY = 5
 export const UPLOAD_CONCURRENCY_STORAGE_KEY = 'file-upload-concurrency'

@@ -113,7 +113,7 @@ defineExpose({
 
     <template v-if="parentPage">
       <div class="workspace-linked-subheader">
-        <span>Parent page</span>
+        <span>상위 페이지</span>
         <strong>1</strong>
       </div>
       <article class="workspace-linked-item workspace-linked-item--parent">
@@ -173,7 +173,7 @@ defineExpose({
 
     <template v-if="childPages.length > 0">
       <div class="workspace-linked-subheader">
-        <span>Child pages</span>
+        <span>하위 페이지</span>
         <strong>{{ childPages.length }}</strong>
       </div>
       <div class="workspace-linked-list workspace-linked-list--children">
@@ -214,7 +214,7 @@ defineExpose({
     </template>
 
     <div class="workspace-linked-subheader">
-      <span>Outgoing</span>
+      <span>연결한 페이지</span>
       <strong>{{ linkedDocuments.length }}</strong>
     </div>
     <div v-if="linkedDocuments.length === 0" class="workspace-floating-panel__empty">
@@ -265,7 +265,7 @@ defineExpose({
     </div>
 
     <div class="workspace-linked-subheader">
-      <span>Backlinks</span>
+      <span>백링크</span>
       <strong>{{ backlinks.length }}</strong>
     </div>
     <div v-if="backlinkLoading" class="workspace-floating-panel__empty">

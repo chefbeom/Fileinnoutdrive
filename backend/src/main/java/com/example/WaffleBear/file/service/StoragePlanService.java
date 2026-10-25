@@ -6,6 +6,7 @@ import com.example.WaffleBear.user.model.AuthUserDetails;
 import com.example.WaffleBear.user.model.User;
 import com.example.WaffleBear.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -183,6 +184,21 @@ public class StoragePlanService {
     private final OrderRepository orderRepository;
     private final UserRepository userRepository;
 
+    @Value("${app.demo.enabled:true}")
+    private boolean demoEnabled;
+
+    @Value("${app.demo.email:demo@fileinnout.local}")
+    private String demoEmail;
+
+    @Value("${app.demo.storage-quota-bytes:104857600}")
+    private long demoStorageQuotaBytes;
+
+    @Value("${app.demo.max-upload-file-bytes:10485760}")
+    private long demoMaxUploadFileBytes;
+
+    @Value("${app.demo.max-upload-count:20}")
+    private int demoMaxUploadCount;
+
     public ProductDefinition requireProduct(String productCode) {
         ProductDefinition product = resolveProduct(productCode);
         if (product == null || CATEGORY_INTERNAL.equals(product.category())) {
@@ -214,6 +230,10 @@ public class StoragePlanService {
             return toQuota(PRODUCT_DEFINITIONS.get("FREE"), 0L);
         }
 
+        if (isDemoAccount(user)) {
+            return demoQuota();
+        }
+
         if (isAdministrator(user)) {
             return toQuota(PRODUCT_DEFINITIONS.get("ADMIN"), 0L);
         }
@@ -238,6 +258,7 @@ public class StoragePlanService {
         }
 
         List<Long> regularUserIds = usersById.values().stream()
+                .filter(user -> !isDemoAccount(user))
                 .filter(user -> !isAdministrator(user))
                 .map(User::getIdx)
                 .toList();
@@ -259,9 +280,11 @@ public class StoragePlanService {
         Map<Long, StorageQuota> quotasByUser = new LinkedHashMap<>();
         usersById.forEach((userIdx, user) -> quotasByUser.put(
                 userIdx,
-                isAdministrator(user)
-                        ? toQuota(PRODUCT_DEFINITIONS.get("ADMIN"), 0L)
-                        : resolveQuotaFromOrders(ordersByUser.getOrDefault(userIdx, List.of()), now)
+                isDemoAccount(user)
+                        ? demoQuota()
+                        : isAdministrator(user)
+                                ? toQuota(PRODUCT_DEFINITIONS.get("ADMIN"), 0L)
+                                : resolveQuotaFromOrders(ordersByUser.getOrDefault(userIdx, List.of()), now)
         ));
         return Map.copyOf(quotasByUser);
     }
@@ -322,6 +345,33 @@ public class StoragePlanService {
                 safeProduct.maxUploadFileBytes(),
                 safeProduct.maxUploadCount()
         );
+    }
+
+    private boolean isDemoAccount(User user) {
+        return demoEnabled
+                && user != null
+                && user.getEmail() != null
+                && user.getEmail().trim().equalsIgnoreCase(normalizedDemoEmail());
+    }
+
+    private StorageQuota demoQuota() {
+        long totalQuotaBytes = Math.max(1L, demoStorageQuotaBytes);
+        return new StorageQuota(
+                "PREMIUM",
+                "프리미엄 체험",
+                "프리미엄 체험 · 로그아웃 시 초기화",
+                totalQuotaBytes,
+                0L,
+                totalQuotaBytes,
+                true,
+                true,
+                Math.max(1L, demoMaxUploadFileBytes),
+                Math.max(1, demoMaxUploadCount)
+        );
+    }
+
+    private String normalizedDemoEmail() {
+        return demoEmail == null || demoEmail.isBlank() ? "demo@fileinnout.local" : demoEmail.trim();
     }
 
     public boolean isAdministrator(Long userIdx) {

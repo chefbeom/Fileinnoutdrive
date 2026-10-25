@@ -57,7 +57,7 @@ const removeDocumentTitle = (document) => String(document?.role).toUpperCase() =
   <aside class="workspace-doc-sidebar">
     <div class="workspace-doc-sidebar__top">
       <div>
-        <p class="workspace-doc-sidebar__eyebrow">Workspace</p>
+        <p class="workspace-doc-sidebar__eyebrow">워크스페이스</p>
         <h2>협업 문서</h2>
       </div>
       <div class="workspace-doc-sidebar__actions">

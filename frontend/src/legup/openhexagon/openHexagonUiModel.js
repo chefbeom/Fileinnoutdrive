@@ -11,21 +11,21 @@ export const getOpenHexagonPrimaryButtonLabel = ({
   ready = false,
 } = {}) => {
   if (running) {
-    return 'Match running'
+    return '게임 진행 중'
   }
   if (countdown) {
-    return `${countdownSecondsLeft || 0}s countdown`
+    return `${countdownSecondsLeft || 0}초 후 시작`
   }
-  return ready ? 'Cancel ready' : 'Ready up'
+  return ready ? '준비 취소' : '준비 완료'
 }
 
 export const getOpenHexagonMatchStatusLabel = ({
   running = false,
   countdown = false,
 } = {}) => {
-  if (running) return 'Running'
-  if (countdown) return 'Countdown'
-  return 'Lobby'
+  if (running) return '진행 중'
+  if (countdown) return '시작 대기'
+  return '대기실'
 }
 
 export const getOpenHexagonPlayerAccent = (player, fallbackAccentColor) =>
@@ -51,7 +51,7 @@ export const getOpenHexagonPlayerAngle = (player) => {
 export const buildOpenHexagonLocalPlayer = ({
   localRosterEntry,
   myUserId = 0,
-  displayName = 'Pilot',
+  displayName = '플레이어',
   localStyle = {},
   playerAngle = DEFAULT_OPEN_HEXAGON_PLAYER_ANGLE,
   running = false,
@@ -90,26 +90,26 @@ export const getOpenHexagonOverlayText = ({
   if (countdown) {
     return {
       title: String(countdownSecondsLeft || 0),
-      subtitle: 'All pilots locked in. Shared countdown in progress.',
+      subtitle: '모든 플레이어가 준비되었습니다. 함께 시작을 기다리는 중입니다.',
     }
   }
 
   if (gameOver && running) {
     return {
-      title: 'Signal Lost',
-      subtitle: 'You crashed. Remaining players are still in the round.',
+      title: '게임 종료',
+      subtitle: '충돌했습니다. 남은 플레이어는 계속 진행 중입니다.',
     }
   }
 
   if (ready) {
     return {
-      title: 'Ready',
-      subtitle: `Waiting for everyone: ${readyCount}/${playerCount}`,
+      title: '준비됨',
+      subtitle: `모든 플레이어 대기 중: ${readyCount}/${playerCount}`,
     }
   }
 
   return {
-    title: 'Open Hexagon',
-    subtitle: 'Ready up to begin a synchronized run.',
+    title: '오픈 헥사곤',
+    subtitle: '준비를 완료하면 함께 게임을 시작합니다.',
   }
 }

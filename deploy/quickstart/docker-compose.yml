@@ -30,6 +30,7 @@ services:
 
   minio:
     image: minio/minio:${MINIO_IMAGE_TAG:?MINIO_IMAGE_TAG must be set to an explicit release tag}
+    pull_policy: if_not_present
     environment:
       MINIO_ROOT_USER: ${MINIO_NAME:?MINIO_NAME must be set}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET:?MINIO_SECRET must be set}
@@ -71,7 +72,8 @@ services:
       APP_CORS_ALLOW_DEVELOPMENT_ORIGIN_PATTERNS: "false"
       APP_SECURE_COOKIE: "false"
       APP_COOKIE_SAME_SITE: Lax
-      APP_ADMIN_ONLY: "true"
+      APP_ADMIN_ONLY: ${APP_ADMIN_ONLY:-false}
+      APP_DEMO_ACCOUNT_ENABLED: ${APP_DEMO_ACCOUNT_ENABLED:-false}
       APP_DOCS_PUBLIC_OPENAPI: "false"
       MANAGEMENT_HEALTH_MAIL_ENABLED: "false"
       GOOGLE_CLIENT_ID: disabled

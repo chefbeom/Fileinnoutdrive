@@ -20,6 +20,25 @@ public class AdministratorDto {
         private SummaryRes summary;
         private List<PlanStatRes> planStats;
         private List<UserRes> users;
+        private Boolean socialLoginVisible;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class LoginSettingsRes {
+        private boolean socialLoginVisible;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class LoginSettingsUpdateReq {
+        private Boolean socialLoginVisible;
     }
 
     @Getter

@@ -10,6 +10,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -67,6 +68,26 @@ class StoragePlanServiceTest {
         verify(orderRepository, never()).findAllByUser_Idx(anyLong());
     }
 
+    @Test
+    void resolvesDemoAccountAsLimitedPremiumWithoutOrderLookup() {
+        ReflectionTestUtils.setField(storagePlanService, "demoEnabled", true);
+        ReflectionTestUtils.setField(storagePlanService, "demoEmail", "demo@fileinnout.local");
+        ReflectionTestUtils.setField(storagePlanService, "demoStorageQuotaBytes", 100L * 1024 * 1024);
+        ReflectionTestUtils.setField(storagePlanService, "demoMaxUploadFileBytes", 10L * 1024 * 1024);
+        ReflectionTestUtils.setField(storagePlanService, "demoMaxUploadCount", 20);
+
+        StoragePlanService.StorageQuota quota = storagePlanService.resolveQuota(
+                user(8L, "demo@fileinnout.local", "ROLE_USER")
+        );
+
+        assertEquals("PREMIUM", quota.planCode());
+        assertEquals(100L * 1024 * 1024, quota.totalQuotaBytes());
+        assertEquals(10L * 1024 * 1024, quota.maxUploadFileBytes());
+        assertEquals(20, quota.maxUploadCount());
+        assertEquals(true, quota.shareEnabled());
+        assertEquals(true, quota.fileLockEnabled());
+        verifyNoInteractions(orderRepository);
+    }
     @Test
     void skipsOrderQueryWhenOnlyAdministratorsAreRequested() {
         User administrator = user(7L, "admin@example.com", "ROLE_ADMIN");

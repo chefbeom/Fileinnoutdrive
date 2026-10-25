@@ -157,7 +157,7 @@ const {
         <div v-else-if="hasVideoThumbnail(file)" class="preview-box file-entry__preview overflow-hidden bg-black" :class="viewMode === 'icon' ? 'file-entry__preview--icon' : 'file-entry__preview--card'">
           <img
             :src="getVideoCardUrl(file)"
-            :alt="`${getFileName(file)} thumbnail`"
+            :alt="`${getFileName(file)} 미리보기`"
             class="h-full w-full object-cover"
             loading="lazy"
             @error="handleThumbnailAssetError(file)"

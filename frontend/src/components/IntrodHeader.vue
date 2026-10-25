@@ -62,12 +62,11 @@ onBeforeUnmount(() => {
       
       <template v-if="!isLoggedIn">
         <RouterLink :to="{ name: 'payment' }" class="text-gray-500 hover:text-blue-600 transition">요금제</RouterLink>
-        <RouterLink :to="{ name: 'login' }" class="text-gray-700 hover:text-blue-600">로그인</RouterLink>
         <RouterLink
           :to="{ name: 'login' }"
           class="bg-blue-600 text-white px-6 py-2.5 rounded-full hover:bg-blue-700 transition shadow-md shadow-blue-100"
         >
-          관리자 로그인
+          로그인
         </RouterLink>
       </template>
 
@@ -75,7 +74,7 @@ onBeforeUnmount(() => {
         <div @click="toggleProfileMenu" class="flex items-center gap-3 cursor-pointer group">
           <div class="text-right hidden md:block">
             <p class="text-sm font-bold text-gray-900">{{ userName }}님</p>
-            <p class="text-[10px] text-blue-600 font-bold uppercase tracking-tighter">My Account</p>
+            <p class="text-[10px] text-blue-600 font-bold uppercase tracking-tighter">내 계정</p>
           </div>
           <img 
             :src="`https://ui-avatars.com/api/?name=${userName}&background=2563eb&color=fff&bold=true`" 

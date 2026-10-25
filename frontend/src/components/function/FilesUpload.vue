@@ -57,6 +57,7 @@ import {
   buildAbortPayload,
   buildUploadJobs,
   buildUploadProgressPatch,
+  defaultStatusText,
   formatUploadTransferSpeed,
   getUploadPanelEtaText,
   getUploadPanelSubtitle,
@@ -204,6 +205,7 @@ const uploadPanelEtaText = computed(() => getUploadPanelEtaText({
   overallEstimatedSeconds: overallEstimatedSeconds.value,
   overallTransferSpeedText: overallTransferSpeedText.value,
 }))
+
 const canCancelUploads = computed(() =>
   abortableSessionIds.value.length > 0,
 )
@@ -440,9 +442,9 @@ const completeUploadedFile = async (file, uploadMetas, partitioned, uploadItemId
   }
 
   setUploadItemState(uploadItemId, {
-    status: partitioned ? "merging" : "uploading",
-    statusText: partitioned ? "서버에서 파일을 병합하는 중..." : "업로드 완료를 확인하는 중...",
-    progress: 100,
+    status: "merging",
+    statusText: defaultStatusText("merging"),
+    progress: 99,
     uploadedBytes: file.size || 0,
   })
 
@@ -462,11 +464,12 @@ const completeUploadedFile = async (file, uploadMetas, partitioned, uploadItemId
 
   setUploadItemState(uploadItemId, {
     status: "completed",
-    statusText: "업로드 완료",
+    statusText: defaultStatusText("completed"),
     progress: 100,
     uploadedBytes: file.size || 0,
   })
 }
+
 const runUploadJobs = async (uploadJobs, concurrency, parentId) => {
   const successList = new Array(uploadJobs.length)
   const workerCount = Math.min(concurrency, uploadJobs.length)
@@ -495,28 +498,18 @@ const runUploadJobs = async (uploadJobs, concurrency, parentId) => {
           currentJob.uploadItemId,
         )
 
-        if (currentJob.partitioned) {
-          mergingUploadCount.value += 1
+        mergingUploadCount.value += 1
 
-          try {
-            await completeUploadedFile(
-              currentJob.file,
-              currentJob.uploadMetas,
-              true,
-              currentJob.uploadItemId,
-              parentId,
-            )
-          } finally {
-            mergingUploadCount.value = Math.max(0, mergingUploadCount.value - 1)
-          }
-        } else {
+        try {
           await completeUploadedFile(
             currentJob.file,
             currentJob.uploadMetas,
-            false,
+            currentJob.partitioned,
             currentJob.uploadItemId,
             parentId,
           )
+        } finally {
+          mergingUploadCount.value = Math.max(0, mergingUploadCount.value - 1)
         }
 
         completedUploadCount.value += 1
@@ -629,7 +622,7 @@ const handleUpload = async (event, uploadTypeLabel) => {
 
   const oversizedFile = selectedFiles.find((file) => Number(file?.size || 0) > maxUploadFileBytes.value)
   if (oversizedFile) {
-    const message = `\"${oversizedFile.name}\" \uD30C\uC77C\uC740 \uD604\uC7AC \uBA64\uBC84\uC2ED \uD55C\uB3C4(${formatUploadLimitBytes(maxUploadFileBytes.value)})\uB97C \uCD08\uACFC\uD574 \uC5C5\uB85C\uB4DC\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.`
+    const message = `"${oversizedFile.name}" \uD30C\uC77C\uC740 \uD604\uC7AC \uBA64\uBC84\uC2ED \uD55C\uB3C4(${formatUploadLimitBytes(maxUploadFileBytes.value)})\uB97C \uCD08\uACFC\uD574 \uC5C5\uB85C\uB4DC\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.`
     uploadError.value = message
     emit("upload-fail", message)
 
@@ -654,7 +647,6 @@ const handleUpload = async (event, uploadTypeLabel) => {
   uploadItems.value = selectedFiles.map((file, index) => createUploadItem(file, index))
 
   try {
-
     const invalidName = selectedFiles.find(
       (file) => !file?.name || typeof file.name !== "string",
     )
@@ -675,7 +667,7 @@ const handleUpload = async (event, uploadTypeLabel) => {
       item.statusText = "업로드 정보 준비 중"
     })
 
-    const response = await uploadFiles(selectedFiles, uploadParentId)
+    const response = await initUploadFiles(selectedFiles, uploadParentId)
     const presignedResponses = parseUploadResponse(response?.data)
 
     if (!Array.isArray(presignedResponses) || presignedResponses.length === 0) {
@@ -728,7 +720,7 @@ const handleUpload = async (event, uploadTypeLabel) => {
     console.error(`[${uploadTypeLabel}] 업로드 실패:`, error)
   } finally {
     isUploading.value = false
-      mergingUploadCount.value = 0
+    mergingUploadCount.value = 0
     activeUploadControllers.clear()
     closeDropdown()
 

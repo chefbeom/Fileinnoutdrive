@@ -41,7 +41,7 @@ const emit = defineEmits([
   <section class="workspace-inbox-panel">
     <div class="workspace-floating-panel__header">
       <div>
-        <h3>Workspace Inbox</h3>
+        <h3>워크스페이스 받은 작업</h3>
         <p>전체 페이지의 체크리스트 작업을 한곳에서 확인합니다.</p>
       </div>
       <span class="workspace-floating-panel__count">{{ openTaskCount }}</span>

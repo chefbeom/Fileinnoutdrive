@@ -59,7 +59,7 @@ const toggleTitle = (item) => {
   <section class="workspace-timeline-panel">
     <div class="workspace-floating-panel__header">
       <div>
-        <h3>Timeline</h3>
+        <h3>타임라인</h3>
         <p>페이지와 작업 마감일을 시간 흐름으로 확인합니다.</p>
       </div>
       <button

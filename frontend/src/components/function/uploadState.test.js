@@ -19,7 +19,7 @@ import {
   getUploadPanelTitle,
   updateUploadItemProgress,
 } from "./uploadState.js";
-import { CHUNK_SIZE_BYTES, PARTITION_SIZE_BYTES } from "@/constants/uploadOptions.js";
+import { CHUNK_SIZE_BYTES, MIN_FINAL_PARTITION_SIZE_BYTES, PARTITION_SIZE_BYTES } from "@/constants/uploadOptions.js";
 
 describe("uploadState", () => {
   it("formats upload speeds and file extensions", () => {
@@ -103,10 +103,16 @@ describe("uploadState", () => {
     expect(items[1].uploadMetas).toEqual([metas[1], metas[2]]);
   });
 
-  it("detects missing or extra upload metadata", () => {
+  it("detects missing or extra upload metadata and matches backend tail-partition rule", () => {
     const file = { name: "large.bin", size: PARTITION_SIZE_BYTES + CHUNK_SIZE_BYTES };
     expect(getExpectedUploadCount(file, { partitioned: true, partitionCount: 3 })).toBe(3);
     expect(getExpectedUploadCount(file, {})).toBe(3);
+
+    const tailMergedFile = {
+      name: "tail-merged.bin",
+      size: CHUNK_SIZE_BYTES * 2 + MIN_FINAL_PARTITION_SIZE_BYTES,
+    };
+    expect(getExpectedUploadCount(tailMergedFile, {})).toBe(2);
 
     const item = createUploadItem(file, () => "item");
     expect(() => buildUploadJobs([file], [{ objectKey: "only-one" }], [item]))
@@ -114,6 +120,7 @@ describe("uploadState", () => {
     expect(() => buildUploadJobs([], [{ objectKey: "extra" }], []))
       .toThrow("업로드 메타 개수와 선택한 파일 수가 일치하지 않습니다");
   });
+
   it("formats upload progress time and transfer speed", () => {
     expect(formatRemainingTime(0)).toBe("\uACE7 \uC644\uB8CC");
     expect(formatRemainingTime(30)).toBe("30\uCD08");
@@ -124,7 +131,7 @@ describe("uploadState", () => {
     expect(calculateWeightedAverageSpeed([{ speed: 10 }, { speed: 20 }])).toBeCloseTo(16.666, 2);
   });
 
-  it("builds upload progress patches with smoothed speed and ETA", () => {
+  it("builds upload progress patches with smoothed speed, ETA, and finalizing status", () => {
     const item = {
       fileSize: 1000,
       uploadedBytes: 100,
@@ -148,7 +155,12 @@ describe("uploadState", () => {
     });
     expect(patch.averageBytesPerSecond).toBeCloseTo(500, 5);
     expect(patch.statusText).toContain("30%");
+
+    const finalizingPatch = buildUploadProgressPatch(item, 1000, 2000);
+    expect(finalizingPatch.progress).toBe(99);
+    expect(finalizingPatch.statusText).toBe("파일 전송을 마무리하는 중...");
   });
+
   it("builds upload panel title, subtitle, and ETA text", () => {
     expect(getUploadPanelTitle({ activeUploadCount: 2 })).toBe("2개 업로드 중");
     expect(getUploadPanelTitle({ completedUploadCount: 3, failedUploadCount: 1 })).toBe("3개 완료, 1개 실패");
@@ -159,7 +171,7 @@ describe("uploadState", () => {
     expect(getUploadPanelSubtitle({ completedUploadCount: 2 })).toBe("모든 업로드가 완료되었습니다.");
 
     expect(getUploadPanelEtaText({ activeUploadCount: 0, failedUploadCount: 1 })).toBe("업로드가 중단되었거나 일부 파일이 실패했습니다.");
-    expect(getUploadPanelEtaText({ activeUploadCount: 1, mergingUploadCount: 1 })).toBe("서버에서 업로드를 마무리하는 중입니다...");
+    expect(getUploadPanelEtaText({ activeUploadCount: 1, mergingUploadCount: 1 })).toBe("파일 전송을 마무리하는 중...");
     expect(getUploadPanelEtaText({ activeUploadCount: 1, overallTransferSpeedText: "2.00 MB/s" })).toBe("2.00 MB/s 전송 중");
     expect(getUploadPanelEtaText({ activeUploadCount: 1, overallEstimatedSeconds: 90, overallTransferSpeedText: "1.50 MB/s" })).toBe("2분 남음 · 1.50 MB/s");
   });

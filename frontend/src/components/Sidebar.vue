@@ -11,11 +11,6 @@ import RoleModal from '@/views/workspace/RoleModal.vue';
 
 const authStore = useAuthStore()
 const fileStore = useFileStore()
-const desktopInstallerPackageVersion = 'hub-empty-conflict-repair-20260607'
-const desktopInstallerDownloadPath = `/downloads/FileInNOutDesktop-${desktopInstallerPackageVersion}.zip`
-const desktopInstallerDownloadUrl = `${desktopInstallerDownloadPath}?v=${desktopInstallerPackageVersion}`
-const desktopInstallerDownloadFileName = `FileInNOutDesktop-${desktopInstallerPackageVersion}.zip`
-const desktopInstallerDownloading = ref(false)
 const isSidebarOpen = ref(true) // 사이드바 토글 상태
 const openMenuId = ref(null) // 현재 열려있는 메뉴의 ID 관리
 
@@ -141,43 +136,6 @@ const storageUsageText = computed(() => {
 
   return `${formatBytes(storageSummary.value.usedBytes)} / ${formatBytes(storageSummary.value.quotaBytes)} 사용`
 })
-
-const downloadDesktopInstaller = async () => {
-  if (desktopInstallerDownloading.value) return
-
-  desktopInstallerDownloading.value = true
-  let objectUrl = ''
-
-  try {
-    const response = await fetch(desktopInstallerDownloadUrl, {
-      cache: 'no-store',
-      headers: {
-        Accept: 'application/zip',
-      },
-    })
-
-    if (!response.ok) {
-      throw new Error(`Desktop installer download failed: ${response.status}`)
-    }
-
-    const blob = await response.blob()
-    objectUrl = window.URL.createObjectURL(new Blob([blob], { type: 'application/zip' }))
-    const link = document.createElement('a')
-    link.href = objectUrl
-    link.download = desktopInstallerDownloadFileName
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-  } catch (error) {
-    console.error(error)
-    window.location.assign(desktopInstallerDownloadUrl)
-  } finally {
-    if (objectUrl) {
-      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 1000)
-    }
-    desktopInstallerDownloading.value = false
-  }
-}
 
 const isAdministrator = computed(() => {
   const email = String(authStore.user?.email || '').toLowerCase()
@@ -455,15 +413,6 @@ const handleAction = async (action, idx) => {
             <p v-if="storageSummary" class="text-[11px] text-[var(--text-muted)] mb-4">{{ storageSummary.planLabel }} 플랜 · 휴지통 포함 {{ storageSummary.usagePercent }}%</p>
             <p v-else class="text-[11px] text-[var(--text-muted)] mb-4">저장 공간 통계 확인 중</p>
             <RouterLink :to="{ name: 'payment' }" class="block w-full text-center border border-[var(--border-color)] px-2 py-2 rounded-full text-sm font-semibold text-blue-600 dark:text-blue-400 bg-[var(--bg-main)] transition-all duration-200 hover:bg-blue-500/10 dark:hover:bg-blue-400/10">추가 저장용량 구매</RouterLink>
-            <button
-              type="button"
-              :disabled="desktopInstallerDownloading"
-              class="mt-2 flex w-full items-center justify-center gap-2 rounded-full border border-blue-500/30 bg-blue-600 px-2 py-2 text-sm font-semibold text-white transition-all duration-200 hover:bg-blue-700 active:translate-y-px disabled:cursor-wait disabled:opacity-70 dark:border-blue-300/30 dark:bg-blue-500 dark:hover:bg-blue-400"
-              @click="downloadDesktopInstaller"
-            >
-              <i class="fa-solid fa-desktop text-sm"></i>
-              <span>FileInNOut 데스크톱 ZIP 다운로드</span>
-            </button>
           </div>
         </nav>
       </div>

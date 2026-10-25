@@ -241,7 +241,7 @@ onBeforeUnmount(() => {
         <img v-else-if="previewKind === 'image' && previewUrl" :src="previewUrl" :alt="file.name" class="max-h-full max-w-full rounded-2xl object-contain" />
         <video v-else-if="previewKind === 'video' && previewUrl" :src="previewUrl" controls preload="metadata" class="max-h-full max-w-full rounded-2xl bg-black"></video>
         <audio v-else-if="previewKind === 'audio' && previewUrl" :src="previewUrl" controls class="w-full max-w-xl"></audio>
-        <iframe v-else-if="previewKind === 'pdf' && previewUrl" :src="previewUrl" class="h-full min-h-[70vh] w-full rounded-2xl bg-white" title="pdf-preview"></iframe>
+        <iframe v-else-if="previewKind === 'pdf' && previewUrl" :src="previewUrl" class="h-full min-h-[70vh] w-full rounded-2xl bg-white" title="PDF 미리보기"></iframe>
 
         <div v-else-if="previewKind === 'text'" class="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
           <div v-if="isTextPreviewLoading" class="flex h-full items-center justify-center text-sm text-slate-300">텍스트 미리보기를 불러오는 중입니다.</div>

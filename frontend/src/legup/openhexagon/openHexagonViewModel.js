@@ -29,7 +29,7 @@ export const toOpenHexagonRgba = (hexColor, alpha) => {
 
 export const resolveOpenHexagonDisplayName = (user) => {
   const rawName = user?.name || user?.userName || user?.nickname || user?.email
-  if (!rawName) return 'Pilot'
+  if (!rawName) return '플레이어'
   return String(rawName).split('@')[0]
 }
 
@@ -57,7 +57,7 @@ export const deriveOpenHexagonMatchStatus = ({
 export const formatOpenHexagonSeconds = (value) => `${Number(value || 0).toFixed(2)}s`
 
 export const formatOpenHexagonUpdatedAt = (value, locale = 'ko-KR') => {
-  if (!value) return 'No signal yet'
+  if (!value) return '기록 없음'
 
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
@@ -71,11 +71,11 @@ export const formatOpenHexagonUpdatedAt = (value, locale = 'ko-KR') => {
 }
 
 export const describeOpenHexagonDifficulty = (seconds) => {
-  if (seconds >= 45) return 'Overclocked'
-  if (seconds >= 30) return 'Hyper'
-  if (seconds >= 18) return 'Tense'
-  if (seconds >= 8) return 'Rising'
-  return 'Calm'
+  if (seconds >= 45) return '과부하'
+  if (seconds >= 30) return '고조'
+  if (seconds >= 18) return '긴장'
+  if (seconds >= 8) return '상승'
+  return '평온'
 }
 
 export const isOpenHexagonAngleInsideSector = (angle, start, end) => {

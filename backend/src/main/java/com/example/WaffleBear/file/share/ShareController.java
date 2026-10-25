@@ -273,6 +273,7 @@ public class ShareController {
 
     private ResponseEntity<byte[]> buildDownloadResponse(FileCommonDto.FileDownloadPayload payload) {
         return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
                 .header(
                         HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.attachment()

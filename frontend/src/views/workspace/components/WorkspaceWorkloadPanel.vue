@@ -21,7 +21,7 @@ const emit = defineEmits(['open-document', 'focus-task'])
 <section class="workspace-workload-panel">
   <div class="workspace-floating-panel__header">
     <div>
-      <h3>Workload</h3>
+      <h3>업무 분배</h3>
       <p>페이지 소유자와 작업 담당자를 사람별로 모아봅니다.</p>
     </div>
     <span class="workspace-floating-panel__count">{{ workloadRows.length }}</span>
@@ -76,7 +76,7 @@ const emit = defineEmits(['open-document', 'focus-task'])
 
       <div v-if="person.activePages.length > 0" class="workspace-workload-section">
         <div class="workspace-workload-section__title">
-          <span>Pages</span>
+          <span>페이지</span>
           <strong>{{ person.activePages.length }}</strong>
         </div>
         <button
@@ -95,7 +95,7 @@ const emit = defineEmits(['open-document', 'focus-task'])
 
       <div v-if="person.openTasks.length > 0" class="workspace-workload-section">
         <div class="workspace-workload-section__title">
-          <span>Tasks</span>
+          <span>작업</span>
           <strong>{{ person.openTasks.length }}</strong>
         </div>
         <button

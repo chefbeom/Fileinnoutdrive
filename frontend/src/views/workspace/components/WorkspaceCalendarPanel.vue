@@ -55,7 +55,7 @@ const toggleTitle = (item) => {
   <section class="workspace-calendar-panel">
     <div class="workspace-floating-panel__header">
       <div>
-        <h3>Calendar</h3>
+        <h3>일정</h3>
         <p>페이지 기한과 작업 마감일을 날짜별로 확인합니다.</p>
       </div>
       <button

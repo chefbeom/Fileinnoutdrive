@@ -13,14 +13,14 @@ import {
 
 describe('openHexagonUiModel', () => {
   it('derives primary controls and match status labels', () => {
-    expect(getOpenHexagonPrimaryButtonLabel({ running: true })).toBe('Match running')
-    expect(getOpenHexagonPrimaryButtonLabel({ countdown: true, countdownSecondsLeft: 3 })).toBe('3s countdown')
-    expect(getOpenHexagonPrimaryButtonLabel({ ready: true })).toBe('Cancel ready')
-    expect(getOpenHexagonPrimaryButtonLabel()).toBe('Ready up')
+    expect(getOpenHexagonPrimaryButtonLabel({ running: true })).toBe('게임 진행 중')
+    expect(getOpenHexagonPrimaryButtonLabel({ countdown: true, countdownSecondsLeft: 3 })).toBe('3초 후 시작')
+    expect(getOpenHexagonPrimaryButtonLabel({ ready: true })).toBe('준비 취소')
+    expect(getOpenHexagonPrimaryButtonLabel()).toBe('준비 완료')
 
-    expect(getOpenHexagonMatchStatusLabel({ running: true })).toBe('Running')
-    expect(getOpenHexagonMatchStatusLabel({ countdown: true })).toBe('Countdown')
-    expect(getOpenHexagonMatchStatusLabel()).toBe('Lobby')
+    expect(getOpenHexagonMatchStatusLabel({ running: true })).toBe('진행 중')
+    expect(getOpenHexagonMatchStatusLabel({ countdown: true })).toBe('시작 대기')
+    expect(getOpenHexagonMatchStatusLabel()).toBe('대기실')
   })
 
   it('normalizes player display fallback values', () => {
@@ -68,15 +68,15 @@ describe('openHexagonUiModel', () => {
     expect(getOpenHexagonOverlayText({ running: true, gameOver: false })).toBeNull()
     expect(getOpenHexagonOverlayText({ countdown: true, countdownSecondsLeft: 2 })).toEqual({
       title: '2',
-      subtitle: 'All pilots locked in. Shared countdown in progress.',
+      subtitle: '모든 플레이어가 준비되었습니다. 함께 시작을 기다리는 중입니다.',
     })
     expect(getOpenHexagonOverlayText({ running: true, gameOver: true })).toEqual({
-      title: 'Signal Lost',
-      subtitle: 'You crashed. Remaining players are still in the round.',
+      title: '게임 종료',
+      subtitle: '충돌했습니다. 남은 플레이어는 계속 진행 중입니다.',
     })
     expect(getOpenHexagonOverlayText({ ready: true, readyCount: 1, playerCount: 3 })).toEqual({
-      title: 'Ready',
-      subtitle: 'Waiting for everyone: 1/3',
+      title: '준비됨',
+      subtitle: '모든 플레이어 대기 중: 1/3',
     })
   })
 })

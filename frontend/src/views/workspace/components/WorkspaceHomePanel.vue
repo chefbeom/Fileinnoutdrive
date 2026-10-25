@@ -29,7 +29,7 @@ const emit = defineEmits(['refresh', 'open-metric', 'open-attention', 'open-queu
 <section class="workspace-home-panel">
   <div class="workspace-floating-panel__header">
     <div>
-      <h3>Workspace Home</h3>
+      <h3>워크스페이스 홈</h3>
       <p>전체 페이지, 작업, 일정, 업무 분배를 빠르게 확인합니다.</p>
     </div>
     <button
@@ -62,7 +62,7 @@ const emit = defineEmits(['refresh', 'open-metric', 'open-attention', 'open-queu
 
   <section class="workspace-home-section">
     <div class="workspace-home-section__header">
-      <span>Attention</span>
+      <span>확인 필요</span>
       <strong>{{ attentionItems.length }}</strong>
     </div>
     <div v-if="attentionItems.length === 0" class="workspace-floating-panel__empty">
@@ -87,7 +87,7 @@ const emit = defineEmits(['refresh', 'open-metric', 'open-attention', 'open-queu
 
   <section class="workspace-home-section">
     <div class="workspace-home-section__header">
-      <span>My Queue</span>
+      <span>내 작업 목록</span>
       <strong>{{ queueItems.length }}</strong>
     </div>
     <div v-if="queueItems.length === 0" class="workspace-floating-panel__empty">
@@ -112,7 +112,7 @@ const emit = defineEmits(['refresh', 'open-metric', 'open-attention', 'open-queu
 
   <section class="workspace-home-section">
     <div class="workspace-home-section__header">
-      <span>Recent Pages</span>
+      <span>최근 페이지</span>
       <strong>{{ recentPages.length }}</strong>
     </div>
     <div v-if="recentPages.length === 0" class="workspace-floating-panel__empty">

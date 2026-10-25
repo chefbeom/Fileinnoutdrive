@@ -56,7 +56,7 @@ export const useWorkspacePageTreeMutations = ({
       ? readMap(workspacePageIndexRowById).get(targetId) || readMap(workspaceDocumentById).get(targetId)
       : null
     const parent = targetId
-      ? { id: targetId, title: target?.title || 'Parent page' }
+      ? { id: targetId, title: target?.title || '상위 페이지' }
       : { id: '', title: '' }
 
     writeSource(workspaceTreeMoveSavingId, String(pageId))
@@ -71,7 +71,7 @@ export const useWorkspacePageTreeMutations = ({
         const data = await fetchWorkspaceDocument?.(pageId)
         await saveWorkspaceDocument?.({
           idx: pageId,
-          title: data?.title || node.title || 'Untitled',
+          title: data?.title || node.title || '제목 없음',
           contents: serializeWorkspaceSnapshotWithParent?.(data?.contents, parent),
         })
         await refreshWorkspaceDocuments?.()

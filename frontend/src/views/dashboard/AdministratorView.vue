@@ -2,11 +2,13 @@
 import { computed, onMounted, ref } from "vue";
 import {
   fetchAdministratorDashboard,
+  fetchAdministratorLoginSettings,
   fetchAdministratorShareAudit,
   fetchAdministratorSessions,
   forceLogoutAdministratorSession,
   forceLogoutAdministratorUserSessions,
   fetchAdministratorStorageAnalytics,
+  updateAdministratorLoginSettings,
   updateAdministratorStorageCapacity,
   updateAdministratorUserStatus,
 } from "@/api/administratorApi.js";
@@ -43,11 +45,13 @@ const dashboard = ref(null);
 const storageAnalytics = ref(null);
 const shareAuditLogs = ref([]);
 const sessions = ref([]);
+const socialLoginVisible = ref(false);
 const isLoading = ref(false);
 const isStorageLoading = ref(false);
 const isShareAuditLoading = ref(false);
 const isSessionLoading = ref(false);
 const isUpdating = ref(false);
+const isLoginSettingsSaving = ref(false);
 const isCapacitySaving = ref(false);
 const isCapacityEditing = ref(false);
 const errorMessage = ref("");
@@ -144,12 +148,20 @@ const planRows = computed(() => buildPlanRows(dashboard.value?.planStats));
 const shareAuditRows = computed(() => buildShareAuditRows(shareAuditLogs.value));
 
 const sessionRows = computed(() => buildSessionRows(sessions.value));
+
 const loadDashboard = async () => {
   isLoading.value = true;
   errorMessage.value = "";
 
   try {
-    dashboard.value = await fetchAdministratorDashboard();
+    const result = await fetchAdministratorDashboard();
+    dashboard.value = result;
+    if (typeof result?.socialLoginVisible === "boolean") {
+      socialLoginVisible.value = result.socialLoginVisible;
+    } else {
+      const loginSettings = await fetchAdministratorLoginSettings();
+      socialLoginVisible.value = Boolean(loginSettings?.socialLoginVisible);
+    }
   } catch (error) {
     errorMessage.value =
       error?.response?.data?.message ||
@@ -157,6 +169,33 @@ const loadDashboard = async () => {
       "관리자 대시보드를 불러오지 못했습니다.";
   } finally {
     isLoading.value = false;
+  }
+};
+
+const handleSocialLoginVisibilityChange = async (nextVisible) => {
+  if (isLoginSettingsSaving.value || socialLoginVisible.value === nextVisible) {
+    return;
+  }
+
+  isLoginSettingsSaving.value = true;
+  errorMessage.value = "";
+
+  try {
+    const result = await updateAdministratorLoginSettings(nextVisible);
+    socialLoginVisible.value = Boolean(result?.socialLoginVisible);
+    if (dashboard.value) {
+      dashboard.value = {
+        ...dashboard.value,
+        socialLoginVisible: socialLoginVisible.value,
+      };
+    }
+  } catch (error) {
+    errorMessage.value =
+      error?.response?.data?.message ||
+      error?.message ||
+      "소셜 로그인 표시 설정을 변경하지 못했습니다.";
+  } finally {
+    isLoginSettingsSaving.value = false;
   }
 };
 
@@ -193,7 +232,7 @@ const loadShareAudit = async () => {
     shareAuditErrorMessage.value =
       error?.response?.data?.message ||
       error?.message ||
-      "\uACF5\uC720 \uAC10\uC0AC \uB85C\uADF8\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.";
+      "공유 감사 로그를 불러오지 못했습니다.";
   } finally {
     isShareAuditLoading.value = false;
   }
@@ -209,14 +248,14 @@ const loadSessions = async () => {
     sessionErrorMessage.value =
       error?.response?.data?.message ||
       error?.message ||
-      "\uC138\uC158 \uBAA9\uB85D\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.";
+      "세션 목록을 불러오지 못했습니다.";
   } finally {
     isSessionLoading.value = false;
   }
 };
 
 const handleForceLogoutSession = async (session) => {
-  if (!session?.sessionId || !window.confirm("\uC774 \uC138\uC158\uC744 \uAC15\uC81C \uB85C\uADF8\uC544\uC6C3\uD560\uAE4C\uC694?")) {
+  if (!session?.sessionId || !window.confirm("이 세션을 강제 로그아웃할까요?")) {
     return;
   }
 
@@ -229,14 +268,14 @@ const handleForceLogoutSession = async (session) => {
     sessionErrorMessage.value =
       error?.response?.data?.message ||
       error?.message ||
-      "\uC138\uC158\uC744 \uAC15\uC81C \uB85C\uADF8\uC544\uC6C3\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.";
+      "세션을 강제 로그아웃하지 못했습니다.";
   } finally {
     isSessionLoading.value = false;
   }
 };
 
 const handleForceLogoutUserSessions = async (session) => {
-  if (!session?.userIdx || !window.confirm("\uC774 \uC0AC\uC6A9\uC790\uC758 \uBAA8\uB4E0 \uC138\uC158\uC744 \uAC15\uC81C \uB85C\uADF8\uC544\uC6C3\uD560\uAE4C\uC694?")) {
+  if (!session?.userIdx || !window.confirm("이 사용자의 모든 세션을 강제 로그아웃할까요?")) {
     return;
   }
 
@@ -249,7 +288,7 @@ const handleForceLogoutUserSessions = async (session) => {
     sessionErrorMessage.value =
       error?.response?.data?.message ||
       error?.message ||
-      "\uC0AC\uC6A9\uC790 \uC138\uC158\uC744 \uAC15\uC81C \uB85C\uADF8\uC544\uC6C3\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.";
+      "사용자 세션을 강제 로그아웃하지 못했습니다.";
   } finally {
     isSessionLoading.value = false;
   }
@@ -375,22 +414,62 @@ onMounted(() => {
   <div class="admin-page">
     <div class="admin-page__header">
       <div>
-        <p class="admin-page__eyebrow">Administrator</p>
+        <p class="admin-page__eyebrow">관리자</p>
         <h1 class="admin-page__title">관리자 페이지</h1>
         <p class="admin-page__description">
-          사용자 관리, 스토리지 통계 및 분석, 플랜 및 결제 비중 통계를 각각 선택해서 확인할 수 있습니다.
+          사용자 관리, 로그인 페이지 소셜 로그인 노출(ON/OFF), 스토리지 통계 및 분석, 플랜 및 결제 비중 통계를 관리합니다.
         </p>
       </div>
 
       <button
         type="button"
         class="admin-page__refresh"
-        :disabled="isLoading || isStorageLoading || isShareAuditLoading || isSessionLoading || isUpdating || isCapacitySaving"
+        :disabled="isLoading || isStorageLoading || isShareAuditLoading || isSessionLoading || isUpdating || isCapacitySaving || isLoginSettingsSaving"
         @click="loadAll"
       >
         새로고침
       </button>
     </div>
+
+    <section class="admin-panel admin-panel--login-setting">
+      <div class="admin-login-setting">
+        <div class="admin-login-setting__info">
+          <div class="admin-login-setting__title-row">
+            <h2 class="admin-panel__title">로그인 페이지 소셜 로그인 표시 설정</h2>
+            <span
+              class="admin-badge"
+              :class="socialLoginVisible ? 'admin-badge--active' : 'admin-badge--suspended'"
+            >
+              {{ socialLoginVisible ? "소셜 로그인 표시 중 (ON)" : "소셜 로그인 숨김 (OFF)" }}
+            </span>
+          </div>
+          <p class="admin-panel__description">
+            로그인 화면에서 Google · Kakao · Naver 소셜 로그인 버튼 영역의 노출 여부를 즉시 전환합니다.
+          </p>
+        </div>
+
+        <div class="admin-login-setting__actions">
+          <button
+            type="button"
+            class="admin-toggle-btn"
+            :class="{ 'admin-toggle-btn--on': socialLoginVisible }"
+            :disabled="isLoginSettingsSaving || socialLoginVisible"
+            @click="handleSocialLoginVisibilityChange(true)"
+          >
+            ON (보이기)
+          </button>
+          <button
+            type="button"
+            class="admin-toggle-btn"
+            :class="{ 'admin-toggle-btn--off': !socialLoginVisible }"
+            :disabled="isLoginSettingsSaving || !socialLoginVisible"
+            @click="handleSocialLoginVisibilityChange(false)"
+          >
+            OFF (숨기기)
+          </button>
+        </div>
+      </div>
+    </section>
 
     <section class="admin-panel admin-panel--selector">
       <div class="admin-view-tabs">
@@ -559,35 +638,35 @@ onMounted(() => {
       <section v-else-if="activeSection === 'shareAudit'" class="admin-panel">
         <div class="admin-panel__header">
           <div>
-            <h2 class="admin-panel__title">&#44277;&#50976; &#44048;&#49324; &#47196;&#44536;</h2>
+            <h2 class="admin-panel__title">공유 감사 로그</h2>
             <p class="admin-panel__description">
-              &#44277;&#50976; &#49373;&#49457;, &#48320;&#44221;, &#49688;&#46973;, &#52712;&#49548;, &#45796;&#50868;&#47196;&#46300; &#47553;&#53356; &#48156;&#44553;&#51012; &#52572;&#44540; &#51060;&#47141;&#51004;&#47196; &#54869;&#51064;&#54633;&#45768;&#45796;.
+              공유 생성, 변경, 수락, 취소, 다운로드 링크 발급을 최근 이력으로 확인합니다.
             </p>
           </div>
           <button type="button" class="admin-page__refresh" :disabled="isShareAuditLoading" @click="loadShareAudit">
-            &#49352;&#47196;&#44256;&#52840;
+            새로고침
           </button>
         </div>
 
         <div v-if="isShareAuditLoading" class="admin-panel admin-panel--empty">
-          &#44277;&#50976; &#44048;&#49324; &#47196;&#44536;&#47484; &#48520;&#47084;&#50724;&#45716; &#51473;&#51077;&#45768;&#45796;.
+          공유 감사 로그를 불러오는 중입니다.
         </div>
         <div v-else-if="shareAuditRows.length === 0" class="admin-panel admin-panel--empty">
-          &#50500;&#51649; &#44592;&#47197;&#46108; &#44277;&#50976; &#44048;&#49324; &#47196;&#44536;&#44032; &#50630;&#49845;&#45768;&#45796;.
+          아직 기록된 공유 감사 로그가 없습니다.
         </div>
         <div v-else class="admin-table-wrap">
           <table class="admin-table">
             <thead>
               <tr>
-                <th>&#49884;&#44036;</th>
-                <th>&#51060;&#48292;&#53944;</th>
-                <th>&#54028;&#51068;</th>
-                <th>&#49892;&#54665;&#51088;</th>
-                <th>&#44277;&#50976;&#51088;</th>
-                <th>&#49688;&#49888;&#51088;</th>
-                <th>&#44428;&#54620;</th>
-                <th>&#49345;&#53468;</th>
-                <th>&#51221;&#52293;</th>
+                <th>시간</th>
+                <th>이벤트</th>
+                <th>파일</th>
+                <th>실행자</th>
+                <th>공유자</th>
+                <th>수신자</th>
+                <th>권한</th>
+                <th>상태</th>
+                <th>정책</th>
               </tr>
             </thead>
             <tbody>
@@ -612,35 +691,35 @@ onMounted(() => {
       <section v-else-if="activeSection === 'sessions'" class="admin-panel">
         <div class="admin-panel__header">
           <div>
-            <h2 class="admin-panel__title">&#49464;&#49496; &#44288;&#47532;</h2>
+            <h2 class="admin-panel__title">세션 관리</h2>
             <p class="admin-panel__description">
-              &#54788;&#51116; &#46321;&#47197;&#46108; refresh token &#49464;&#49496;&#51012; &#54869;&#51064;&#54616;&#44256; &#54596;&#50836;&#54620; &#44221;&#50864; &#44060;&#48324; &#49464;&#49496; &#46608;&#45716; &#49324;&#50857;&#51088; &#51204;&#52404; &#49464;&#49496;&#51012; &#44053;&#51228; &#47196;&#44536;&#50500;&#50883;&#54633;&#45768;&#45796;.
+              현재 등록된 refresh token 세션을 확인하고 필요한 경우 개별 세션 또는 사용자 전체 세션을 강제 로그아웃합니다.
             </p>
           </div>
           <button type="button" class="admin-page__refresh" :disabled="isSessionLoading" @click="loadSessions">
-            &#49352;&#47196;&#44256;&#52840;
+            새로고침
           </button>
         </div>
 
         <div v-if="isSessionLoading" class="admin-panel admin-panel--empty">
-          &#49464;&#49496; &#47785;&#47197;&#51012; &#48520;&#47084;&#50724;&#45716; &#51473;&#51077;&#45768;&#45796;.
+          세션 목록을 불러오는 중입니다.
         </div>
         <div v-else-if="sessionRows.length === 0" class="admin-panel admin-panel--empty">
-          &#54788;&#51116; &#46321;&#47197;&#46108; &#49464;&#49496;&#51060; &#50630;&#49845;&#45768;&#45796;.
+          현재 등록된 세션이 없습니다.
         </div>
         <div v-else class="admin-table-wrap">
           <table class="admin-table">
             <thead>
               <tr>
-                <th>&#49464;&#49496;</th>
-                <th>&#49324;&#50857;&#51088;</th>
-                <th>&#51060;&#47492;</th>
-                <th>&#44228;&#51221;</th>
-                <th>&#49464;&#49496; &#49345;&#53468;</th>
-                <th>&#49373;&#49457;</th>
-                <th>&#44081;&#49888;</th>
-                <th>&#47564;&#47308;</th>
-                <th>&#44288;&#47532;</th>
+                <th>세션</th>
+                <th>사용자</th>
+                <th>이름</th>
+                <th>계정</th>
+                <th>세션 상태</th>
+                <th>생성</th>
+                <th>갱신</th>
+                <th>만료</th>
+                <th>관리</th>
               </tr>
             </thead>
             <tbody>
@@ -664,10 +743,10 @@ onMounted(() => {
                 <td>
                   <div class="admin-actions">
                     <button type="button" class="admin-action admin-action--suspended" :disabled="isSessionLoading" @click="handleForceLogoutSession(session)">
-                      &#49464;&#49496; &#51333;&#47308;
+                      세션 종료
                     </button>
                     <button type="button" class="admin-action admin-action--banned" :disabled="isSessionLoading || !session.userIdx" @click="handleForceLogoutUserSessions(session)">
-                      &#51204;&#52404; &#51333;&#47308;
+                      전체 종료
                     </button>
                   </div>
                 </td>

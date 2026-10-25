@@ -226,7 +226,7 @@ const handleSave = async () => {
     <div class="settings-modal" @click.stop>
       <header class="settings-modal__header">
         <div>
-          <p class="settings-modal__eyebrow">Account Center</p>
+          <p class="settings-modal__eyebrow">계정 관리</p>
           <h2 class="settings-modal__title">설정</h2>
         </div>
         <button type="button" class="settings-close" @click="emit('close')">
@@ -355,7 +355,7 @@ const handleSave = async () => {
             <section v-else-if="activeTab === 'billing'" class="settings-pane">
               <div class="billing-summary">
                 <div>
-                  <p class="settings-modal__eyebrow">Current Plan</p>
+                  <p class="settings-modal__eyebrow">현재 플랜</p>
                   <h3 class="settings-section__title">{{ profileForm.storagePlanLabel }}</h3>
                   <p class="settings-help">{{ currentMembershipProduct.description }}</p>
                 </div>

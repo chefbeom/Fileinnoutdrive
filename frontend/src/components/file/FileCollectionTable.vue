@@ -150,7 +150,7 @@ const {
               <div v-else-if="hasVideoThumbnail(file)" class="thumb-shell overflow-hidden bg-black">
                 <img
                   :src="getVideoCardUrl(file)"
-                  :alt="`${getFileName(file)} thumbnail`"
+                  :alt="`${getFileName(file)} 미리보기`"
                   class="h-full w-full object-cover"
                   loading="lazy"
                   @error="handleThumbnailAssetError(file)"

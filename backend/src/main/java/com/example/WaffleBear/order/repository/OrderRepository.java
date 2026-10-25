@@ -10,6 +10,8 @@ import java.util.Optional;
 
 public interface OrderRepository extends JpaRepository<Order, Long> {
     Optional<Order> findByOrderId(String orderId);
+    Optional<Order> findByPaymentId(String paymentId);
+    boolean existsByPaymentIdAndOrderIdNot(String paymentId, String orderId);
     List<Order> findAllByUser_Idx(Long userIdx);
 
     @EntityGraph(attributePaths = "user")

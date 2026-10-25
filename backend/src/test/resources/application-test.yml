@@ -19,6 +19,8 @@ admin:
   additional-users:
 
 app:
+  demo:
+    enabled: false
   frontend-url: http://localhost
   backend-url: http://localhost/api
   secure-cookie: false

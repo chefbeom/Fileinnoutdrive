@@ -483,7 +483,7 @@ onBeforeUnmount(() => {
     <section class="rounded-[1.6rem] border border-slate-200 bg-white p-5 shadow-sm">
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Group Center</p>
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">그룹 관리</p>
           <h3 class="mt-2 text-2xl font-bold text-slate-900">그룹과 연결 관리</h3>
           <p class="mt-2 text-sm text-slate-500">연결된 사람을 분류 없이 보관하고, 필요한 그룹에만 나눠서 관리할 수 있습니다.</p>
         </div>

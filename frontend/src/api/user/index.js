@@ -12,6 +12,11 @@ export const login = async (req) => {
   return res
 }
 
+export const loginDemo = async () => {
+  const res = await api.post('/auth/demo-login')
+  return res
+}
+
 export const logout = async () => {
   const res = await api.post('/auth/logout')
   return res
@@ -22,4 +27,4 @@ export const getOAuthProviders = async () => {
   return res
 }
 
-export default { signup, login, logout, getOAuthProviders }
+export default { signup, login, loginDemo, logout, getOAuthProviders }

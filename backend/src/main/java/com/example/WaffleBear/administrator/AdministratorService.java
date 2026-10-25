@@ -163,6 +163,10 @@ public class AdministratorService {
         return toUserResponse(targetUser, stat);
     }
 
+    public void validateAdministratorAccess(AuthUserDetails adminUser) {
+        validateAdministrator(adminUser);
+    }
+
     private void validateAdministrator(AuthUserDetails adminUser) {
         if (adminUser == null) {
             throw new AccessDeniedException("administrator only");

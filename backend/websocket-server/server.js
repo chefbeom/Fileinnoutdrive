@@ -230,7 +230,7 @@ const sanitizeYjsRequestUrl = (req, docName) => {
 const verifyYjsWorkspaceAccess = (workspaceIdx, accessToken) => new Promise((resolve) => {
   const query = new URLSearchParams({
     workspaceIdx: String(workspaceIdx),
-    write: 'true',
+    write: 'false',
   })
 
   const authReq = BACKEND_CLIENT.request(
@@ -246,8 +246,23 @@ const verifyYjsWorkspaceAccess = (workspaceIdx, accessToken) => new Promise((res
     },
     (authRes) => {
       const allowed = authRes.statusCode >= 200 && authRes.statusCode < 300
-      authRes.resume()
-      authRes.on('end', () => resolve(allowed))
+      const chunks = []
+      authRes.on('data', (chunk) => chunks.push(chunk))
+      authRes.on('end', () => {
+        if (!allowed) {
+          resolve({ allowed: false, writable: false })
+          return
+        }
+        try {
+          const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+          resolve({
+            allowed: true,
+            writable: Boolean(parsed?.writable),
+          })
+        } catch {
+          resolve({ allowed: true, writable: false })
+        }
+      })
     },
   )
 
@@ -257,11 +272,45 @@ const verifyYjsWorkspaceAccess = (workspaceIdx, accessToken) => new Promise((res
 
   authReq.on('error', (error) => {
     console.warn('[YJS] authorization request failed', error.message)
-    resolve(false)
+    resolve({ allowed: false, writable: false })
   })
 
   authReq.end()
 })
+
+const isMutatingYjsSyncFrame = (rawMessage) => {
+  const bytes = rawMessage instanceof Uint8Array
+    ? rawMessage
+    : ArrayBuffer.isView(rawMessage)
+      ? new Uint8Array(rawMessage.buffer, rawMessage.byteOffset, rawMessage.byteLength)
+      : Buffer.isBuffer(rawMessage)
+        ? rawMessage
+        : null
+
+  if (!bytes || bytes.length < 2) {
+    return false
+  }
+
+  // Yjs websocket framing:
+  // byte[0] = messageType (0 = sync, 1 = awareness)
+  // byte[1] = syncMessageType (0 = SyncStep1 read request, 1 = SyncStep2 state write, 2 = Update write)
+  return bytes[0] === 0 && (bytes[1] === 1 || bytes[1] === 2)
+}
+
+const enforceReadOnlyYjsSocket = (ws) => {
+  const originalOn = ws.on.bind(ws)
+  ws.on = (event, listener) => {
+    if (event === 'message' && typeof listener === 'function') {
+      return originalOn(event, (data, isBinary) => {
+        if (isMutatingYjsSyncFrame(data)) {
+          return
+        }
+        listener(data, isBinary)
+      })
+    }
+    return originalOn(event, listener)
+  }
+}
 
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',
@@ -644,13 +693,17 @@ const handleConnection = async (ws, req) => {
   if (YJS_AUTH_REQUIRED) {
     const workspaceIdx = parseWorkspaceIdFromDocName(docName)
     const accessToken = extractYjsAccessToken(requestUrl, req)
-    const authorized = workspaceIdx && accessToken
+    const authResult = workspaceIdx && accessToken
       ? await verifyYjsWorkspaceAccess(workspaceIdx, accessToken)
-      : false
+      : { allowed: false, writable: false }
 
-    if (!authorized) {
+    if (!authResult.allowed) {
       ws.close(1008, 'Unauthorized realtime workspace')
       return
+    }
+
+    if (!authResult.writable) {
+      enforceReadOnlyYjsSocket(ws)
     }
   }
 

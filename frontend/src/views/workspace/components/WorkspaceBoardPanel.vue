@@ -57,7 +57,7 @@ const openTaskCount = (row) => (row?.workspaceTasks || []).filter((task) => !tas
   <section class="workspace-board-panel">
     <div class="workspace-floating-panel__header">
       <div>
-        <h3>Page Board</h3>
+        <h3>페이지 보드</h3>
         <p>페이지 상태를 보드 컬럼으로 보고 바로 이동시킵니다.</p>
       </div>
       <button

@@ -101,7 +101,7 @@ export const STORAGE_ADDON_PRODUCTS = [
     label: "추가 20GB",
     quotaLabel: "20GB",
     price: 24000,
-    badge: "1년권",
+    badge: "평생 이용",
     description: "현재 멤버십 기능은 그대로 두고 저장 공간만 20GB 추가합니다.",
   },
   {
@@ -110,7 +110,7 @@ export const STORAGE_ADDON_PRODUCTS = [
     label: "추가 40GB",
     quotaLabel: "40GB",
     price: 43000,
-    badge: "1년권",
+    badge: "평생 이용",
     description: "현재 멤버십 기능은 그대로 두고 저장 공간만 40GB 추가합니다.",
   },
   {
@@ -119,7 +119,7 @@ export const STORAGE_ADDON_PRODUCTS = [
     label: "추가 80GB",
     quotaLabel: "80GB",
     price: 79000,
-    badge: "1년권",
+    badge: "평생 이용",
     description: "현재 멤버십 기능은 그대로 두고 저장 공간만 80GB 추가합니다.",
   },
   {
@@ -128,7 +128,7 @@ export const STORAGE_ADDON_PRODUCTS = [
     label: "추가 100GB",
     quotaLabel: "100GB",
     price: 94000,
-    badge: "1년권",
+    badge: "평생 이용",
     description: "현재 멤버십 기능은 그대로 두고 저장 공간만 100GB 추가합니다.",
   },
   {
@@ -137,7 +137,7 @@ export const STORAGE_ADDON_PRODUCTS = [
     label: "추가 1TB",
     quotaLabel: "1TB",
     price: 249000,
-    badge: "1년권",
+    badge: "평생 이용",
     description: "현재 멤버십 기능은 그대로 두고 저장 공간만 1TB 추가합니다.",
   },
   {
@@ -146,7 +146,7 @@ export const STORAGE_ADDON_PRODUCTS = [
     label: "추가 5TB",
     quotaLabel: "5TB",
     price: 890000,
-    badge: "1년권",
+    badge: "평생 이용",
     description: "현재 멤버십 기능은 그대로 두고 저장 공간만 5TB 추가합니다.",
   },
 ];

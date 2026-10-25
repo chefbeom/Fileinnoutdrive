@@ -145,13 +145,13 @@ watch(() => props.subpageComposerParentId, async (value) => {
   <section class="workspace-page-tree-panel">
     <div class="workspace-floating-panel__header">
       <div>
-        <h3>Page Tree</h3>
+        <h3>페이지 트리</h3>
       </div>
       <button
         type="button"
         class="workspace-history-refresh-btn"
         :disabled="loading"
-        title="Refresh page tree"
+        title="페이지 트리 새로고침"
         @click="emit('refresh')"
       >
         <i :class="loading ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-rotate-right'"></i>
@@ -163,13 +163,13 @@ watch(() => props.subpageComposerParentId, async (value) => {
       <input
         :value="query"
         type="search"
-        placeholder="Find pages"
+        placeholder="페이지 검색"
         @input="emit('update:query', $event.target.value)"
       />
       <button
         v-if="query"
         type="button"
-        title="Clear"
+        title="지우기"
         @click="emit('update:query', '')"
       >
         <i class="fa-solid fa-xmark"></i>
@@ -203,7 +203,7 @@ watch(() => props.subpageComposerParentId, async (value) => {
             type="button"
             class="workspace-page-tree-toggle"
             :aria-expanded="!isCollapsed(node)"
-            :title="isCollapsed(node) ? 'Expand' : 'Collapse'"
+            :title="isCollapsed(node) ? '펼치기' : '접기'"
             @click="emit('toggle-node', node)"
           >
             <i :class="isCollapsed(node) ? 'fa-solid fa-chevron-right' : 'fa-solid fa-chevron-down'"></i>
@@ -226,7 +226,7 @@ watch(() => props.subpageComposerParentId, async (value) => {
             <button
               type="button"
               :disabled="!node.canEditProperties || Boolean(renameSavingId)"
-              title="Rename page"
+              title="페이지 이름 변경"
               @click="emit('open-rename', node)"
             >
               <i :class="isRenameOpen(node) ? 'fa-solid fa-pen' : 'fa-regular fa-pen-to-square'"></i>
@@ -234,7 +234,7 @@ watch(() => props.subpageComposerParentId, async (value) => {
             <button
               type="button"
               :disabled="!node.canEditProperties || Boolean(subpageCreatingId)"
-              title="Create child page"
+              title="하위 페이지 만들기"
               @click="emit('open-subpage', node)"
             >
               <i :class="isSubpageOpen(node) ? 'fa-solid fa-pen' : 'fa-solid fa-plus'"></i>
@@ -242,18 +242,18 @@ watch(() => props.subpageComposerParentId, async (value) => {
             <button
               type="button"
               :disabled="!node.canEditProperties || Boolean(moveSavingId)"
-              title="Move page"
+              title="페이지 이동"
               @click="emit('open-move', node)"
             >
               <i :class="isMoveOpen(node) ? 'fa-solid fa-location-arrow' : 'fa-solid fa-turn-up'"></i>
             </button>
-            <button type="button" title="Copy page link" @click="emit('copy-link', node)">
+            <button type="button" title="페이지 링크 복사" @click="emit('copy-link', node)">
               <i :class="isDocumentLinkCopied(node) ? 'fa-solid fa-check' : 'fa-regular fa-clipboard'"></i>
             </button>
             <button
               type="button"
               :disabled="!canModifyPage || !hasEditor"
-              title="Insert page link"
+              title="페이지 링크 삽입"
               @click="emit('insert-link', node)"
             >
               <i class="fa-solid fa-link"></i>
@@ -272,7 +272,7 @@ watch(() => props.subpageComposerParentId, async (value) => {
                 :value="renameDraft"
                 type="text"
                 maxlength="120"
-                placeholder="Page name"
+                placeholder="페이지 이름"
                 :disabled="isRenameSaving(node)"
                 @input="emit('update:renameDraft', $event.target.value)"
                 @keydown.esc.prevent="emit('cancel-rename')"
@@ -281,14 +281,14 @@ watch(() => props.subpageComposerParentId, async (value) => {
             <button
               type="submit"
               :disabled="isRenameSaving(node) || !renameDraft.trim()"
-              title="Save"
+              title="저장"
             >
               <i :class="isRenameSaving(node) ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-check'"></i>
             </button>
             <button
               type="button"
               :disabled="isRenameSaving(node)"
-              title="Cancel"
+              title="취소"
               @click="emit('cancel-rename')"
             >
               <i class="fa-solid fa-xmark"></i>
@@ -320,14 +320,14 @@ watch(() => props.subpageComposerParentId, async (value) => {
             <button
               type="submit"
               :disabled="!canApplyMove(node)"
-              title="Move"
+              title="이동"
             >
               <i :class="isMoveSaving(node) ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-check'"></i>
             </button>
             <button
               type="button"
               :disabled="isMoveSaving(node)"
-              title="Cancel"
+              title="취소"
               @click="emit('cancel-move')"
             >
               <i class="fa-solid fa-xmark"></i>
@@ -346,7 +346,7 @@ watch(() => props.subpageComposerParentId, async (value) => {
                 :value="subpageTitle"
                 type="text"
                 maxlength="80"
-                placeholder="New child page"
+                placeholder="새 하위 페이지"
                 :disabled="isSubpageCreating(node)"
                 @input="emit('update:subpageTitle', $event.target.value)"
                 @keydown.esc.prevent="emit('cancel-subpage')"
@@ -355,14 +355,14 @@ watch(() => props.subpageComposerParentId, async (value) => {
             <button
               type="submit"
               :disabled="isSubpageCreating(node) || !subpageTitle.trim()"
-              title="Create"
+              title="만들기"
             >
               <i :class="isSubpageCreating(node) ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-check'"></i>
             </button>
             <button
               type="button"
               :disabled="isSubpageCreating(node)"
-              title="Cancel"
+              title="취소"
               @click="emit('cancel-subpage')"
             >
               <i class="fa-solid fa-xmark"></i>

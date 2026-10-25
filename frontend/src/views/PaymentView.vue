@@ -85,7 +85,7 @@ const selectedFeatureList = computed(() => {
   }
 
   return [
-    "선택한 용량만 1년 동안 추가됩니다.",
+    "선택한 플랜은 평생 이용 추가됩니다.",
     "멤버십 기능과 업로드 한도는 바뀌지 않습니다.",
   ];
 });
@@ -252,7 +252,7 @@ const startCheckout = async () => {
       <section class="rounded-[2rem] border border-slate-200 bg-white px-7 py-8 shadow-sm lg:px-10 lg:py-10">
         <div class="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div class="max-w-3xl">
-            <p class="text-sm font-black uppercase tracking-[0.22em] text-sky-600">Annual Billing</p>
+            <p class="text-sm font-black uppercase tracking-[0.22em] text-sky-600">연간 결제</p>
             <h1 class="mt-4 text-4xl font-black tracking-tight text-slate-950 lg:text-5xl">
               멤버십 플랜과 추가 저장용량을 분리해서 선택해 주세요
             </h1>
@@ -333,7 +333,7 @@ const startCheckout = async () => {
               <div>
                 <h2 class="text-2xl font-black text-slate-950">추가 저장용량</h2>
                 <p class="mt-2 text-sm text-slate-500">
-                  현재 멤버십 기능은 유지하고 저장 공간만 1년 동안 추가합니다.
+                  현재 멤버십 기능은 유지하고 저장 공간만 평생 이용 추가합니다.
                 </p>
               </div>
               <span class="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">
@@ -360,7 +360,6 @@ const startCheckout = async () => {
                 </ul>
                 <div class="billing-card__price-wrap">
                   <strong class="billing-card__price">{{ formatKrw(product.price) }}원</strong>
-                  <span class="billing-card__period">/ 1년</span>
                 </div>
                 <p class="billing-card__quota">추가 제공 {{ product.quotaLabel }}</p>
               </article>
@@ -369,7 +368,7 @@ const startCheckout = async () => {
         </div>
 
         <aside class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-8 lg:h-fit">
-          <p class="text-sm font-black uppercase tracking-[0.2em] text-slate-400">Checkout</p>
+          <p class="text-sm font-black uppercase tracking-[0.2em] text-slate-400">결제</p>
           <h2 class="mt-3 text-3xl font-black text-slate-950">{{ selectedProduct.label }}</h2>
           <p class="mt-3 text-sm leading-6 text-slate-600">{{ selectedProduct.description }}</p>
 
@@ -385,7 +384,7 @@ const startCheckout = async () => {
             <div class="mt-4 border-t border-slate-200 pt-4">
               <div class="flex items-end justify-between gap-4">
                 <div>
-                  <p class="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Total</p>
+                  <p class="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">합계</p>
                   <p class="mt-2 text-3xl font-black text-slate-950">
                     {{ selectedProduct.price > 0 ? `${formatKrw(selectedProduct.price)}원` : "무료" }}
                   </p>

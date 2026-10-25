@@ -208,13 +208,25 @@ const panelSubtitle = computed(() => {
   if (completedCount.value > 0) {
     return "모든 업로드가 완료되었습니다.";
   }
-return "";
+  return "";
 });
-const panelSubtitleDisplay = computed(() =>
-  activeCount.value > 0
-    ? `현재 총 전송 속도 ${formatBytesPerSecond(totalUploadSpeedBytesPerSecond.value)}`
-    : panelSubtitle.value,
+
+const isAllActiveMerging = computed(() =>
+  activeCount.value > 0 &&
+  uploadItems.value
+    .filter((item) => transientStatuses.has(item.status))
+    .every((item) => item.status === "merging"),
 );
+
+const panelSubtitleDisplay = computed(() => {
+  if (activeCount.value > 0) {
+    if (isAllActiveMerging.value) {
+      return defaultStatusText("merging");
+    }
+    return `현재 총 전송 속도 ${formatBytesPerSecond(totalUploadSpeedBytesPerSecond.value)}`;
+  }
+  return panelSubtitle.value;
+});
 
 watch(uploadConcurrency, (value) => {
   const normalized = normalizeUploadConcurrency(value);
@@ -328,7 +340,6 @@ function clearCompletedHistoryIfIdle() {
   isPanelHidden.value = false;
 }
 
-
 function setItemState(itemId, patch) {
   const item = uploadItems.value.find((candidate) => candidate.id === itemId);
   if (!item) {
@@ -345,6 +356,9 @@ function updateItemProgress(itemId, uploadedBytes, statusText) {
   }
 
   updateUploadItemProgress(item, uploadedBytes, statusText);
+  if (item.status !== "completed" && item.progress >= 100) {
+    item.progress = 99;
+  }
 }
 
 async function uploadChunkToUrl(blob, uploadMeta, contentType, options = {}) {
@@ -386,6 +400,7 @@ async function uploadFileByChunks(file, uploadMetas, itemId) {
     statusText: defaultStatusText("uploading"),
   });
 
+  const totalFileSize = Number(file.size || 0);
   let completedBytes = 0;
   for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
     if (isCancelRequested.value) {
@@ -395,8 +410,8 @@ async function uploadFileByChunks(file, uploadMetas, itemId) {
     const start = chunkIndex * CHUNK_SIZE_BYTES;
     const end =
       chunkIndex === chunkCount - 1
-        ? Number(file.size || 0)
-        : Math.min(start + CHUNK_SIZE_BYTES, Number(file.size || 0));
+        ? totalFileSize
+        : Math.min(start + CHUNK_SIZE_BYTES, totalFileSize);
     const chunkBlob = file.slice(start, end, file.type || "application/octet-stream");
     const chunkSize = Number(chunkBlob.size || 0);
     const controller = new AbortController();
@@ -408,8 +423,8 @@ async function uploadFileByChunks(file, uploadMetas, itemId) {
         signal: controller.signal,
         onProgress: (loadedBytes) => {
           const nextBytes = completedBytes + Math.min(chunkSize, Number(loadedBytes || 0));
-          const progress = Number(file.size || 0) > 0
-            ? Math.min(100, Math.round((nextBytes / Number(file.size || 0)) * 100))
+          const progress = totalFileSize > 0
+            ? Math.min(99, Math.round((nextBytes / totalFileSize) * 100))
             : 0;
           updateItemProgress(itemId, nextBytes, `업로드 중 (${progress}%)`);
         },
@@ -419,7 +434,15 @@ async function uploadFileByChunks(file, uploadMetas, itemId) {
     }
 
     completedBytes += chunkSize;
-    updateItemProgress(itemId, completedBytes, "업로드를 마무리하고 있습니다.");
+    const isFinalChunk = chunkIndex === chunkCount - 1;
+    const nextProgress = totalFileSize > 0
+      ? Math.min(99, Math.round((completedBytes / totalFileSize) * 100))
+      : 0;
+    updateItemProgress(
+      itemId,
+      completedBytes,
+      isFinalChunk ? defaultStatusText("merging") : `업로드 중 (${nextProgress}%)`,
+    );
   }
 }
 
@@ -433,9 +456,9 @@ async function completeUploadedFile(file, uploadMetas, partitioned, itemId, pare
   }
 
   setItemState(itemId, {
-    status: partitioned ? "merging" : "uploading",
-    statusText: partitioned ? "서버에서 파일을 병합하고 있습니다." : "업로드 완료를 확인하고 있습니다.",
-    progress: 100,
+    status: "merging",
+    statusText: defaultStatusText("merging"),
+    progress: 99,
     uploadedBytes: Number(file?.size || 0),
   });
 

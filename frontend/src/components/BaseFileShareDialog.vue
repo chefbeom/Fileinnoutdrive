@@ -115,7 +115,7 @@ const submitButtonLabel = computed(() => (props.isSharing ? "공유 중..." : "�
         </label>
         <label class="block text-xs font-semibold text-gray-500">
           <span>공유 비밀번호</span>
-          <input v-model="passwordModel" type="password" maxlength="128" class="file-filter__input mt-1" :disabled="!canCreateShares" placeholder="Optional" autocomplete="new-password" />
+          <input v-model="passwordModel" type="password" maxlength="128" class="file-filter__input mt-1" :disabled="!canCreateShares" placeholder="선택 입력" autocomplete="new-password" />
         </label>
       </div>
       <div class="mt-4 rounded-2xl border border-gray-200 p-4">

@@ -28,9 +28,9 @@ describe('openHexagonViewModel', () => {
   it('derives display and time labels', () => {
     expect(resolveOpenHexagonDisplayName({ email: 'pilot@example.test' })).toBe('pilot')
     expect(resolveOpenHexagonDisplayName({ nickname: 'Ace' })).toBe('Ace')
-    expect(resolveOpenHexagonDisplayName(null)).toBe('Pilot')
+    expect(resolveOpenHexagonDisplayName(null)).toBe('플레이어')
     expect(formatOpenHexagonSeconds(3.456)).toBe('3.46s')
-    expect(formatOpenHexagonUpdatedAt(null)).toBe('No signal yet')
+    expect(formatOpenHexagonUpdatedAt(null)).toBe('기록 없음')
     expect(formatOpenHexagonUpdatedAt('not-a-date')).toBe('not-a-date')
   })
 
@@ -50,11 +50,11 @@ describe('openHexagonViewModel', () => {
   })
 
   it('describes difficulty and sector boundaries', () => {
-    expect(describeOpenHexagonDifficulty(0)).toBe('Calm')
-    expect(describeOpenHexagonDifficulty(8)).toBe('Rising')
-    expect(describeOpenHexagonDifficulty(18)).toBe('Tense')
-    expect(describeOpenHexagonDifficulty(30)).toBe('Hyper')
-    expect(describeOpenHexagonDifficulty(45)).toBe('Overclocked')
+    expect(describeOpenHexagonDifficulty(0)).toBe('평온')
+    expect(describeOpenHexagonDifficulty(8)).toBe('상승')
+    expect(describeOpenHexagonDifficulty(18)).toBe('긴장')
+    expect(describeOpenHexagonDifficulty(30)).toBe('고조')
+    expect(describeOpenHexagonDifficulty(45)).toBe('과부하')
     expect(isOpenHexagonAngleInsideSector(0.5, 0, 1)).toBe(true)
     expect(isOpenHexagonAngleInsideSector(0.5, 1, 2)).toBe(false)
     expect(isOpenHexagonAngleInsideSector(0.1, 5.5, 0.5)).toBe(true)

@@ -48,7 +48,7 @@ const ui = reactive({
   running: false,
   gameOver: false,
   survivalSeconds: 0,
-  difficultyLabel: 'Calm',
+  difficultyLabel: '평온',
 })
 
 const displayName = computed(() => resolveOpenHexagonDisplayName(authStore.user))
@@ -470,11 +470,11 @@ onUnmounted(() => {
   <section class="open-hexagon-page">
     <div class="hero-panel">
       <div>
-        <p class="eyebrow">Easter Egg</p>
-        <h1>Open Hexagon</h1>
+        <p class="eyebrow">미니게임</p>
+        <h1>오픈 헥사곤</h1>
         <p class="hero-copy">
-          Avatars are now assigned by the server, all pilots share one countdown,
-          and the incoming walls are synchronized from the same match pattern queue.
+          아바타는 서버에서 배정되며 모든 플레이어가 하나의 시작 카운트다운을 공유합니다.
+          장애물은 같은 게임 패턴 순서에 따라 동기화됩니다.
         </p>
       </div>
 
@@ -483,7 +483,7 @@ onUnmounted(() => {
           {{ primaryButtonLabel }}
         </button>
         <button class="secondary-button" @click="restartGame">
-          Recenter ship
+          기체 중앙 정렬
         </button>
       </div>
     </div>
@@ -492,23 +492,23 @@ onUnmounted(() => {
       <div class="game-shell">
         <div class="status-strip">
           <div class="status-card">
-            <span class="status-label">Current</span>
+            <span class="status-label">현재 기록</span>
             <strong>{{ formatSeconds(ui.survivalSeconds) }}</strong>
           </div>
           <div class="status-card">
-            <span class="status-label">Best local</span>
+            <span class="status-label">최고 기록</span>
             <strong>{{ formatSeconds(localBestSeconds) }}</strong>
           </div>
           <div class="status-card">
-            <span class="status-label">Match</span>
+            <span class="status-label">게임 상태</span>
             <strong>{{ matchStatusLabel }}</strong>
           </div>
           <div class="status-card">
-            <span class="status-label">Ready</span>
+            <span class="status-label">준비</span>
             <strong>{{ readyCount }}/{{ playerCount }}</strong>
           </div>
           <div class="status-card" :class="`state-${connectionState}`">
-            <span class="status-label">Socket</span>
+            <span class="status-label">연결</span>
             <strong>{{ connectionState }}</strong>
           </div>
         </div>
@@ -526,7 +526,7 @@ onUnmounted(() => {
             @mouseup.prevent="handlePress('left', false)"
             @mouseleave.prevent="handlePress('left', false)"
           >
-            Rotate left
+            왼쪽 회전
           </button>
           <button
             class="control-button"
@@ -536,7 +536,7 @@ onUnmounted(() => {
             @mouseup.prevent="handlePress('right', false)"
             @mouseleave.prevent="handlePress('right', false)"
           >
-            Rotate right
+            오른쪽 회전
           </button>
         </div>
 
@@ -546,11 +546,11 @@ onUnmounted(() => {
       <aside class="info-rail">
         <section class="info-card">
           <div class="card-head">
-            <h2>Live lobby</h2>
-            <span class="pill">{{ lobby.onlineCount }} online</span>
+            <h2>실시간 대기실</h2>
+            <span class="pill">{{ lobby.onlineCount }}명 접속</span>
           </div>
           <p class="muted-copy">
-            Avatar assignment, ready state, countdown, and live position are all synchronized through STOMP.
+            아바타, 준비 상태, 시작 카운트다운, 실시간 위치를 STOMP로 동기화합니다.
           </p>
           <ul class="player-list">
             <li
@@ -572,20 +572,20 @@ onUnmounted(() => {
                 <div>
                   <strong>{{ player.nickname }}</strong>
                   <small>
-                    {{ player.playing ? 'Playing now' : player.ready ? 'Ready' : 'Idle in lobby' }}
+                    {{ player.playing ? '게임 중' : player.ready ? '준비됨' : '대기실 대기 중' }}
                   </small>
                 </div>
               </div>
               <small>{{ formatSeconds(player.currentScore) }}</small>
             </li>
-            <li v-if="!playerRoster.length" class="player-item empty">No pilots connected yet.</li>
+            <li v-if="!playerRoster.length" class="player-item empty">접속한 플레이어가 없습니다.</li>
           </ul>
         </section>
 
         <section class="info-card">
           <div class="card-head">
-            <h2>Leaderboard</h2>
-            <span class="pill accent">Live</span>
+            <h2>순위표</h2>
+            <span class="pill accent">실시간</span>
           </div>
           <ol class="leaderboard">
             <li
@@ -612,21 +612,21 @@ onUnmounted(() => {
               <span>{{ formatSeconds(entry.bestScore) }}</span>
             </li>
             <li v-if="!leaderboardEntries.length" class="leaderboard-item empty">
-              No scores posted yet.
+              아직 기록이 없습니다.
             </li>
           </ol>
         </section>
 
         <section class="info-card">
           <div class="card-head">
-            <h2>Controls</h2>
+            <h2>조작 방법</h2>
           </div>
           <ul class="tip-list">
-            <li><code>A</code> / <code>D</code> or arrow keys rotate the avatar.</li>
-            <li>Everyone must ready up before the 3 second countdown begins.</li>
-            <li>The round uses one shared pattern schedule for every screen.</li>
-            <li>Each player gets a server-assigned avatar image and color.</li>
-            <li>Open it from the profile dropdown Games menu.</li>
+            <li><code>A</code> / <code>D</code> 또는 방향키로 기체를 회전합니다.</li>
+            <li>모든 플레이어가 준비를 완료하면 3초 뒤 시작합니다.</li>
+            <li>모든 화면이 하나의 게임 패턴 순서를 공유합니다.</li>
+            <li>각 플레이어는 서버가 배정한 아바타 이미지와 색상을 사용합니다.</li>
+            <li>프로필 메뉴의 게임에서 열 수 있습니다.</li>
           </ul>
         </section>
       </aside>

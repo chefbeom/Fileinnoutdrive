@@ -8,6 +8,8 @@ import com.example.WaffleBear.order.model.dto.OrderDto;
 import com.example.WaffleBear.order.repository.OrderRepository;
 import com.example.WaffleBear.user.model.User;
 import com.example.WaffleBear.user.repository.UserRepository;
+import io.portone.sdk.server.payment.PaidPayment;
+import io.portone.sdk.server.payment.Payment;
 import io.portone.sdk.server.payment.PaymentClient;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
@@ -86,18 +88,36 @@ public class OrderService {
             throw new BaseException(BaseResponseStatus.FAIL);
         }
 
+        if (orderRepository.existsByPaymentIdAndOrderIdNot(requestDto.paymentId(), order.getOrderId())) {
+            throw new BaseException(BaseResponseStatus.FAIL);
+        }
+
         try {
             PaymentClient portoneClient = paymentClientProvider.getIfAvailable();
             if (portoneClient == null) {
                 throw new BaseException(BaseResponseStatus.FAIL);
             }
 
-            var paymentResponse = portoneClient.getPayment(requestDto.paymentId());
-            if (paymentResponse == null) {
+            var paymentFuture = portoneClient.getPayment(requestDto.paymentId());
+            if (paymentFuture == null) {
+                throw new BaseException(BaseResponseStatus.FAIL);
+            }
+
+            Payment payment = paymentFuture.join();
+            if (!(payment instanceof PaidPayment paidPayment)) {
                 throw new BaseException(BaseResponseStatus.FAIL);
             }
 
             StoragePlanService.ProductDefinition product = storagePlanService.resolveProduct(order.getProductCode());
+            var expectedAmount = order.getAmount() != null
+                    ? order.getAmount()
+                    : (product != null ? product.amount() : null);
+
+            if (paidPayment.getAmount() == null
+                    || expectedAmount == null
+                    || paidPayment.getAmount().getTotal() != expectedAmount.longValueExact()) {
+                throw new BaseException(BaseResponseStatus.FAIL);
+            }
 
             order.setPaymentId(requestDto.paymentId());
             if (product != null) {

@@ -100,12 +100,12 @@ export const createWorkspaceTreeMoveTargetOptions = (node = {}, rows = []) => {
   if (nodeId) blockedIds.add(nodeId)
 
   return [
-    { id: '', title: 'Workspace root', treeDepth: 0 },
+    { id: '', title: '워크스페이스 최상위', treeDepth: 0 },
     ...normalizeRows(rows)
       .filter((row) => !blockedIds.has(String(row.id || '')))
       .map((row) => ({
         id: String(row.id),
-        title: row.title || 'Untitled',
+        title: row.title || '제목 없음',
         treeDepth: row.treeDepth || 0,
       })),
   ]

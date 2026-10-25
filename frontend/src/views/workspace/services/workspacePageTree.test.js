@@ -67,7 +67,7 @@ describe('workspacePageTree', () => {
 
     expect([...collectWorkspacePageTreeDescendantIds(root)]).toEqual(['child', 'grandchild'])
     expect(createWorkspaceTreeMoveTargetOptions(root, rows)).toEqual([
-      { id: '', title: 'Workspace root', treeDepth: 0 },
+      { id: '', title: '워크스페이스 최상위', treeDepth: 0 },
       { id: 'other', title: 'Other', treeDepth: 0 },
     ])
   })

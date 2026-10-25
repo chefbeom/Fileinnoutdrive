@@ -1,12 +1,12 @@
 import { formatDateTime } from './workspacePresentation.js'
 
 const DEFAULT_WORKSPACE_REVISION_DIFF_LABELS = Object.freeze({
-  emptyTitle: 'Untitled',
-  blockSuffix: 'block',
+  emptyTitle: '제목 없음',
+  blockSuffix: '블록',
   truncationSuffix: '...',
 })
 
-const defaultBlockTypeLabel = (type) => type || 'block'
+const defaultBlockTypeLabel = (type) => type || '블록'
 
 const resolveLabels = (labels = {}) => ({
   ...DEFAULT_WORKSPACE_REVISION_DIFF_LABELS,

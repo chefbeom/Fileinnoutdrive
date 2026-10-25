@@ -97,6 +97,33 @@ class AuthServiceTest {
     }
 
     @Test
+    void resolvesSessionUserFromARegisteredRefreshToken() {
+        String refreshToken = "demo-refresh-token";
+        User user = User.builder()
+                .idx(9L)
+                .email("demo@fileinnout.local")
+                .name("Demo")
+                .role("ROLE_USER")
+                .enable(true)
+                .build();
+        RefreshToken storedToken = RefreshToken.builder()
+                .id(21L)
+                .email(user.getEmail())
+                .tokenHash(hash(refreshToken))
+                .expiryDate(LocalDateTime.now().plusDays(1))
+                .build();
+        when(jwtUtil.isExpired(refreshToken)).thenReturn(false);
+        when(jwtUtil.getCategory(refreshToken)).thenReturn("refresh");
+        when(refreshTokenRepository.findFirstByTokenHashOrderByIdDesc(hash(refreshToken)))
+                .thenReturn(Optional.of(storedToken));
+        when(jwtUtil.getEmail(refreshToken)).thenReturn(user.getEmail());
+        when(userRepository.findByEmail(user.getEmail())).thenReturn(Optional.of(user));
+
+        assertThat(authService.resolveUserByRefreshToken(refreshToken))
+                .extracting("idx", "email")
+                .containsExactly(9L, "demo@fileinnout.local");
+    }
+    @Test
     void logoutDeletesRefreshTokenByHash() {
         authService.logout("refresh-token");
 

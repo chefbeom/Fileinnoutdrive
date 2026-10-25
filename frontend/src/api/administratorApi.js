@@ -15,6 +15,20 @@ export async function fetchAdministratorDashboard() {
   return extractObjectResult(response?.data);
 }
 
+export async function fetchAdministratorLoginSettings() {
+  const response = await api.get("/administrator/login-settings", {
+    timeout: 15000,
+  });
+  return extractObjectResult(response?.data);
+}
+
+export async function updateAdministratorLoginSettings(socialLoginVisible) {
+  const response = await api.patch("/administrator/login-settings", {
+    socialLoginVisible: Boolean(socialLoginVisible),
+  });
+  return extractObjectResult(response?.data);
+}
+
 export async function updateAdministratorUserStatus(userIdx, accountStatus) {
   const response = await api.patch(`/administrator/users/${userIdx}/status`, {
     accountStatus,
@@ -40,12 +54,14 @@ export async function updateAdministratorStorageCapacity(providerCapacityBytes, 
   );
   return extractObjectResult(response?.data);
 }
+
 export async function fetchAdministratorShareAudit() {
   const response = await api.get("/administrator/share-audit", {
     timeout: 30000,
   });
   return extractObjectResult(response?.data) || [];
 }
+
 export async function fetchAdministratorSessions() {
   const response = await api.get("/administrator/sessions", {
     timeout: 30000,

@@ -53,9 +53,10 @@ public class NotificationController {
     @PostMapping("/send")
     @Operation(summary = "Send notification", description = "Sends a push notification payload.")
     public ResponseEntity<?> send(
+            @AuthenticationPrincipal AuthUserDetails user,
             @RequestBody NotificationDto.Send dto
     ) throws JoseException, GeneralSecurityException, IOException, ExecutionException, InterruptedException {
-        notificationService.send(dto);
+        notificationService.send(user != null ? user.getIdx() : null, dto);
         return ResponseEntity.ok("전송 성공");
     }
 

@@ -589,7 +589,7 @@ const gridClassName = computed(() => getFileTableGridClassName(gridSize.value));
         >
           <img
             :src="getVideoThumbnailUrl(file)"
-            :alt="`${getFileName(file)} thumbnail`"
+            :alt="`${getFileName(file)} 미리보기`"
             loading="lazy"
             class="pointer-events-none h-full w-full object-cover opacity-95"
           />

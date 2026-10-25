@@ -633,3 +633,65 @@
     height: 7.25rem;
   }
 }
+
+.admin-panel--login-setting {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-main) 92%, #eff6ff 8%), var(--bg-main));
+}
+
+.admin-login-setting {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.admin-login-setting__info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.admin-login-setting__title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.admin-login-setting__actions {
+  display: inline-flex;
+  gap: 0.5rem;
+  padding: 0.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.admin-toggle-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 0.6rem 1.15rem;
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.admin-toggle-btn--on {
+  background: #16a34a;
+  color: #ffffff;
+  box-shadow: 0 6px 16px rgba(22, 163, 74, 0.24);
+}
+
+.admin-toggle-btn--off {
+  background: #475569;
+  color: #ffffff;
+  box-shadow: 0 6px 16px rgba(71, 85, 105, 0.22);
+}
+
+.admin-toggle-btn:disabled {
+  cursor: default;
+}

@@ -25,7 +25,7 @@ const isLoggedIn = computed(() => !!authStore.token);
       
       <div class="flex justify-center gap-4 mb-16">
         <RouterLink v-if="!isLoggedIn" to="/login" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold text-lg hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200">
-          관리자 로그인 <i class="fa-solid fa-arrow-right ml-2 text-sm"></i>
+          시작하기 <i class="fa-solid fa-arrow-right ml-2 text-sm"></i>
         </RouterLink>
         <RouterLink v-else to="/main" class="bg-indigo-600 text-white px-6 py-3 rounded-lg font-bold text-lg hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200">
           대시보드로 가기 <i class="fa-solid fa-arrow-right ml-2 text-sm"></i>
@@ -33,7 +33,7 @@ const isLoggedIn = computed(() => !!authStore.token);
       </div>
       
       <div class="max-w-5xl mx-auto p-2 bg-slate-100 rounded-2xl shadow-xl overflow-hidden">
-        <img src="../assets/images/Dashboard.png" alt="FileInNOut Dashboard Preview" class="w-full rounded-xl border border-slate-200/50">
+        <img src="../assets/images/Dashboard.png" alt="FileInNOut 관리자 화면 미리보기" class="w-full rounded-xl border border-slate-200/50">
       </div>
     </section>
 
@@ -72,7 +72,7 @@ const isLoggedIn = computed(() => !!authStore.token);
     <section class="py-24 px-6 md:px-12 max-w-6xl mx-auto flex flex-col md:flex-row items-center gap-12 md:gap-20">
       <div class="md:w-1/2 order-2 md:order-1">
         <div class="p-2 bg-slate-100 rounded-2xl shadow-lg overflow-hidden transform hover:-translate-y-1 transition-transform duration-300">
-          <img src="../assets/images/Drive.png" alt="FileInNOut Drive Interface" class="w-full rounded-xl border border-slate-200/50">
+          <img src="../assets/images/Drive.png" alt="FileInNOut 드라이브 화면" class="w-full rounded-xl border border-slate-200/50">
         </div>
       </div>
       <div class="md:w-1/2 order-1 md:order-2 space-y-6">
@@ -105,7 +105,7 @@ const isLoggedIn = computed(() => !!authStore.token);
         </div>
         <div class="md:w-1/2">
           <div class="p-2 bg-white rounded-2xl shadow-lg overflow-hidden transform hover:-translate-y-1 transition-transform duration-300 border border-slate-100">
-            <img src="../assets/images/Editor.png" alt="FileInNOut Collaboration Editor" class="w-full rounded-xl border border-slate-50">
+            <img src="../assets/images/Editor.png" alt="FileInNOut 협업 편집기" class="w-full rounded-xl border border-slate-50">
             </div>
         </div>
       </div>
@@ -120,7 +120,7 @@ const isLoggedIn = computed(() => !!authStore.token);
           </p>
 
           <RouterLink v-if="!isLoggedIn" to="/login" class="bg-blue-500 text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-blue-400 transition-all shadow-lg shadow-blue-500/20 active:scale-95">
-              관리자 로그인
+              무료로 시작하기
           </RouterLink>
           <RouterLink v-else to="/main" class="bg-indigo-500 text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-indigo-400 transition-all shadow-lg shadow-indigo-500/20 active:scale-95">
               워크스페이스로 이동하기
@@ -144,7 +144,7 @@ const isLoggedIn = computed(() => !!authStore.token);
                 <a href="#" class="hover:text-blue-600 transition-colors">이용약관</a>
                 <a href="#" class="hover:text-blue-600 transition-colors">문의하기</a>
             </div>
-            <p class="text-xs text-slate-400">© 2024 FileInNOut Inc. All rights reserved.</p>
+            <p class="text-xs text-slate-400">© 2024 FileInNOut. 모든 권리 보유.</p>
         </div>
     </footer>
   </div>

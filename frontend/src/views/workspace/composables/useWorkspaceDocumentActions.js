@@ -6,20 +6,20 @@ const defaultDocumentId = (document = {}) =>
 const noop = () => {}
 
 const defaultMessages = {
-  untitled: 'Untitled',
-  copySuffix: 'Copy',
-  duplicateError: 'Failed to duplicate the document.',
-  removeError: 'Failed to update the document.',
-  deleteTitle: 'Delete document',
-  removeTitle: 'Remove from list',
-  deleteConfirmLabel: 'Delete',
-  removeConfirmLabel: 'Remove',
-  deleted: 'Document deleted.',
-  removed: 'Removed from list.',
+  untitled: '제목 없음',
+  copySuffix: '복사본',
+  duplicateError: '문서를 복제하지 못했습니다.',
+  removeError: '문서를 수정하지 못했습니다.',
+  deleteTitle: '문서 삭제',
+  removeTitle: '목록에서 제거',
+  deleteConfirmLabel: '삭제',
+  removeConfirmLabel: '제거',
+  deleted: '문서를 삭제했습니다.',
+  removed: '목록에서 제거했습니다.',
   deleteMessageFor: (document, title) =>
-    `"${title}" document will be deleted. This cannot be undone.`,
+    `"${title}" 문서를 삭제합니다. 이 작업은 되돌릴 수 없습니다.`,
   removeMessageFor: (document, title) =>
-    `"${title}" document will be removed from the list.`,
+    `"${title}" 문서를 목록에서 제거합니다.`,
 }
 
 const resolveValue = (value) => {

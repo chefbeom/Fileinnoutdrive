@@ -1,7 +1,9 @@
 package com.example.WaffleBear.administrator;
 
 import com.example.WaffleBear.administrator.model.AdministratorDto;
+import com.example.WaffleBear.common.exception.BaseException;
 import com.example.WaffleBear.common.model.BaseResponse;
+import com.example.WaffleBear.common.model.BaseResponseStatus;
 import com.example.WaffleBear.user.model.AuthUserDetails;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -27,12 +29,43 @@ public class AdministratorController {
 
     private final AdministratorService administratorService;
     private final StorageAnalyticsService storageAnalyticsService;
+    private final SocialLoginSettingsService socialLoginSettingsService;
 
     @GetMapping("/dashboard")
     @Operation(summary = "Get admin dashboard", description = "Returns administrator dashboard data.")
     public ResponseEntity<?> getDashboard(@AuthenticationPrincipal AuthUserDetails userDetails) {
         AdministratorDto.DashboardRes result = administratorService.getDashboard(userDetails);
+        result.setSocialLoginVisible(socialLoginSettingsService.isSocialLoginVisible());
         return ResponseEntity.ok(BaseResponse.success(result));
+    }
+
+    @GetMapping("/login-settings")
+    @Operation(summary = "Get login page settings", description = "Returns social login visibility settings for the login page.")
+    public ResponseEntity<?> getLoginSettings(@AuthenticationPrincipal AuthUserDetails userDetails) {
+        administratorService.validateAdministratorAccess(userDetails);
+        return ResponseEntity.ok(BaseResponse.success(
+                AdministratorDto.LoginSettingsRes.builder()
+                        .socialLoginVisible(socialLoginSettingsService.isSocialLoginVisible())
+                        .build()
+        ));
+    }
+
+    @PatchMapping("/login-settings")
+    @Operation(summary = "Update login page settings", description = "Updates social login visibility on the login page.")
+    public ResponseEntity<?> updateLoginSettings(
+            @AuthenticationPrincipal AuthUserDetails userDetails,
+            @RequestBody AdministratorDto.LoginSettingsUpdateReq request
+    ) {
+        administratorService.validateAdministratorAccess(userDetails);
+        if (request == null || request.getSocialLoginVisible() == null) {
+            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
+        boolean updated = socialLoginSettingsService.setSocialLoginVisible(request.getSocialLoginVisible());
+        return ResponseEntity.ok(BaseResponse.success(
+                AdministratorDto.LoginSettingsRes.builder()
+                        .socialLoginVisible(updated)
+                        .build()
+        ));
     }
 
     @GetMapping("/sessions")
@@ -58,11 +91,13 @@ public class AdministratorController {
     ) {
         return ResponseEntity.ok(BaseResponse.success(administratorService.forceLogoutUserSessions(userDetails, userIdx)));
     }
+
     @GetMapping("/share-audit")
     @Operation(summary = "Get share audit logs", description = "Returns recent share audit events for administrators.")
     public ResponseEntity<?> getShareAuditLogs(@AuthenticationPrincipal AuthUserDetails userDetails) {
         return ResponseEntity.ok(BaseResponse.success(administratorService.getShareAuditLogs(userDetails)));
     }
+
     @PatchMapping("/users/{userIdx}/status")
     @Operation(summary = "Update user status", description = "Changes a user's account status.")
     public ResponseEntity<?> updateUserStatus(

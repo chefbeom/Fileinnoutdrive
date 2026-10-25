@@ -65,6 +65,28 @@ describe('useAuthStore', () => {
     )
   })
 
+  it('requests demo data cleanup when the page exits', () => {
+    const sendBeacon = vi.fn(() => true)
+    const originalSendBeacon = Object.getOwnPropertyDescriptor(navigator, 'sendBeacon')
+    Object.defineProperty(navigator, 'sendBeacon', {
+      configurable: true,
+      value: sendBeacon,
+    })
+
+    try {
+      const store = useAuthStore()
+      store.login(createToken({ idx: 31, email: 'demo@fileinnout.local', exp: futureExp() }))
+      window.dispatchEvent(new Event('pagehide'))
+
+      expect(sendBeacon).toHaveBeenCalledWith(expect.stringContaining('/auth/logout'), '')
+    } finally {
+      if (originalSendBeacon) {
+        Object.defineProperty(navigator, 'sendBeacon', originalSendBeacon)
+      } else {
+        delete navigator.sendBeacon
+      }
+    }
+  })
   it('clears an expired access token during login check and closes SSE', () => {
     const store = useAuthStore()
     store.login(createToken({ idx: 9, email: 'expired@example.com', exp: pastExp() }))

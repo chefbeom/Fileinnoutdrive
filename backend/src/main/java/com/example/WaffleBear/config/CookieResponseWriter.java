@@ -23,6 +23,10 @@ public class CookieResponseWriter {
         addCookie(response, "refresh", refreshToken, REFRESH_COOKIE_MAX_AGE_SECONDS);
     }
 
+    public void addSessionRefreshCookie(HttpServletResponse response, String refreshToken) {
+        addCookie(response, "refresh", refreshToken, -1);
+    }
+
     public void clearRefreshCookie(HttpServletResponse response) {
         addCookie(response, "refresh", "", 0);
     }

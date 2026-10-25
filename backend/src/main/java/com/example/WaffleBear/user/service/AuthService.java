@@ -1,5 +1,6 @@
 package com.example.WaffleBear.user.service;
 
+import com.example.WaffleBear.user.model.AuthUserDetails;
 import com.example.WaffleBear.user.model.RefreshToken;
 import com.example.WaffleBear.user.model.TokenDto;
 import com.example.WaffleBear.user.model.User;
@@ -130,6 +131,37 @@ public class AuthService {
             throw new IllegalArgumentException("Refresh token is expired.");
         } catch (JwtException e) {
             throw new IllegalArgumentException("Invalid refresh token.");
+        }
+    }
+
+    public AuthUserDetails resolveUserByRefreshToken(String refreshToken) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return null;
+        }
+
+        try {
+            validateRefreshToken(refreshToken);
+            if (!"refresh".equals(jwtUtil.getCategory(refreshToken))) {
+                return null;
+            }
+
+            String refreshTokenHash = hashRefreshToken(refreshToken);
+            if (refreshTokenRepository.findFirstByTokenHashOrderByIdDesc(refreshTokenHash).isEmpty()) {
+                return null;
+            }
+
+            return userRepository.findByEmail(jwtUtil.getEmail(refreshToken))
+                    .map(AuthUserDetails::from)
+                    .orElse(null);
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    @Transactional
+    public void logoutAllByEmail(String email) {
+        if (email != null && !email.isBlank()) {
+            refreshTokenRepository.deleteByEmail(email.trim());
         }
     }
 

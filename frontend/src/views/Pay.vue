@@ -129,7 +129,7 @@
       <div class="md:sticky md:top-8 h-fit">
         <div class="bg-white p-10 rounded-[24px] border border-[#edf2f7] shadow-sm">
           <div class="mb-[30px]">
-            <span class="text-[0.75rem] font-extrabold text-[#2563eb] uppercase tracking-wider">Final Checkout</span>
+            <span class="text-[0.75rem] font-extrabold text-[#2563eb] uppercase tracking-wider">최종 결제</span>
             <h2 class="text-[1.75rem] font-black mt-1">{{ route.query.plan || 'Standard' }} 플랜</h2>
           </div>
 

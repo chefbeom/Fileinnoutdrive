@@ -19,7 +19,7 @@ const emit = defineEmits(["close"]);
 const gameCatalog = [
   {
     id: "openhexagon",
-    name: "Open Hexagon Arena",
+    name: "오픈 헥사곤 아레나",
     description: "현재 웹소켓을 재사용하는 실시간 멀티플레이 서바이벌 게임",
     badge: "멀티플레이",
     accent: "is-live",
@@ -36,7 +36,7 @@ const gameCatalog = [
   },
   {
     id: "roulette",
-    name: "Roulette",
+    name: "룰렛",
     description: "가볍게 돌려보는 웹 룰렛 미니게임",
     badge: "싱글플레이",
     accent: "is-casino",
@@ -45,7 +45,7 @@ const gameCatalog = [
   },
   {
     id: "rps",
-    name: "Rock Paper Scissors",
+    name: "가위바위보",
     description: "방 코드를 만들어 실시간으로 붙는 가위바위보 대전 게임",
     badge: "멀티플레이",
     accent: "is-duel",
@@ -122,8 +122,8 @@ const handleBackdropClick = (event) => {
     >
       <header class="games-hub-header">
         <div>
-          <p class="games-hub-eyebrow">Premium Arcade</p>
-          <h2 id="games-hub-title">Games</h2>
+          <p class="games-hub-eyebrow">프리미엄 아케이드</p>
+          <h2 id="games-hub-title">게임</h2>
           <p class="games-hub-subtitle">프리미엄 이상 전용 미니게임 모음입니다.</p>
         </div>
         <div class="games-hub-header__actions">
@@ -182,7 +182,7 @@ const handleBackdropClick = (event) => {
               :key="selectedGameFrameSrc"
               :src="selectedGameFrameSrc"
               class="games-stage__frame"
-              title="game-frame"
+              title="게임 화면"
             />
           </div>
         </div>

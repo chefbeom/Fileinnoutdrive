@@ -21,7 +21,7 @@ const router = createRouter({
     {
       path: '/signup',
       name: 'signup',
-      redirect: { name: 'login' },
+      component: () => import('../views/user/SignUpView.vue'),
       meta: { title: '회원가입', requiresAuth: false },
     },
     {
@@ -124,7 +124,7 @@ const router = createRouter({
     { 
       path: '/FindMember',
       name: 'FindMember',
-      redirect: { name: 'login' },
+      component: () => import('../views/user/FindMember.vue'),
       meta: { title: '회원 찾기', requiresAuth: false },
     },
     {

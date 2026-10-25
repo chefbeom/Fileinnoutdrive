@@ -1,8 +1,11 @@
 package com.example.WaffleBear.user.controller;
 
+import com.example.WaffleBear.administrator.SocialLoginSettingsService;
 import com.example.WaffleBear.config.CookieResponseWriter;
+import com.example.WaffleBear.user.model.AuthUserDetails;
 import com.example.WaffleBear.user.model.TokenDto;
 import com.example.WaffleBear.user.service.AuthService;
+import com.example.WaffleBear.user.service.DemoAccountService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.Cookie;
@@ -10,10 +13,12 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -25,7 +30,9 @@ import java.util.List;
 public class AuthController {
 
     private final AuthService authService;
+    private final DemoAccountService demoAccountService;
     private final CookieResponseWriter cookieResponseWriter;
+    private final SocialLoginSettingsService socialLoginSettingsService;
 
     @Value("${app.admin-only:false}")
     private boolean adminOnly;
@@ -51,14 +58,28 @@ public class AuthController {
     @GetMapping("/oauth2/providers")
     @Operation(summary = "OAuth2 provider status", description = "Returns public social-login provider availability.")
     public ResponseEntity<OAuthProviderStatusRes> oauth2Providers() {
+        boolean socialLoginVisible = socialLoginSettingsService.isSocialLoginVisible();
         return ResponseEntity.ok(new OAuthProviderStatusRes(
                 adminOnly,
+                socialLoginVisible,
                 List.of(
                         provider("google", "Google", googleClientId, googleClientSecret),
                         provider("kakao", "Kakao", kakaoClientId, kakaoClientSecret),
                         provider("naver", "Naver", naverClientId, naverClientSecret)
                 )
         ));
+    }
+
+    @PostMapping("/demo-login")
+    @Operation(summary = "Demo login", description = "Resets demo data and starts an isolated demo session.")
+    public ResponseEntity<DemoLoginRes> demoLogin(HttpServletResponse response) {
+        if (adminOnly || !demoAccountService.isEnabled()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        TokenDto.AuthTokenResponse tokens = demoAccountService.loginAndReset();
+        response.setHeader("Authorization", "Bearer " + tokens.accessToken());
+        cookieResponseWriter.addSessionRefreshCookie(response, tokens.refreshToken());
+        return ResponseEntity.ok(new DemoLoginRes(tokens.accessToken()));
     }
 
     @PostMapping("/reissue")
@@ -85,7 +106,10 @@ public class AuthController {
 
     @PostMapping("/logout")
     @Operation(summary = "Logout", description = "Invalidates the refresh token and clears the refresh cookie.")
-    public ResponseEntity<?> logout(HttpServletRequest request, HttpServletResponse response) {
+    public ResponseEntity<?> logout(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            @AuthenticationPrincipal AuthUserDetails userDetails) {
         String refreshToken = null;
         Cookie[] cookies = request.getCookies();
         if (cookies != null) {
@@ -96,6 +120,11 @@ public class AuthController {
                 }
             }
         }
+
+        AuthUserDetails sessionUser = userDetails != null
+                ? userDetails
+                : authService.resolveUserByRefreshToken(refreshToken);
+        demoAccountService.resetAfterLogout(sessionUser);
 
         if (refreshToken != null) {
             authService.logout(refreshToken);
@@ -126,7 +155,14 @@ public class AuthController {
                 && !normalized.startsWith("dummy-");
     }
 
-    public record OAuthProviderStatusRes(boolean adminOnly, List<OAuthProviderRes> providers) {
+    public record DemoLoginRes(String accessToken) {
+    }
+
+    public record OAuthProviderStatusRes(
+            boolean adminOnly,
+            boolean socialLoginVisible,
+            List<OAuthProviderRes> providers
+    ) {
     }
 
     public record OAuthProviderRes(String id, String label, boolean enabled, String authorizationUrl) {

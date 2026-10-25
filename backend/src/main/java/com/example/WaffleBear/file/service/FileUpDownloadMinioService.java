@@ -69,6 +69,28 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
             String fileFormat,
             Long fileSize
     ) {}
+    @Transactional
+    public int resetOwnedData(Long userIdx) {
+        if (userIdx == null || userIdx <= 0L) {
+            return 0;
+        }
+
+        List<FileInfo> files = fileUpDownloadRepository.findAllByUser_Idx(userIdx);
+        if (files.isEmpty()) {
+            return 0;
+        }
+
+        List<String> objectKeys = FileObjectRemovalRules.collectObjectKeysForRemoval(
+                files,
+                fileVersionLifecycleService.findVersionObjectKeys(files)
+        );
+        deleteFileShares(files);
+        fileVersionLifecycleService.deleteVersionsForFiles(files);
+        fileUpDownloadRepository.deleteAll(FileTreeRules.sortForDelete(files));
+        FileObjectCleanupScheduler.deleteAfterCommit(fileObjectDeletionService, objectKeys);
+        return files.size();
+    }
+
     @Override
     public List<FileCommonDto.FileListItemRes> fileList(Long idx) {
         Long userIdx = idx == null ? 0L : idx;

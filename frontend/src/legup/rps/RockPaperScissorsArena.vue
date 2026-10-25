@@ -127,8 +127,8 @@ onBeforeUnmount(() => {
   <section class="rps-shell">
     <header class="rps-hero">
       <div>
-        <p class="rps-hero__eyebrow">Live Match</p>
-        <h2>Rock Paper Scissors</h2>
+        <p class="rps-hero__eyebrow">실시간 대결</p>
+        <h2>가위바위보</h2>
         <p class="rps-hero__copy">현재 프로젝트 웹소켓으로 방을 만들고 바로 대결할 수 있는 멀티플레이 미니게임입니다.</p>
       </div>
       <div class="rps-hero__status">
@@ -142,7 +142,7 @@ onBeforeUnmount(() => {
         <div v-if="!currentRoomId" class="rps-join">
           <label class="rps-field">
             <span>방 코드</span>
-            <input v-model="roomInput" type="text" maxlength="24" placeholder="예: match-01" />
+            <input v-model="roomInput" type="text" maxlength="24" placeholder="예: 대결방-01" />
           </label>
           <button type="button" class="rps-primary-button" @click="joinRoom">방 입장</button>
           <p v-if="joinError" class="rps-error">{{ joinError }}</p>
@@ -217,7 +217,7 @@ onBeforeUnmount(() => {
         <div class="rps-chat-panel__head">
           <div>
             <p class="rps-board__label">실시간 채팅</p>
-            <strong>Room Chat</strong>
+            <strong>방 채팅</strong>
           </div>
           <span v-if="roomState.typingNickname" class="rps-typing">{{ roomState.typingNickname }} 입력 중...</span>
         </div>

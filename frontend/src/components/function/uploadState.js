@@ -1,6 +1,7 @@
 import {
   CHUNK_SIZE_BYTES,
   MAX_SPEED_SAMPLES,
+  MIN_FINAL_PARTITION_SIZE_BYTES,
   MIN_PROGRESS_SAMPLE_INTERVAL_MS,
   PARTITION_SIZE_BYTES,
   SPEED_SAMPLE_WINDOW_MS,
@@ -55,7 +56,7 @@ export function defaultStatusText(status) {
     case "uploading":
       return "업로드를 진행하고 있습니다.";
     case "merging":
-      return "서버에서 업로드를 마무리하고 있습니다.";
+      return "파일 전송을 마무리하는 중...";
     case "completed":
       return "업로드 완료";
     case "canceling":
@@ -224,7 +225,7 @@ export function getUploadPanelEtaText({
   }
 
   if (mergingUploadCount > 0) {
-    return "서버에서 업로드를 마무리하는 중입니다...";
+    return "파일 전송을 마무리하는 중...";
   }
 
   if (overallEstimatedSeconds == null) {
@@ -238,6 +239,7 @@ export function getUploadPanelEtaText({
     : "";
   return `${formatRemainingTime(overallEstimatedSeconds)} 남음${speedSuffix}`;
 }
+
 export function calculateWeightedAverageSpeed(speedSamples) {
   if (!Array.isArray(speedSamples) || speedSamples.length === 0) {
     return 0;
@@ -272,11 +274,17 @@ export function buildUploadProgressPatch(item, uploadedBytes, now = Date.now()) 
     fileSize || normalizedUploadedBytes,
     Math.max(0, normalizedUploadedBytes),
   );
-  const progress = fileSize
+  const rawProgress = fileSize
     ? Math.min(100, Math.round((safeUploadedBytes / fileSize) * 100))
     : safeUploadedBytes > 0
       ? 100
       : 0;
+  const progress =
+    item.status === "completed"
+      ? 100
+      : safeUploadedBytes > 0
+        ? Math.min(99, rawProgress)
+        : 0;
 
   const patch = {
     uploadedBytes: safeUploadedBytes,
@@ -329,7 +337,7 @@ export function buildUploadProgressPatch(item, uploadedBytes, now = Date.now()) 
       .filter(Boolean)
       .join(" \u00B7 ");
   } else if (safeUploadedBytes >= fileSize && fileSize > 0) {
-    patch.statusText = "\uC5C5\uB85C\uB4DC \uC644\uB8CC, \uB9C8\uBB34\uB9AC \uC911";
+    patch.statusText = "파일 전송을 마무리하는 중...";
     patch.averageBytesPerSecond = 0;
     patch.estimatedSeconds = 0;
   } else {
@@ -338,6 +346,7 @@ export function buildUploadProgressPatch(item, uploadedBytes, now = Date.now()) 
 
   return patch;
 }
+
 export function updateUploadItemProgress(item, uploadedBytes, statusText, now = Date.now()) {
   if (!item) {
     return item;
@@ -394,11 +403,18 @@ export function getExpectedUploadCount(file, firstMeta) {
     return partitionCount;
   }
 
-  if (!file?.size || Number(file.size) <= PARTITION_SIZE_BYTES) {
+  const fileSize = Number(file?.size || 0);
+  if (!fileSize || fileSize <= PARTITION_SIZE_BYTES) {
     return 1;
   }
 
-  return Math.ceil(Number(file.size) / CHUNK_SIZE_BYTES);
+  const rawPartitionCount = Math.ceil(fileSize / CHUNK_SIZE_BYTES);
+  const remainder = fileSize % CHUNK_SIZE_BYTES;
+  if (rawPartitionCount > 1 && remainder > 0 && remainder <= MIN_FINAL_PARTITION_SIZE_BYTES) {
+    return rawPartitionCount - 1;
+  }
+
+  return rawPartitionCount;
 }
 
 export function buildUploadJobs(selectedFiles, uploadMetas, uploadItems) {

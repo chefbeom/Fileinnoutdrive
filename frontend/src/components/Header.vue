@@ -716,7 +716,8 @@ onBeforeUnmount(() => {
             <div class="py-2">
               <button type="button" class="dropdown-item" @click="openSettings('profile')"><i class="fa-solid fa-user-gear"></i><span>개인 프로필 설정</span></button>
               <button type="button" class="dropdown-item" @click="openSettings('group')"><i class="fa-solid fa-user-group"></i><span>그룹 관리</span></button>
-              <button v-if="canUseGames" type="button" class="dropdown-item" @click="openGamesHub"><i class="fa-solid fa-gamepad"></i><span>Games</span></button>
+              <button v-if="canUseGames" type="button" class="dropdown-item" @click="openGamesHub"><i class="fa-solid fa-gamepad"></i><span>게임</span></button>
+              <button type="button" class="dropdown-item dropdown-item--disabled" disabled title="데스크톱 앱 설치 파일은 아직 준비 중입니다."><i class="fa-solid fa-desktop"></i><span>데스크톱 ZIP</span><span class="dropdown-item__status">준비 중</span></button>
               <button type="button" class="dropdown-item" @click="openSettings('security')"><i class="fa-solid fa-shield-halved"></i><span>보안 및 비밀번호</span></button>
               <button type="button" class="dropdown-item" @click="openSettings('language')"><i class="fa-solid fa-language"></i><span>언어 설정 ({{ userLocaleLabel }})</span></button>
             </div>

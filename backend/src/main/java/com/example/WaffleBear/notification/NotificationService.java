@@ -12,6 +12,7 @@ import org.jose4j.lang.JoseException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +26,7 @@ import java.security.spec.InvalidKeySpecException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 
 @Service
@@ -67,6 +69,10 @@ public class NotificationService {
 
     @Transactional
     public synchronized void subscribe(NotificationDto.Subscribe dto, Long userIdx) {
+        if (userIdx == null || dto == null || !hasText(dto.endpoint())) {
+            throw new IllegalArgumentException("유효한 구독 정보가 필요합니다.");
+        }
+
         List<NotificationEntity> subscriptions = notificationRepository.findAllByEndpoint(dto.endpoint());
 
         if (subscriptions.isEmpty()) {
@@ -74,20 +80,59 @@ public class NotificationService {
             return;
         }
 
-        NotificationEntity existing = subscriptions.get(0);
+        NotificationEntity ownedSubscription = subscriptions.stream()
+                .filter(sub -> Objects.equals(sub.getUserIdx(), userIdx))
+                .findFirst()
+                .orElse(null);
+
+        if (ownedSubscription == null) {
+            boolean activeForAnotherUser = subscriptions.stream()
+                    .anyMatch(sub -> sub.getUserIdx() != null
+                            && !Objects.equals(sub.getUserIdx(), userIdx)
+                            && sub.isActive());
+            if (activeForAnotherUser) {
+                throw new AccessDeniedException("다른 계정에 등록된 활성 푸시 구독 엔드포인트입니다.");
+            }
+            ownedSubscription = subscriptions.get(0);
+        }
+
+        final Long keptIdx = ownedSubscription.getIdx();
         NotificationEntity updated = NotificationEntity.builder()
-                .idx(existing.getIdx())
+                .idx(keptIdx)
                 .userIdx(userIdx)
-                .endpoint(existing.getEndpoint())
+                .endpoint(ownedSubscription.getEndpoint())
                 .p256dh(dto.keys() != null ? dto.keys().get("p256dh") : null)
                 .auth(dto.keys() != null ? dto.keys().get("auth") : null)
                 .isActive(true)
                 .build();
         notificationRepository.save(updated);
 
-        if (subscriptions.size() > 1) {
-            notificationRepository.deleteAll(subscriptions.subList(1, subscriptions.size()));
+        List<NotificationEntity> duplicates = subscriptions.stream()
+                .filter(sub -> !Objects.equals(sub.getIdx(), keptIdx))
+                .toList();
+        if (!duplicates.isEmpty()) {
+            notificationRepository.deleteAll(duplicates);
         }
+    }
+
+    public void send(Long requesterUserIdx, NotificationDto.Send dto)
+            throws GeneralSecurityException, JoseException, IOException, ExecutionException, InterruptedException {
+        if (requesterUserIdx == null) {
+            throw new AccessDeniedException("인증 정보가 필요합니다.");
+        }
+        if (pushService == null) {
+            throw new IllegalStateException("Web push is not configured.");
+        }
+
+        NotificationEntity entity = notificationRepository.findById(dto.idx()).orElseThrow();
+        if (!Objects.equals(entity.getUserIdx(), requesterUserIdx)) {
+            throw new AccessDeniedException("본인의 푸시 구독으로만 알림을 전송할 수 있습니다.");
+        }
+
+        Subscription.Keys keys = new Subscription.Keys(entity.getP256dh(), entity.getAuth());
+        Subscription subscription = new Subscription(entity.getEndpoint(), keys);
+        Notification notification = new Notification(subscription, NotificationDto.Payload.from(dto).toString());
+        pushService.send(notification);
     }
 
     public void send(NotificationDto.Send dto)

@@ -36,7 +36,7 @@ const isCoverSelected = (optionId) => props.coverColorOption?.id === optionId
   <section class="workspace-property-panel" aria-label="페이지 속성">
     <div class="workspace-property-panel__header">
       <div>
-        <span>Properties</span>
+        <span>속성</span>
         <strong>페이지 속성</strong>
       </div>
       <div class="workspace-property-badges">

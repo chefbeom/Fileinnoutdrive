@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -41,6 +42,7 @@ public class SseService {
         );
         sendEventToUser(targetUserIdx, "role-changed", payload);
     }
+
     // ✅ 공통 전송 헬퍼
     public void sendEventToUser(Long userId, String eventName, Object data) {
         if (userId == null || !StringUtils.hasText(eventName)) {
@@ -53,21 +55,23 @@ public class SseService {
     }
 
     void deliverEventToUser(Long userId, String eventName, String payloadJson) {
-        SseEmitter emitter = emitterStore.get(userId);
-        if (emitter == null) return;
+        Set<SseEmitter> userEmitters = emitterStore.getAll(userId);
+        if (userEmitters == null || userEmitters.isEmpty()) return;
 
-        try {
-            emitter.send(SseEmitter.event()
-                    .name(eventName)
-                    .data(payloadJson));
-        } catch (IOException e) {
-            emitterStore.remove(userId);
-            emitter.completeWithError(e);
+        for (SseEmitter emitter : userEmitters) {
+            try {
+                emitter.send(SseEmitter.event()
+                        .name(eventName)
+                        .data(payloadJson));
+            } catch (IOException e) {
+                emitterStore.remove(userId, emitter);
+                emitter.completeWithError(e);
+            }
         }
     }
 
     public boolean isConnected(Long userId) {
-        return emitterStore.getEmitters().containsKey(userId);
+        return !emitterStore.getAll(userId).isEmpty();
     }
 
     private void publish(Long userId, String eventName, String payloadJson) {
