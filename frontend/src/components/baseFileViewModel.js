@@ -1,5 +1,12 @@
 import { formatBytes } from "@/utils/formatBytes.js";
 import { getCollectionActionAvailability } from "@/components/file/fileCollectionViewModel.js";
+import {
+  describeSearchScopeLabel,
+  formatExtensionFilterValue,
+  matchesSearchItem,
+  normalizeSearchScope,
+  parseExtensionTokens,
+} from "@/utils/fileSearch.js";
 
 export function collectBaseFileExtensions({ useServerPaging = false, serverExtensions = [], files = [] } = {}) {
   if (useServerPaging) {
@@ -57,7 +64,8 @@ export function buildBaseCustomSizeRangeLabel(searchState = {}) {
 export function hasBaseSearchFilters(searchState = {}) {
   return (
     String(searchState.searchQuery || "").trim() !== "" ||
-    (searchState.extensionFilter || "all") !== "all" ||
+    parseExtensionTokens(searchState.extensionFilter).length > 0 ||
+    normalizeSearchScope(searchState.searchScope) !== "current" ||
     (searchState.sizeFilter || "all") !== "all" ||
     (searchState.statusFilter || "all") !== "all"
   );
@@ -69,9 +77,22 @@ export function buildBaseActiveFilterChips(searchState = {}, sortOption = "updat
   const statusOptionLabelMap = options.statusOptionLabelMap || {};
   const sortOptions = options.sortOptions || [];
 
+  const normalizedScope = normalizeSearchScope(searchState.searchScope);
+  if (normalizedScope !== "current") {
+    chips.push(
+      `위치: ${describeSearchScopeLabel({
+        searchScope: normalizedScope,
+        searchRootFolderId: searchState.searchRootFolderId ?? null,
+        rootFolders: options.rootFolders || [],
+        rootFallbackLabel: options.rootFallbackLabel || "홈 (전체)",
+      })}`,
+    );
+  }
+
   const keyword = String(searchState.searchQuery || "").trim();
   if (keyword) chips.push(`검색: ${keyword}`);
-  if ((searchState.extensionFilter || "all") !== "all") chips.push(`확장자: ${String(searchState.extensionFilter).toUpperCase()}`);
+  const extTokens = parseExtensionTokens(searchState.extensionFilter);
+  if (extTokens.length > 0) chips.push(`확장자: ${extTokens.map((ext) => ext.toUpperCase()).join(", ")}`);
   if ((searchState.sizeFilter || "all") !== "all") chips.push(`크기: ${sizeOptionLabelMap[searchState.sizeFilter] || "사용자 설정"}`);
   if ((searchState.statusFilter || "all") !== "all") chips.push(`상태: ${statusOptionLabelMap[searchState.statusFilter] || "사용자 설정"}`);
   if (sortOption !== "updatedAt-desc") chips.push(`정렬: ${sortOptions.find((option) => option.value === sortOption)?.label || "사용자 설정"}`);
@@ -104,28 +125,28 @@ export function matchesBaseFileSizeFilter(file, searchState = {}) {
 }
 
 export function filterAndSortBaseFiles(files = [], searchState = {}, sortOption = "updatedAt-desc") {
-  const keyword = String(searchState.searchQuery || "").trim().toLowerCase();
   const [sortBy, sortDirection = "desc"] = String(sortOption || "updatedAt-desc").split("-");
-  const extensionFilter = searchState.extensionFilter || "all";
   const statusFilter = searchState.statusFilter || "all";
 
   const filtered = files.filter((file) => {
-    const fileName = String(file?.name || file?.fileOriginName || "").toLowerCase();
-    const extension = String(file?.extension || file?.fileFormat || "").toLowerCase();
-    const ownerName = String(file?.ownerName || "").toLowerCase();
-    const ownerEmail = String(file?.ownerEmail || "").toLowerCase();
-    const sharedPath = String(file?.sharedPath || file?.desktopPath || "").toLowerCase();
+    const fileName = String(file?.name || file?.fileOriginName || "");
+    const extension = String(file?.extension || file?.fileFormat || "");
     const sharedPathSegments = Array.isArray(file?.sharedPathSegments)
-      ? file.sharedPathSegments.join(" ").toLowerCase()
+      ? file.sharedPathSegments.join(" ")
       : "";
-    const matchesKeyword = !keyword ||
-      fileName.includes(keyword) ||
-      extension.includes(keyword) ||
-      ownerName.includes(keyword) ||
-      ownerEmail.includes(keyword) ||
-      sharedPath.includes(keyword) ||
-      sharedPathSegments.includes(keyword);
-    const matchesExtension = extensionFilter === "all" || extension === extensionFilter;
+    const matchesQueryAndExt = matchesSearchItem({
+      name: fileName,
+      extension,
+      isFolder: file?.type === "folder",
+      searchQuery: searchState.searchQuery || "",
+      extensionFilter: searchState.extensionFilter || "all",
+      extraSearchText: [
+        file?.ownerName || "",
+        file?.ownerEmail || "",
+        file?.sharedPath || file?.desktopPath || "",
+        sharedPathSegments,
+      ],
+    });
     const matchesStatus = statusFilter === "all" ||
       (statusFilter === "shared" && (file?.sharedFile || file?.sharedWithMe)) ||
       (statusFilter === "shared-owned" && file?.sharedFile && !file?.sharedWithMe) ||
@@ -133,7 +154,7 @@ export function filterAndSortBaseFiles(files = [], searchState = {}, sortOption 
       (statusFilter === "locked" && file?.lockedFile) ||
       (statusFilter === "unlocked" && !file?.lockedFile);
 
-    return matchesKeyword && matchesExtension && matchesStatus && matchesBaseFileSizeFilter(file, searchState);
+    return matchesQueryAndExt && matchesStatus && matchesBaseFileSizeFilter(file, searchState);
   });
 
   return filtered.sort((left, right) => {
@@ -237,13 +258,16 @@ export function buildBaseServerListQuery({
     return null;
   }
 
+  const normalizedScope = normalizeSearchScope(searchState.searchScope);
   return {
     parentId: currentFolderId ?? null,
     page: Math.max(0, currentPage - 1),
     size: pageSize,
     sortOption,
     searchQuery: String(searchState.searchQuery || "").trim(),
-    extensionFilter: searchState.extensionFilter,
+    searchScope: normalizedScope,
+    searchRootFolderId: normalizedScope === "root" ? (searchState.searchRootFolderId ?? null) : null,
+    extensionFilter: formatExtensionFilterValue(searchState.extensionFilter),
     sizeFilter: searchState.sizeFilter,
     customMinSize: searchState.customMinSize,
     customMaxSize: searchState.customMaxSize,

@@ -129,6 +129,8 @@ describe("baseFileViewModel", () => {
       size: 20,
       sortOption: "name-asc",
       searchQuery: "report",
+      searchScope: "current",
+      searchRootFolderId: null,
       extensionFilter: "pdf",
       sizeFilter: "lte10",
       customMinSize: "",
@@ -140,14 +142,47 @@ describe("baseFileViewModel", () => {
     });
     expect(buildBaseServerListQuery({
       useServerPaging: true,
+      searchState: {
+        searchQuery: ".pdf",
+        searchScope: "root",
+        searchRootFolderId: 42,
+        extensionFilter: "*.jpg, .png",
+      },
       vaultMode: true,
       includeHidden: true,
       trashedOnly: true,
     })).toMatchObject({
+      searchScope: "root",
+      searchRootFolderId: 42,
+      extensionFilter: "jpg, png",
       vaultMode: true,
       includeHidden: true,
       trashedOnly: true,
     });
+  });
+
+  it("supports multi-extension filters, inline extensions, and search scope chips", () => {
+    const sampleFiles = [
+      { id: 1, name: "2026 계약 보고서.pdf", extension: "pdf", type: "file", sizeBytes: 100 },
+      { id: 2, name: "logo.png", extension: "png", type: "file", sizeBytes: 100 },
+      { id: 3, name: "notes.txt", extension: "txt", type: "file", sizeBytes: 100 },
+    ];
+
+    expect(filterAndSortBaseFiles(sampleFiles, { searchQuery: "계약 .pdf" }).map((f) => f.id)).toEqual([1]);
+    expect(filterAndSortBaseFiles(sampleFiles, { extensionFilter: ".pdf, png" }).map((f) => f.id)).toEqual([1, 2]);
+    expect(hasBaseSearchFilters({ searchScope: "root" })).toBe(true);
+    expect(hasBaseSearchFilters({ extensionFilter: ".pdf, png" })).toBe(true);
+    expect(
+      buildBaseActiveFilterChips(
+        {
+          searchScope: "root",
+          searchRootFolderId: 10,
+          extensionFilter: ".pdf, png",
+        },
+        "updatedAt-desc",
+        { rootFolders: [{ id: 10, name: "자료" }] },
+      ),
+    ).toEqual(["위치: 루트 (자료)", "확장자: PDF, PNG"]);
   });
   it("aggregates shared recipients and formats share policy labels", () => {
     const entries = aggregateBaseShareInfoEntries([

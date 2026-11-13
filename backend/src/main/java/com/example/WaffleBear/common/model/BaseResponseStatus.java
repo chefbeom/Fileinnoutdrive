@@ -99,7 +99,14 @@ public enum BaseResponseStatus {
     SECRET_FOLDER_NOT_ALLOWED(false, 7307, "공유 중이거나 공유 저장소 폴더는 비밀 폴더로 설정할 수 없습니다."),
     PIN_FORMAT_INVALID(false, 7308, "PIN 번호는 숫자 4자리여야 합니다."),
     PIN_ATTEMPTS_EXCEEDED(false, 7309, "PIN 또는 비밀번호 입력 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요."),
-    PASSWORD_POLICY_INVALID(false, 7310, "비밀번호는 최소 8자 이상이어야 합니다.");
+    PASSWORD_POLICY_INVALID(false, 7310, "비밀번호는 최소 8자 이상이어야 합니다."),
+    SHARE_LINK_NOT_FOUND(false, 7401, "다운로드 공유 링크를 찾을 수 없습니다."),
+    SHARE_LINK_EXPIRED(false, 7402, "만료된 다운로드 공유 링크입니다."),
+    SHARE_LINK_DOWNLOAD_LIMIT_REACHED(false, 7403, "허용된 다운로드 횟수를 모두 사용했습니다."),
+    SHARE_LINK_REVOKED(false, 7404, "해제되었거나 중단된 다운로드 공유 링크입니다."),
+    SHARE_LINK_PASSWORD_REQUIRED(false, 7405, "이 링크는 비밀번호 입력이 필요합니다."),
+    SHARE_LINK_PASSWORD_INVALID(false, 7406, "공유 링크 비밀번호가 올바르지 않습니다."),
+    SHARE_LINK_FILE_UNAVAILABLE(false, 7407, "공유된 파일이 삭제되었거나 다운로드할 수 없는 상태입니다.");
 
     private final boolean success;
     private final int code;

@@ -21,7 +21,7 @@ import static com.example.WaffleBear.file.util.FileContentUtils.resolveTextConte
 
 @Service
 @RequiredArgsConstructor
-class FileObjectDownloadService {
+public class FileObjectDownloadService {
 
     private final MinioClient minioClient;
     private final MinioProperties minioProperties;
@@ -107,18 +107,34 @@ class FileObjectDownloadService {
         }
     }
 
-    String generateAttachmentDownloadUrl(String objectKey, String fileName, String contentType) {
+    /**
+     * Generates a MinIO presigned download URL using the configured default expiry.
+     */
+    public String generateAttachmentDownloadUrl(String objectKey, String fileName, String contentType) {
+        return generateAttachmentDownloadUrl(
+                objectKey,
+                fileName,
+                contentType,
+                minioProperties.getPresignedUrlExpirySeconds()
+        );
+    }
+
+    /**
+     * Generates a MinIO presigned attachment download URL bounded to the requested expiry seconds.
+     */
+    public String generateAttachmentDownloadUrl(String objectKey, String fileName, String contentType, int expirySeconds) {
         if (objectKey == null || objectKey.isBlank()) {
             return null;
         }
 
+        int boundedExpiry = Math.max(1, Math.min(expirySeconds, 604800));
         try {
             Map<String, String> queryParams = FileDownloadRules.attachmentQueryParams(fileName, contentType);
             return minioPresignedUrlService.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
                     .method(Method.GET)
                     .bucket(minioProperties.getBucket_cloud())
                     .object(objectKey)
-                    .expiry(minioProperties.getPresignedUrlExpirySeconds())
+                    .expiry(boundedExpiry)
                     .extraQueryParams(queryParams)
                     .build());
         } catch (Exception exception) {

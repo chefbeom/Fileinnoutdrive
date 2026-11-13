@@ -16,6 +16,7 @@ import com.example.WaffleBear.file.service.FileUpDownloadMinioService;
 import com.example.WaffleBear.file.service.StoragePlanService;
 import com.example.WaffleBear.file.share.ShareRepository;
 import com.example.WaffleBear.file.share.model.FileShare;
+import com.example.WaffleBear.file.sharelink.FileDownloadShareLinkRepository;
 import com.example.WaffleBear.file.version.FileVersionRepository;
 import com.example.WaffleBear.group.repository.RelationshipGroupInviteRepository;
 import com.example.WaffleBear.group.repository.RelationshipGroupMappingRepository;
@@ -73,6 +74,9 @@ public class AccountWithdrawalService {
     private final WorkspaceAssetService workspaceAssetService;
     private final WorkspaceCommentRepository workspaceCommentRepository;
     private final WorkspaceRevisionRepository workspaceRevisionRepository;
+
+    @Autowired(required = false)
+    private FileDownloadShareLinkRepository fileDownloadShareLinkRepository;
     private final RelationshipGroupMappingRepository relationshipGroupMappingRepository;
     private final RelationshipGroupInviteRepository relationshipGroupInviteRepository;
     private final RelationshipInviteRepository relationshipInviteRepository;
@@ -214,6 +218,10 @@ public class AccountWithdrawalService {
         List<FileShare> remainingOwnedShares = shareRepository.findAllByOwner_IdxOrderByCreatedAtDesc(userIdx);
         if (!remainingOwnedShares.isEmpty()) {
             shareRepository.deleteAll(remainingOwnedShares);
+        }
+
+        if (fileDownloadShareLinkRepository != null) {
+            fileDownloadShareLinkRepository.deleteAllByOwner_Idx(userIdx);
         }
 
         fileVersionRepository.deleteAllByUser_Idx(userIdx);

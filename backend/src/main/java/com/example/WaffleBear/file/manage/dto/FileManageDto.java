@@ -78,6 +78,8 @@ public class FileManageDto {
         private Integer size;
         private String sortOption;
         private String searchQuery;
+        private String searchScope;
+        private Long searchRootFolderId;
         private String extensionFilter;
         private String sizeFilter;
         private String customMinSize;

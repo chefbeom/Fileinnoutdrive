@@ -63,6 +63,16 @@ describe("fileStoreModel", () => {
     expect(areDriveQueriesEqual({ page: 0, vaultMode: false }, { page: 0, vaultMode: true })).toBe(false);
     expect(areDriveQueriesEqual({ page: 0, includeHidden: false }, { page: 0, includeHidden: true })).toBe(false);
     expect(areDriveQueriesEqual({ page: 0 }, { page: 1 })).toBe(false);
+    expect(areDriveQueriesEqual({ page: 0, searchScope: "current" }, { page: 0, searchScope: "root" })).toBe(false);
+    expect(areDriveQueriesEqual({ page: 0, searchScope: "root", searchRootFolderId: 1 }, { page: 0, searchScope: "root", searchRootFolderId: 2 })).toBe(false);
+
+    const located = normalizeFileRecord({
+      idx: 88,
+      fileOriginName: "budget.pdf",
+      locationPath: "홈 / Docs / 2026",
+    });
+    expect(located.location).toBe("홈 / Docs / 2026");
+    expect(located.locationPath).toBe("홈 / Docs / 2026");
 
     const hiddenFolder = normalizeFileRecord({
       idx: 99,

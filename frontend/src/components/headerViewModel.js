@@ -1,4 +1,15 @@
 import { formatRelativeTime } from "@/utils/formatRelativeTime.js";
+import {
+  describeSearchScopeLabel,
+  normalizeSearchScope,
+  parseExtensionTokens,
+} from "@/utils/fileSearch.js";
+
+const FILE_DIRECTORY_SCOPE_ROUTE_NAMES = new Set(["home", "drive"]);
+
+export function supportsDirectorySearchScope(routeName) {
+  return FILE_DIRECTORY_SCOPE_ROUTE_NAMES.has(String(routeName || ""));
+}
 
 export function buildCustomSizeRangeLabel(searchState = {}) {
   if (searchState.sizeFilter !== "custom") {
@@ -27,7 +38,8 @@ export function countActiveSearchFilters(searchState = {}, canUseFileSearch = fa
 
   let count = 0;
   if (String(searchState.searchQuery || "").trim()) count += 1;
-  if ((searchState.extensionFilter || "all") !== "all") count += 1;
+  if (parseExtensionTokens(searchState.extensionFilter).length > 0) count += 1;
+  if (normalizeSearchScope(searchState.searchScope) !== "current") count += 1;
   if ((searchState.sizeFilter || "all") !== "all") count += 1;
   if ((searchState.statusFilter || "all") !== "all") count += 1;
 
@@ -36,8 +48,33 @@ export function countActiveSearchFilters(searchState = {}, canUseFileSearch = fa
 
 export function getSearchPlaceholder(canUseFileSearch = false) {
   return canUseFileSearch
-    ? "파일명, 확장자, 공유자 이메일을 검색하세요"
+    ? "파일명, .확장자(예: .pdf), ext:jpg, 공유자를 검색하세요"
     : "파일 검색은 드라이브·미디어·사진첩 화면에서 사용할 수 있습니다.";
+}
+
+export function formatFilterScopeButtonLabel(
+  searchState = {},
+  supportsDirectoryScope = false,
+  isVaultMode = false,
+  rootFolders = [],
+) {
+  if (!supportsDirectoryScope) {
+    return "속성";
+  }
+
+  const scope = normalizeSearchScope(searchState.searchScope);
+  if (scope === "current") {
+    return "현재 폴더";
+  }
+  if (scope === "subtree") {
+    return "현재+하위";
+  }
+  return describeSearchScopeLabel({
+    searchScope: scope,
+    searchRootFolderId: searchState.searchRootFolderId ?? null,
+    rootFolders,
+    rootFallbackLabel: isVaultMode ? "비밀 전체" : "홈 전체",
+  });
 }
 
 export function getHeaderUserName(settingsProfile, authUser) {

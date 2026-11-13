@@ -18,7 +18,13 @@ import {
   rejectRelationshipInvite,
 } from "@/api/groupApi.js";
 import { useFileStore } from "@/stores/useFileStore.js";
+import { useSecretFolderStore } from "@/stores/useSecretFolderStore.js";
 import { useUiLayoutStore } from "@/stores/useUiLayoutStore.js";
+import {
+  SEARCH_SCOPE_OPTIONS,
+  normalizeSearchScope,
+  parseExtensionTokens,
+} from "@/utils/fileSearch.js";
 import { registerPushNotification } from "@/utils/pushNotification.js";
 import {
   buildCustomSizeRangeLabel,
@@ -27,6 +33,7 @@ import {
   countActiveSearchFilters,
   extractNotificationListPayload,
   findHeaderNotificationIndex,
+  formatFilterScopeButtonLabel,
   getAvatarInitials,
   getHeaderMembershipLabel,
   getHeaderProfileImage,
@@ -34,6 +41,7 @@ import {
   getHeaderUserLocaleLabel,
   getHeaderUserName,
   getSearchPlaceholder,
+  supportsDirectorySearchScope,
   toHeaderNotificationItem,
 } from "./headerViewModel.js";
 import ProfileModal from "./ProfileModal.vue";
@@ -47,6 +55,7 @@ const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
 const fileStore = useFileStore();
+const secretFolderStore = useSecretFolderStore();
 const headerSearchStore = useHeaderSearchStore();
 const uiLayoutStore = useUiLayoutStore();
 
@@ -101,8 +110,72 @@ const isSettingsLoading = ref(false);
 
 const searchScope = computed(() => getFileSearchScope(route.name));
 const canUseFileSearch = computed(() => isFileSearchRoute(route.name));
+const supportsDirectoryScope = computed(() => supportsDirectorySearchScope(route.name));
+const isVaultSearchActive = computed(() => supportsDirectoryScope.value && Boolean(secretFolderStore.vaultMode));
 const searchState = computed(() => headerSearchStore.getScopeState(searchScope.value || "global"));
 const extensionOptions = computed(() => searchState.value.availableExtensions || []);
+const rootFolderOptions = computed(() => {
+  const fromSearchStore = searchState.value.availableRootFolders;
+  if (Array.isArray(fromSearchStore) && fromSearchStore.length > 0) {
+    return fromSearchStore;
+  }
+  return Array.isArray(fileStore.driveRootFolders) ? fileStore.driveRootFolders : [];
+});
+const normalizedDirectoryScope = computed(() => normalizeSearchScope(searchState.value.searchScope));
+const rootFallbackOptionLabel = computed(() => (
+  isVaultSearchActive.value ? "비밀 폴더 (전체)" : "홈 (드라이브 전체)"
+));
+const filterButtonLabel = computed(() => formatFilterScopeButtonLabel(
+  searchState.value,
+  supportsDirectoryScope.value,
+  isVaultSearchActive.value,
+  rootFolderOptions.value,
+));
+const extensionInputModel = computed({
+  get: () => (searchState.value.extensionFilter === "all" ? "" : String(searchState.value.extensionFilter || "")),
+  set: (value) => {
+    const raw = String(value || "");
+    searchState.value.extensionFilter = raw.trim() === "" ? "all" : raw;
+  },
+});
+const extensionSelectModel = computed({
+  get: () => {
+    const tokens = parseExtensionTokens(searchState.value.extensionFilter);
+    if (tokens.length === 1 && extensionOptions.value.includes(tokens[0])) {
+      return tokens[0];
+    }
+    return "all";
+  },
+  set: (value) => {
+    searchState.value.extensionFilter = value || "all";
+  },
+});
+const rootFolderSelectModel = computed({
+  get: () => (
+    searchState.value.searchRootFolderId != null
+      ? String(searchState.value.searchRootFolderId)
+      : ""
+  ),
+  set: (value) => {
+    searchState.value.searchScope = "root";
+    if (value == null || String(value).trim() === "") {
+      searchState.value.searchRootFolderId = null;
+      return;
+    }
+    const numeric = Number(value);
+    searchState.value.searchRootFolderId = Number.isFinite(numeric) ? numeric : value;
+  },
+});
+const setDirectorySearchScope = (scopeValue) => {
+  const normalized = normalizeSearchScope(scopeValue);
+  searchState.value.searchScope = normalized;
+  if (normalized !== "root") {
+    searchState.value.searchRootFolderId = null;
+  }
+};
+const clearExtensionFilter = () => {
+  searchState.value.extensionFilter = "all";
+};
 
 const customSizeRangeLabel = computed(() => buildCustomSizeRangeLabel(searchState.value));
 const activeSearchFilterCount = computed(() => countActiveSearchFilters(searchState.value, canUseFileSearch.value));
@@ -666,10 +739,10 @@ watch(
           id="header-search-container"
         >
         <span class="search-icon"><i class="fa-solid fa-search"></i></span>
-        <input v-model="searchState.searchQuery" type="search" :disabled="!canUseFileSearch" :placeholder="searchPlaceholder" class="search-input" />
+        <input v-model="searchState.searchQuery" type="search" :disabled="!canUseFileSearch" :placeholder="searchPlaceholder" class="search-input search-input--with-scope" />
         <button type="button" class="search-filter-button" :class="{ 'is-active': showSearchDropdown, 'has-filters': activeSearchFilterCount > 0 }" :disabled="!canUseFileSearch" @click="toggleSearchMenu">
           <i class="fa-solid fa-sliders"></i>
-          <span class="hidden sm:inline">속성</span>
+          <span class="hidden sm:inline search-filter-scope-label" :title="filterButtonLabel">{{ filterButtonLabel }}</span>
           <span v-if="activeSearchFilterCount > 0" class="search-filter-count">{{ activeSearchFilterCount }}</span>
         </button>
 
@@ -677,19 +750,78 @@ watch(
           <div class="search-dropdown__header">
             <div>
               <p class="search-dropdown__eyebrow">상세 검색</p>
-              <p class="search-dropdown__description">확장자, 상태, 크기 조건을 현재 화면에 바로 적용합니다.</p>
+              <p class="search-dropdown__description">디렉터리 범위, 확장자, 상태, 크기 조건을 조합해 바로 검색합니다.</p>
             </div>
             <button v-if="activeSearchFilterCount > 0" type="button" class="search-dropdown__reset" @click="resetSearchFilters">조건 초기화</button>
           </div>
 
-          <div class="search-dropdown__grid">
+          <div v-if="supportsDirectoryScope" class="search-dropdown__scope">
+            <div class="search-scope-header">
+              <span class="search-field__label">검색 디렉터리 범위</span>
+              <span class="search-scope-caption">현재 위치 또는 원하는 루트 폴더 기준</span>
+            </div>
+            <div class="search-scope-pills" role="group" aria-label="검색 디렉터리 범위">
+              <button
+                v-for="option in SEARCH_SCOPE_OPTIONS"
+                :key="option.value"
+                type="button"
+                class="search-scope-pill"
+                :class="{ 'is-active': normalizedDirectoryScope === option.value }"
+                @click="setDirectorySearchScope(option.value)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+
             <label class="search-field">
-              <span class="search-field__label">확장자</span>
-              <select v-model="searchState.extensionFilter" class="search-field__control">
-                <option value="all">전체</option>
-                <option v-for="extension in extensionOptions" :key="extension" :value="extension">{{ extension.toUpperCase() }}</option>
+              <span class="search-field__label">루트 디렉터리 선택 (어디 루트)</span>
+              <select
+                v-model="rootFolderSelectModel"
+                data-testid="search-root-folder-select"
+                class="search-field__control"
+              >
+                <option value="">{{ rootFallbackOptionLabel }}</option>
+                <option
+                  v-for="folder in rootFolderOptions"
+                  :key="folder.id"
+                  :value="String(folder.id)"
+                >
+                  {{ folder.name }}
+                </option>
               </select>
             </label>
+          </div>
+
+          <div class="search-dropdown__grid">
+            <div class="search-field search-field--extension">
+              <span class="search-field__label">확장자 검색 (직접 입력 · 쉼표 구분)</span>
+              <div class="search-ext-input-wrap">
+                <input
+                  v-model="extensionInputModel"
+                  type="text"
+                  data-testid="search-extension-input"
+                  class="search-field__control search-ext-input"
+                  placeholder="예: pdf, .png, docx"
+                />
+                <button
+                  v-if="extensionInputModel"
+                  type="button"
+                  class="search-ext-clear"
+                  aria-label="확장자 조건 지우기"
+                  @click="clearExtensionFilter"
+                >
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+              <select
+                v-model="extensionSelectModel"
+                data-testid="search-extension-select"
+                class="search-field__control search-field__control--compact"
+              >
+                <option value="all">감지된 확장자 선택 (전체)</option>
+                <option v-for="extension in extensionOptions" :key="extension" :value="extension">.{{ extension.toUpperCase() }}</option>
+              </select>
+            </div>
             <label class="search-field">
               <span class="search-field__label">상태</span>
               <select v-model="searchState.statusFilter" class="search-field__control">

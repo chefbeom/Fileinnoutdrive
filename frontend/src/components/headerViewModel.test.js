@@ -7,11 +7,13 @@ import {
   countActiveSearchFilters,
   extractNotificationListPayload,
   findHeaderNotificationIndex,
+  formatFilterScopeButtonLabel,
   getAvatarInitials,
   getChatNotificationMessage,
   getHeaderUserEmail,
   getHeaderUserName,
   getSearchPlaceholder,
+  supportsDirectorySearchScope,
   toHeaderNotificationItem,
 } from "./headerViewModel.js";
 
@@ -24,9 +26,20 @@ describe("headerViewModel", () => {
     expect(buildCustomSizeRangeLabel({ sizeFilter: "custom", customMaxSize: "50" })).toBe("50MB 이하");
 
     expect(countActiveSearchFilters({ searchQuery: "plan", extensionFilter: "pdf", sizeFilter: "all", statusFilter: "locked" }, true)).toBe(3);
+    expect(countActiveSearchFilters({ searchQuery: "plan", searchScope: "root", extensionFilter: ".pdf, png" }, true)).toBe(3);
     expect(countActiveSearchFilters({ searchQuery: "plan", extensionFilter: "pdf" }, false)).toBe(0);
     expect(getSearchPlaceholder(true)).toContain("파일명");
     expect(getSearchPlaceholder(false)).toContain("드라이브");
+
+    expect(supportsDirectorySearchScope("home")).toBe(true);
+    expect(supportsDirectorySearchScope("drive")).toBe(true);
+    expect(supportsDirectorySearchScope("media")).toBe(false);
+    expect(formatFilterScopeButtonLabel({ searchScope: "current" }, true, false, [])).toBe("현재 폴더");
+    expect(formatFilterScopeButtonLabel({ searchScope: "subtree" }, true, false, [])).toBe("현재+하위");
+    expect(
+      formatFilterScopeButtonLabel({ searchScope: "root", searchRootFolderId: 5 }, true, false, [{ id: 5, name: "자료" }]),
+    ).toBe("루트 (자료)");
+    expect(formatFilterScopeButtonLabel({ searchScope: "current" }, false, false, [])).toBe("속성");
   });
 
   it("normalizes profile display values and feature access", () => {

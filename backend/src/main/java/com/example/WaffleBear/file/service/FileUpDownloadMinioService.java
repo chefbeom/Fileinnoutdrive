@@ -14,6 +14,7 @@ import com.example.WaffleBear.file.secret.SecretFolderService;
 import com.example.WaffleBear.file.secret.SecretTreeRules;
 import com.example.WaffleBear.file.share.ShareInheritanceService;
 import com.example.WaffleBear.file.share.ShareRepository;
+import com.example.WaffleBear.file.sharelink.FileDownloadShareLinkRepository;
 import com.example.WaffleBear.file.version.FileVersionLifecycleService;
 import com.example.WaffleBear.storageshare.service.SharedStorageService;
 import com.example.WaffleBear.user.model.User;
@@ -31,13 +32,17 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
 import java.io.InputStream;
@@ -76,14 +81,31 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
     @Autowired(required = false)
     private SecretFolderService secretFolderService;
 
+    @Autowired(required = false)
+    private FileDownloadShareLinkRepository fileDownloadShareLinkRepository;
+
     private record FileListPageReadResult(
             List<FileCommonDto.FileListItemRes> fileList,
             List<FileCommonDto.FileBreadcrumbRes> breadcrumbs,
+            List<FileCommonDto.FileBreadcrumbRes> rootFolders,
             List<String> availableExtensions,
             int totalPage,
             long totalCount,
             int currentPage,
             int currentSize
+    ) {}
+
+    private record FolderTreeSnapshot(
+            Map<Long, FileInfo> folderMap,
+            Map<Long, List<FileInfo>> childrenByParent,
+            List<FileInfo> rootLevelFolders,
+            List<FileCommonDto.FileBreadcrumbRes> rootFolderSummaries
+    ) {}
+
+    private record SearchScopeResolution(
+            String effectiveScope,
+            boolean includeRootParent,
+            Set<Long> allowedParentIds
     ) {}
 
     private record FileObjectReadMetadata(
@@ -179,6 +201,7 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
         return FileCommonDto.FileListPageRes.builder()
                 .fileList(items.stream().map(fileListItemUrlService::attachUrls).toList())
                 .breadcrumbs(readResult.breadcrumbs())
+                .rootFolders(readResult.rootFolders())
                 .availableExtensions(readResult.availableExtensions())
                 .totalPage(readResult.totalPage())
                 .totalCount(readResult.totalCount())
@@ -220,28 +243,39 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
             assertSecretNodeAccess(normalizedUserIdx, parent, includeHidden);
         }
 
+        FolderTreeSnapshot folderTree = buildFolderTreeSnapshot(normalizedUserIdx, vaultMode, includeHidden);
+        SearchScopeResolution scopeResolution = resolveSearchScope(
+                normalizedUserIdx,
+                parentId,
+                request,
+                vaultMode,
+                includeHidden,
+                trashedOnly,
+                folderTree
+        );
+
         Pageable pageable = PageRequest.of(page, size, resolveSort(request != null ? request.getSortOption() : null));
         Page<FileInfo> result = fileUpDownloadRepository.findAll(
-                buildPageSpecification(normalizedUserIdx, request, vaultMode, includeHidden, trashedOnly),
+                buildPageSpecification(normalizedUserIdx, request, vaultMode, includeHidden, trashedOnly, scopeResolution),
                 pageable
         );
 
+        List<String> availableExtensions = resolveAvailableExtensions(
+                normalizedUserIdx,
+                parentId,
+                vaultMode,
+                includeHidden,
+                trashedOnly,
+                scopeResolution
+        );
+
         return new FileListPageReadResult(
-                result.getContent().stream().map(this::toFileListItemMetadata).toList(),
+                result.getContent().stream()
+                        .map(entity -> toFileListItemMetadata(entity, folderTree, vaultMode, trashedOnly))
+                        .toList(),
                 buildBreadcrumbs(normalizedUserIdx, parentId),
-                (!vaultMode && !includeHidden)
-                        ? fileUpDownloadRepository.findDistinctFileFormatsByUserAndParent(
-                                normalizedUserIdx,
-                                parentId,
-                                FileNodeType.FILE
-                        )
-                        : fileUpDownloadRepository.findDistinctFileFormatsByUserAndParent(
-                                normalizedUserIdx,
-                                parentId,
-                                FileNodeType.FILE,
-                                vaultMode,
-                                includeHidden
-                        ),
+                (vaultMode && trashedOnly) ? List.of() : folderTree.rootFolderSummaries(),
+                availableExtensions,
                 result.getTotalPages(),
                 result.getTotalElements(),
                 result.getNumber(),
@@ -1091,6 +1125,10 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
             return;
         }
 
+        if (fileDownloadShareLinkRepository != null) {
+            fileDownloadShareLinkRepository.deleteAllByFile_IdxIn(fileIds);
+        }
+
         List<com.example.WaffleBear.file.share.model.FileShare> shares = shareRepository.findAllByFile_IdxIn(fileIds);
         if (shares.isEmpty()) {
             return;
@@ -1104,13 +1142,17 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
             FileManageDto.ListPageReq request,
             boolean vaultMode,
             boolean includeHidden,
-            boolean trashedOnly
+            boolean trashedOnly,
+            SearchScopeResolution scopeResolution
     ) {
         return (root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
-            Long parentId = request != null ? request.getParentId() : null;
-            String keyword = FileListQueryRules.normalizeSearchKeyword(request != null ? request.getSearchQuery() : null);
-            String extensionFilter = FileListQueryRules.normalizeFilterValue(request != null ? request.getExtensionFilter() : null, "all");
+            FileListQueryRules.ParsedSearchKeyword parsedKeyword = FileListQueryRules.parseSearchKeyword(
+                    request != null ? request.getSearchQuery() : null
+            );
+            List<String> requestedExtensions = FileListQueryRules.parseExtensionFilters(
+                    request != null ? request.getExtensionFilter() : null
+            );
             String sizeFilter = FileListQueryRules.normalizeFilterValue(request != null ? request.getSizeFilter() : null, "all");
             String statusFilter = FileListQueryRules.normalizeFilterValue(request != null ? request.getStatusFilter() : null, "all");
 
@@ -1130,10 +1172,20 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                         criteriaBuilder.isFalse(root.get("trashed"))
                 ));
 
-                if (parentId == null) {
+                if (scopeResolution.includeRootParent() && !scopeResolution.allowedParentIds().isEmpty()) {
+                    predicates.add(criteriaBuilder.or(
+                            criteriaBuilder.isNull(root.get("parent")),
+                            root.get("parent").get("idx").in(scopeResolution.allowedParentIds())
+                    ));
+                } else if (scopeResolution.includeRootParent()) {
                     predicates.add(criteriaBuilder.isNull(root.get("parent")));
+                } else if (scopeResolution.allowedParentIds().size() == 1) {
+                    Long singleParentId = scopeResolution.allowedParentIds().iterator().next();
+                    predicates.add(criteriaBuilder.equal(root.get("parent").get("idx"), singleParentId));
+                } else if (!scopeResolution.allowedParentIds().isEmpty()) {
+                    predicates.add(root.get("parent").get("idx").in(scopeResolution.allowedParentIds()));
                 } else {
-                    predicates.add(criteriaBuilder.equal(root.get("parent").get("idx"), parentId));
+                    predicates.add(criteriaBuilder.disjunction());
                 }
             }
 
@@ -1153,19 +1205,22 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                 ));
             }
 
-            if (!keyword.isBlank()) {
-                String likePattern = "%" + keyword + "%";
-                predicates.add(criteriaBuilder.or(
-                        criteriaBuilder.like(criteriaBuilder.lower(root.get("fileOriginName")), likePattern),
-                        criteriaBuilder.like(criteriaBuilder.lower(root.get("fileFormat")), likePattern)
-                ));
+            if (!parsedKeyword.textTerm().isBlank()) {
+                for (String term : parsedKeyword.textTerm().split("\\s+")) {
+                    String likePattern = "%" + FileListQueryRules.escapeLikePattern(term) + "%";
+                    predicates.add(criteriaBuilder.or(
+                            criteriaBuilder.like(criteriaBuilder.lower(root.get("fileOriginName")), likePattern, '\\'),
+                            criteriaBuilder.like(criteriaBuilder.lower(root.get("fileFormat")), likePattern, '\\')
+                    ));
+                }
             }
 
-            if (!"all".equals(extensionFilter)) {
-                predicates.add(criteriaBuilder.and(
-                        isFile,
-                        criteriaBuilder.equal(criteriaBuilder.lower(root.get("fileFormat")), extensionFilter)
-                ));
+            if (!parsedKeyword.inlineExtensions().isEmpty()) {
+                predicates.add(buildExtensionPredicate(criteriaBuilder, root, isFile, parsedKeyword.inlineExtensions()));
+            }
+
+            if (!requestedExtensions.isEmpty()) {
+                predicates.add(buildExtensionPredicate(criteriaBuilder, root, isFile, requestedExtensions));
             }
 
             if (!"all".equals(sizeFilter)) {
@@ -1261,11 +1316,266 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
         };
     }
 
+    private Predicate buildExtensionPredicate(
+            jakarta.persistence.criteria.CriteriaBuilder criteriaBuilder,
+            jakarta.persistence.criteria.Root<FileInfo> root,
+            Predicate isFile,
+            List<String> extensions
+    ) {
+        List<Predicate> extMatches = new ArrayList<>();
+        for (String ext : extensions) {
+            String escapedExt = FileListQueryRules.escapeLikePattern(ext);
+            extMatches.add(criteriaBuilder.or(
+                    criteriaBuilder.equal(criteriaBuilder.lower(root.get("fileFormat")), ext),
+                    criteriaBuilder.like(criteriaBuilder.lower(root.get("fileOriginName")), "%." + escapedExt, '\\')
+            ));
+        }
+        return criteriaBuilder.and(isFile, criteriaBuilder.or(extMatches.toArray(Predicate[]::new)));
+    }
+
+    private FolderTreeSnapshot buildFolderTreeSnapshot(Long userIdx, boolean vaultMode, boolean includeHidden) {
+        List<FileInfo> rawFolders = fileUpDownloadRepository.findActiveFoldersByUserAndSpace(
+                userIdx,
+                FileNodeType.FOLDER,
+                vaultMode
+        );
+        List<FileInfo> activeFolders = rawFolders == null ? List.of() : rawFolders;
+        Map<Long, FileInfo> folderMap = new HashMap<>();
+        Map<Long, List<FileInfo>> childrenByParent = new HashMap<>();
+        List<FileInfo> rootLevelFolders = new ArrayList<>();
+
+        for (FileInfo folder : activeFolders) {
+            if (folder == null || folder.getIdx() == null) {
+                continue;
+            }
+            folderMap.put(folder.getIdx(), folder);
+            FileInfo parent = folder.getParent();
+            if (parent == null || parent.getIdx() == null) {
+                if (includeHidden || !folder.isHiddenFolder()) {
+                    rootLevelFolders.add(folder);
+                }
+            } else {
+                childrenByParent.computeIfAbsent(parent.getIdx(), ignored -> new ArrayList<>()).add(folder);
+            }
+        }
+
+        List<FileCommonDto.FileBreadcrumbRes> rootSummaries = rootLevelFolders.stream()
+                .map(folder -> FileCommonDto.FileBreadcrumbRes.builder()
+                        .idx(folder.getIdx())
+                        .fileOriginName(folder.getFileOriginName())
+                        .build())
+                .toList();
+
+        return new FolderTreeSnapshot(folderMap, childrenByParent, rootLevelFolders, rootSummaries);
+    }
+
+    private SearchScopeResolution resolveSearchScope(
+            Long userIdx,
+            Long parentId,
+            FileManageDto.ListPageReq request,
+            boolean vaultMode,
+            boolean includeHidden,
+            boolean trashedOnly,
+            FolderTreeSnapshot folderTree
+    ) {
+        if (vaultMode && trashedOnly) {
+            return new SearchScopeResolution("current", false, Set.of());
+        }
+
+        String requestedScope = FileListQueryRules.normalizeSearchScope(
+                request != null ? request.getSearchScope() : null
+        );
+        Long searchRootFolderId = request != null ? request.getSearchRootFolderId() : null;
+
+        if ("current".equals(requestedScope)) {
+            if (parentId == null) {
+                return new SearchScopeResolution("current", true, Set.of());
+            }
+            return new SearchScopeResolution("current", false, Set.of(parentId));
+        }
+
+        if ("subtree".equals(requestedScope)) {
+            if (parentId == null) {
+                return new SearchScopeResolution(
+                        "subtree",
+                        true,
+                        collectAllowedSubtreeIds(null, folderTree, includeHidden)
+                );
+            }
+            return new SearchScopeResolution(
+                    "subtree",
+                    false,
+                    collectAllowedSubtreeIds(parentId, folderTree, includeHidden)
+            );
+        }
+
+        // "root" scope: either user-chosen root folder or the active space root (Drive Home / Vault Root)
+        if (searchRootFolderId != null) {
+            FileInfo rootTarget = folderTree.folderMap().get(searchRootFolderId);
+            if (rootTarget == null) {
+                rootTarget = getOwnedFile(userIdx, searchRootFolderId);
+            }
+            if (rootTarget.isTrashed() || FileTreeRules.resolveNodeType(rootTarget) != FileNodeType.FOLDER) {
+                throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+            }
+            if (rootTarget.isVaultSpace() != vaultMode) {
+                throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+            }
+            if (!includeHidden && (hasHiddenAncestorInMap(rootTarget, folderTree.folderMap()) || SecretTreeRules.hasHiddenAncestor(rootTarget))) {
+                throw BaseException.from(BaseResponseStatus.SECRET_FOLDER_UNLOCK_REQUIRED);
+            }
+            assertSecretNodeAccess(userIdx, rootTarget, includeHidden);
+
+            return new SearchScopeResolution(
+                    "root",
+                    false,
+                    collectAllowedSubtreeIds(searchRootFolderId, folderTree, includeHidden)
+            );
+        }
+
+        return new SearchScopeResolution(
+                "root",
+                true,
+                collectAllowedSubtreeIds(null, folderTree, includeHidden)
+        );
+    }
+
+    private Set<Long> collectAllowedSubtreeIds(
+            Long anchorFolderId,
+            FolderTreeSnapshot folderTree,
+            boolean includeHidden
+    ) {
+        Set<Long> allowed = new LinkedHashSet<>();
+        Set<Long> visited = new HashSet<>();
+        Queue<Long> queue = new ArrayDeque<>();
+
+        if (anchorFolderId == null) {
+            for (FileInfo rootFolder : folderTree.rootLevelFolders()) {
+                if (rootFolder.getIdx() != null && visited.add(rootFolder.getIdx())) {
+                    if (includeHidden || !rootFolder.isHiddenFolder()) {
+                        allowed.add(rootFolder.getIdx());
+                        queue.add(rootFolder.getIdx());
+                    }
+                }
+            }
+        } else {
+            allowed.add(anchorFolderId);
+            visited.add(anchorFolderId);
+            queue.add(anchorFolderId);
+        }
+
+        while (!queue.isEmpty()) {
+            Long currentId = queue.poll();
+            for (FileInfo child : folderTree.childrenByParent().getOrDefault(currentId, List.of())) {
+                if (child == null || child.getIdx() == null || !visited.add(child.getIdx())) {
+                    continue;
+                }
+                if (!includeHidden && child.isHiddenFolder()) {
+                    continue;
+                }
+                allowed.add(child.getIdx());
+                queue.add(child.getIdx());
+            }
+        }
+
+        return allowed;
+    }
+
+    private boolean hasHiddenAncestorInMap(FileInfo node, Map<Long, FileInfo> folderMap) {
+        Set<Long> visited = new HashSet<>();
+        FileInfo current = node;
+        while (current != null) {
+            if (current.isHiddenFolder()) {
+                return true;
+            }
+            Long idx = current.getIdx();
+            if (idx != null && !visited.add(idx)) {
+                break;
+            }
+            FileInfo parentRef = current.getParent();
+            current = parentRef != null && parentRef.getIdx() != null
+                    ? folderMap.getOrDefault(parentRef.getIdx(), parentRef)
+                    : parentRef;
+        }
+        return false;
+    }
+
+    private List<String> resolveAvailableExtensions(
+            Long userIdx,
+            Long parentId,
+            boolean vaultMode,
+            boolean includeHidden,
+            boolean trashedOnly,
+            SearchScopeResolution scope
+    ) {
+        List<String> rawFormats;
+        if ((vaultMode && trashedOnly) || "current".equals(scope.effectiveScope())) {
+            rawFormats = (!vaultMode && !includeHidden)
+                    ? fileUpDownloadRepository.findDistinctFileFormatsByUserAndParent(
+                            userIdx,
+                            parentId,
+                            FileNodeType.FILE
+                    )
+                    : fileUpDownloadRepository.findDistinctFileFormatsByUserAndParent(
+                            userIdx,
+                            parentId,
+                            FileNodeType.FILE,
+                            vaultMode,
+                            includeHidden
+                    );
+        } else if (scope.includeRootParent() && !scope.allowedParentIds().isEmpty()) {
+            rawFormats = fileUpDownloadRepository.findDistinctFileFormatsByUserInRootOrParents(
+                    userIdx,
+                    scope.allowedParentIds(),
+                    FileNodeType.FILE,
+                    vaultMode,
+                    includeHidden
+            );
+        } else if (scope.includeRootParent()) {
+            rawFormats = fileUpDownloadRepository.findDistinctFileFormatsByUserAndParent(
+                    userIdx,
+                    null,
+                    FileNodeType.FILE,
+                    vaultMode,
+                    includeHidden
+            );
+        } else if (!scope.allowedParentIds().isEmpty()) {
+            rawFormats = fileUpDownloadRepository.findDistinctFileFormatsByUserAndParentIn(
+                    userIdx,
+                    scope.allowedParentIds(),
+                    FileNodeType.FILE,
+                    vaultMode,
+                    includeHidden
+            );
+        } else {
+            rawFormats = List.of();
+        }
+
+        if (rawFormats == null || rawFormats.isEmpty()) {
+            return List.of();
+        }
+        return rawFormats.stream()
+                .map(FileListQueryRules::normalizeExtensionToken)
+                .filter(ext -> !ext.isEmpty())
+                .distinct()
+                .sorted()
+                .toList();
+    }
+
     private FileCommonDto.FileListItemRes toFileListItem(FileInfo entity) {
         return fileListItemUrlService.attachUrls(toFileListItemMetadata(entity));
     }
 
     private FileCommonDto.FileListItemRes toFileListItemMetadata(FileInfo entity) {
+        return toFileListItemMetadata(entity, null, entity != null && entity.isVaultSpace(), entity != null && entity.isTrashed());
+    }
+
+    private FileCommonDto.FileListItemRes toFileListItemMetadata(
+            FileInfo entity,
+            FolderTreeSnapshot folderTree,
+            boolean vaultMode,
+            boolean trashedOnly
+    ) {
         FileNodeType nodeType = FileTreeRules.resolveNodeType(entity);
 
         return FileCommonDto.FileListItemRes.builder()
@@ -1287,7 +1597,44 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                 .deletedAt(entity.getDeletedAt())
                 .uploadDate(entity.getUploadDate())
                 .lastModifyDate(entity.getLastModifyDate())
+                .locationPath(resolveLocationPath(entity, folderTree, vaultMode, trashedOnly))
                 .build();
+    }
+
+    private String resolveLocationPath(
+            FileInfo entity,
+            FolderTreeSnapshot folderTree,
+            boolean vaultMode,
+            boolean trashedOnly
+    ) {
+        String rootLabel = (vaultMode && trashedOnly)
+                ? "비밀 휴지통"
+                : (vaultMode ? "비밀 폴더" : "홈");
+        if (entity == null || entity.getParent() == null) {
+            return rootLabel;
+        }
+        Map<Long, FileInfo> folderMap = folderTree != null ? folderTree.folderMap() : Map.of();
+        List<String> segments = new ArrayList<>();
+        Set<Long> visited = new HashSet<>();
+        FileInfo current = entity.getParent();
+        if (current.getIdx() != null) {
+            current = folderMap.getOrDefault(current.getIdx(), current);
+        }
+        while (current != null && visited.add(current.getIdx())) {
+            String folderName = current.getFileOriginName();
+            if (folderName != null && !folderName.isBlank()) {
+                segments.add(folderName);
+            }
+            FileInfo nextParent = current.getParent();
+            current = nextParent != null && nextParent.getIdx() != null
+                    ? folderMap.getOrDefault(nextParent.getIdx(), nextParent)
+                    : nextParent;
+        }
+        Collections.reverse(segments);
+        if (segments.isEmpty()) {
+            return rootLabel;
+        }
+        return rootLabel + " / " + String.join(" / ", segments);
     }
 
     private void requireVaultUnlocked(Long userIdx) {

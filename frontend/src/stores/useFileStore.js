@@ -89,6 +89,8 @@ const isDefaultFolderSnapshotQuery = (query) => (
   !query?.vaultMode &&
   !query?.includeHidden &&
   !query?.trashedOnly &&
+  String(query?.searchScope || "current") === "current" &&
+  (query?.searchRootFolderId ?? null) == null &&
   Number(query?.page ?? 0) === 0 &&
   String(query?.searchQuery ?? "") === "" &&
   String(query?.extensionFilter ?? "all") === "all" &&
@@ -114,6 +116,7 @@ export const useFileStore = defineStore("file", () => {
   const accessedFilesHistory = ref(readSavedAccessedFiles());
   const drivePageFiles = ref([]);
   const driveBreadcrumbs = ref([]);
+  const driveRootFolders = ref([]);
   const driveAvailableExtensions = ref([]);
   const drivePageInfo = ref({
     totalPage: 0,
@@ -257,6 +260,9 @@ export const useFileStore = defineStore("file", () => {
       drivePageFiles.value = cachedSnapshot.files;
       if (targetFolderId == null || cachedSnapshot.breadcrumbs.length > 0) {
         driveBreadcrumbs.value = cachedSnapshot.breadcrumbs;
+      }
+      if (Array.isArray(cachedSnapshot.rootFolders)) {
+        driveRootFolders.value = cachedSnapshot.rootFolders;
       }
       driveAvailableExtensions.value = cachedSnapshot.availableExtensions;
       drivePageInfo.value = { ...cachedSnapshot.pageInfo };
@@ -444,6 +450,10 @@ export const useFileStore = defineStore("file", () => {
       ),
       sortOption: query.sortOption ?? lastDriveQuery.value?.sortOption ?? "updatedAt-desc",
       searchQuery: query.searchQuery ?? lastDriveQuery.value?.searchQuery ?? "",
+      searchScope: query.searchScope ?? lastDriveQuery.value?.searchScope ?? "current",
+      searchRootFolderId: query.searchRootFolderId !== undefined
+        ? (query.searchRootFolderId ?? null)
+        : (lastDriveQuery.value?.searchRootFolderId ?? null),
       extensionFilter: query.extensionFilter ?? lastDriveQuery.value?.extensionFilter ?? "all",
       sizeFilter: query.sizeFilter ?? lastDriveQuery.value?.sizeFilter ?? "all",
       customMinSize: query.customMinSize ?? lastDriveQuery.value?.customMinSize ?? "",
@@ -486,13 +496,16 @@ export const useFileStore = defineStore("file", () => {
         const breadcrumbs = Array.isArray(result?.breadcrumbs)
           ? result.breadcrumbs.map((folder) => normalizeBreadcrumbRecord(folder))
           : [];
+        const rootFolders = Array.isArray(result?.rootFolders)
+          ? result.rootFolders.map((folder) => normalizeBreadcrumbRecord(folder))
+          : null;
         const currentLocationLabel = breadcrumbs[breadcrumbs.length - 1]?.name || ROOT_LOCATION_LABEL;
         const pageFiles = Array.isArray(result?.fileList)
           ? result.fileList
             .map((file) => normalizeFileRecord(file))
             .map((file) => ({
               ...file,
-              location: currentLocationLabel,
+              location: file.locationPath || currentLocationLabel,
             }))
           : [];
         const normalizedExtensions = Array.isArray(result?.availableExtensions)
@@ -507,6 +520,7 @@ export const useFileStore = defineStore("file", () => {
         };
 
         rememberFolders([
+          ...(rootFolders || []),
           ...breadcrumbs,
           ...pageFiles.filter((file) => file?.type === "folder"),
         ]);
@@ -515,6 +529,7 @@ export const useFileStore = defineStore("file", () => {
           folderSnapshotCache.set(getFolderSnapshotKey(nextQuery.parentId), {
             files: pageFiles,
             breadcrumbs,
+            rootFolders,
             availableExtensions: normalizedExtensions,
             pageInfo: normalizedPageInfo,
           });
@@ -530,6 +545,11 @@ export const useFileStore = defineStore("file", () => {
 
         drivePageFiles.value = reuseCachedAssetUrls(drivePageFiles.value, pageFiles);
         driveBreadcrumbs.value = breadcrumbs;
+        if (rootFolders !== null) {
+          driveRootFolders.value = rootFolders;
+        } else if (lastDriveQuery.value?.vaultMode !== nextQuery.vaultMode) {
+          driveRootFolders.value = [];
+        }
         driveAvailableExtensions.value = normalizedExtensions;
         drivePageInfo.value = normalizedPageInfo;
         driveHasLoaded.value = true;
@@ -1249,6 +1269,7 @@ export const useFileStore = defineStore("file", () => {
     vaultLoading,
     drivePageFiles,
     driveBreadcrumbs,
+    driveRootFolders,
     driveAvailableExtensions,
     drivePageInfo,
     sharedLibraryFiles,

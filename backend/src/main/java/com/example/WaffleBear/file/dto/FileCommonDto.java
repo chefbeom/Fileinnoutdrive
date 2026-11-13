@@ -35,6 +35,7 @@ public class FileCommonDto {
         private LocalDateTime deletedAt;
         private LocalDateTime uploadDate;
         private LocalDateTime lastModifyDate;
+        private String locationPath;
         private String presignedDownloadUrl;
         private String thumbnailPresignedUrl;
         private Integer presignedUrlExpiresIn;
@@ -70,6 +71,7 @@ public class FileCommonDto {
     public static class FileListPageRes {
         private List<FileListItemRes> fileList;
         private List<FileBreadcrumbRes> breadcrumbs;
+        private List<FileBreadcrumbRes> rootFolders;
         private List<String> availableExtensions;
         private int totalPage;
         private long totalCount;

@@ -64,6 +64,8 @@ export const areDriveQueriesEqual = (left, right) => {
     Number(left.size ?? 0) === Number(right.size ?? 0) &&
     String(left.sortOption || "") === String(right.sortOption || "") &&
     String(left.searchQuery || "") === String(right.searchQuery || "") &&
+    String(left.searchScope || "current") === String(right.searchScope || "current") &&
+    (left.searchRootFolderId ?? null) === (right.searchRootFolderId ?? null) &&
     String(left.extensionFilter || "") === String(right.extensionFilter || "") &&
     String(left.sizeFilter || "") === String(right.sizeFilter || "") &&
     String(left.customMinSize || "") === String(right.customMinSize || "") &&
@@ -159,7 +161,8 @@ export const normalizeFileRecord = (rawFile, options = {}) => {
     owner: rawFile?.ownerName || rawFile?.owner || "-",
     ownerName: rawFile?.ownerName || rawFile?.owner || "",
     ownerEmail: rawFile?.ownerEmail || "",
-    location: sharedWithMe ? SHARED_LOCATION_LABEL : (options.sentShared ? "내가 공유함" : ROOT_LOCATION_LABEL),
+    locationPath: rawFile?.locationPath || "",
+    location: sharedWithMe ? SHARED_LOCATION_LABEL : (options.sentShared ? "내가 공유함" : (rawFile?.locationPath || ROOT_LOCATION_LABEL)),
     reason:
       rawFile?.reason ||
       (type === "folder" ? (isSharedFolder ? "공유 폴더" : "폴더") : `${extension ? extension.toUpperCase() : "FILE"} · ${formatFileSize(sizeBytes)}`),

@@ -37,6 +37,7 @@ const {
   canDownload,
   canSaveShared,
   canShare,
+  canShareDownloadLink = () => false,
   canManageSentShare,
   canToggleLock,
   canManageFolder,
@@ -51,6 +52,7 @@ const {
   handleDownload,
   onClickSaveShared,
   onClickShare,
+  onClickShareDownloadLink = () => {},
   onClickManageSentShare,
   onClickToggleLock,
   onClickRenameFolder,
@@ -262,6 +264,13 @@ const {
             <p v-if="viewMode !== 'icon'" class="file-entry__meta mt-1 text-xs text-gray-400">
               {{ file.sharedWithMe ? getSharedSourceLabel(file) : (canManageSentShare(file) ? getSentShareLabel(file) : (file.type === 'folder' ? (file.hiddenFolder ? (file.pinEnabled ? '숨긴 폴더 · PIN' : '숨긴 폴더') : (isSharedFolder(file) ? '공유 폴더' : '폴더')) : `${(getFileExtension(file) || '-').toUpperCase()} · ${formatDisplaySize(file)}`)) }}
             </p>
+            <p
+              v-if="viewMode !== 'icon' && file.locationPath"
+              class="mt-0.5 truncate text-[11px] font-medium text-indigo-500 dark:text-indigo-300 sm:hidden"
+              :title="file.locationPath"
+            >
+              {{ file.locationPath }}
+            </p>
           </div>
           <button
             v-if="viewMode === 'icon'"
@@ -277,6 +286,10 @@ const {
 
         <template v-if="viewMode !== 'icon'">
           <dl class="file-entry__details mt-4 hidden space-y-2 text-xs text-gray-500 sm:block">
+            <div v-if="file.locationPath" class="flex items-center justify-between gap-3">
+              <dt>위치</dt>
+              <dd class="truncate font-semibold text-gray-700" :title="file.locationPath">{{ file.locationPath }}</dd>
+            </div>
             <div class="flex items-center justify-between gap-3">
               <dt>크기</dt>
               <dd class="font-semibold text-gray-700">{{ formatDisplaySize(file) }}</dd>
@@ -325,6 +338,15 @@ const {
               @click="onClickShare(file, $event)"
             >
               공유
+            </button>
+            <button
+              v-if="canShareDownloadLink(file)"
+              type="button"
+              class="chip-button bg-sky-50 text-sky-700 hover:bg-sky-100"
+              title="다운로드 링크 공유"
+              @click="onClickShareDownloadLink(file, $event)"
+            >
+              링크 공유
             </button>
             <button
               v-if="canManageSentShare(file)"

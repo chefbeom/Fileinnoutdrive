@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import BaseFilePaginationBar from "./BaseFilePaginationBar.vue";
 import BaseFileSelectionBar from "./BaseFileSelectionBar.vue";
 import BaseFileShareDialog from "./BaseFileShareDialog.vue";
+import DownloadShareLinkDialog from "./DownloadShareLinkDialog.vue";
 import BaseFileToolbar from "./BaseFileToolbar.vue";
 import BaseFolderPropertyDialog from "./BaseFolderPropertyDialog.vue";
 import BaseFolderRenameDialog from "./BaseFolderRenameDialog.vue";
@@ -44,6 +45,12 @@ import {
   paginateBaseFiles,
 } from "./baseFileViewModel.js";
 import { BASE_SHARE_PERMISSION_OPTIONS, useBaseFileShareDialog } from "./useBaseFileShareDialog.js";
+import { useDownloadShareLinkDialog } from "./useDownloadShareLinkDialog.js";
+import {
+  describeSearchScopeLabel,
+  normalizeSearchScope,
+  parseExtensionTokens,
+} from "@/utils/fileSearch.js";
 const FILE_ROOT_LABEL = "홈";
 
 const props = defineProps({
@@ -219,7 +226,28 @@ const activeFilterChips = computed(() => buildBaseActiveFilterChips(searchState.
   sizeOptionLabelMap,
   statusOptionLabelMap,
   sortOptions,
+  rootFolders: fileStore.driveRootFolders,
+  rootFallbackLabel: isVaultMode.value ? "비밀 폴더 (전체)" : "홈 (전체)",
 }));
+const activeSearchScopeLabel = computed(() => describeSearchScopeLabel({
+  searchScope: searchState.value.searchScope,
+  searchRootFolderId: searchState.value.searchRootFolderId ?? null,
+  rootFolders: fileStore.driveRootFolders,
+  rootFallbackLabel: isVaultMode.value ? "비밀 폴더 (전체)" : "홈 (전체)",
+}));
+const canExpandEmptySearchToRoot = computed(() => (
+  Boolean(useServerPaging.value) &&
+  hasSearchFilters.value &&
+  (
+    normalizeSearchScope(searchState.value.searchScope) !== "root" ||
+    searchState.value.searchRootFolderId != null
+  )
+));
+const expandSearchToWholeRoot = () => {
+  searchState.value.searchScope = "root";
+  searchState.value.searchRootFolderId = null;
+  currentPage.value = 1;
+};
 const localFilteredFiles = computed(() => filterAndSortBaseFiles(effectiveFiles.value, searchState.value, sortOption.value));
 
 const filteredFiles = computed(() => (
@@ -275,6 +303,34 @@ const {
   canCreateShares,
   selectedOwnedShareableFiles,
 });
+const {
+  targetFile: downloadLinkTargetFile,
+  isOpen: isDownloadLinkDialogOpen,
+  durationMode: downloadLinkDurationMode,
+  customMinutes: downloadLinkCustomMinutes,
+  customExpiresAt: downloadLinkCustomExpiresAt,
+  limitMode: downloadLinkLimitMode,
+  customMaxDownloads: downloadLinkCustomMaxDownloads,
+  password: downloadLinkPassword,
+  resolvedDurationMinutes: downloadLinkResolvedMinutes,
+  resolvedMaxDownloads: downloadLinkResolvedMaxDownloads,
+  issuedLink: downloadLinkIssued,
+  existingLinks: downloadLinkHistory,
+  isLoadingLinks: isDownloadLinkLoading,
+  isCreating: isDownloadLinkCreating,
+  revokingLinkIdx: revokingDownloadLinkIdx,
+  errorMessage: downloadLinkError,
+  copiedKey: downloadLinkCopiedKey,
+  openDialog: openDownloadLinkDialog,
+  closeDialog: closeDownloadLinkDialog,
+  createLink: createDownloadLinkAction,
+  revokeLink: revokeDownloadLinkAction,
+  getSharePageUrl: getDownloadSharePageUrl,
+  getDirectDownloadUrl: getDownloadShareDirectUrl,
+  copyLinkUrl: copyDownloadShareUrl,
+} = useDownloadShareLinkDialog({
+  onError: (msg) => window.alert(msg),
+});
 const pageCount = computed(() => buildBasePageCount({
   useServerPaging: useServerPaging.value,
   drivePageInfo: fileStore.drivePageInfo,
@@ -317,6 +373,10 @@ watch(extensionOptions, (extensions) => {
   headerSearchStore.setAvailableExtensions(searchScope.value, extensions);
 }, { immediate: true });
 
+watch(() => fileStore.driveRootFolders, (rootFolders) => {
+  headerSearchStore.setAvailableRootFolders?.(searchScope.value, rootFolders || []);
+}, { immediate: true });
+
 watch([isVaultMode, isVaultTrashView], ([vaultEnabled, trashEnabled], prev) => {
   const [prevVault, prevTrash] = prev || [false, false];
   currentPage.value = 1;
@@ -327,6 +387,10 @@ watch([isVaultMode, isVaultTrashView], ([vaultEnabled, trashEnabled], prev) => {
     fileStore.currentFolderId != null &&
     (vaultEnabled ? !fileStore.currentFolder?.isVaultSpace : fileStore.currentFolder?.isVaultSpace),
   );
+
+  if (switchedSpace) {
+    searchState.value.searchRootFolderId = null;
+  }
 
   if (switchedSpace || mismatchedFolder || trashEnabled) {
     fileStore.invalidateFolderSnapshots?.();
@@ -426,6 +490,8 @@ watch(serverListQuery, (query) => {
 
 watch(() => [
   searchState.value.searchQuery,
+  searchState.value.searchScope,
+  searchState.value.searchRootFolderId,
   searchState.value.extensionFilter,
   searchState.value.sizeFilter,
   searchState.value.customMinSize,
@@ -433,6 +499,22 @@ watch(() => [
   searchState.value.statusFilter,
   sortOption.value,
 ], () => {
+  currentPage.value = 1;
+});
+
+watch(() => fileStore.currentFolderId, (nextId, prevId) => {
+  if (String(nextId ?? "") === String(prevId ?? "")) {
+    return;
+  }
+  const hadActiveSearchScope = normalizeSearchScope(searchState.value.searchScope) !== "current";
+  const hadSearchText = String(searchState.value.searchQuery || "").trim() !== "";
+  const hadExtensionFilter = parseExtensionTokens(searchState.value.extensionFilter).length > 0;
+  if (hadActiveSearchScope || hadSearchText || hadExtensionFilter) {
+    searchState.value.searchScope = "current";
+    searchState.value.searchRootFolderId = null;
+    searchState.value.searchQuery = "";
+    searchState.value.extensionFilter = "all";
+  }
   currentPage.value = 1;
 });
 
@@ -1167,6 +1249,7 @@ onBeforeUnmount(() => {
         @show-folder-properties="openFolderProperties"
         @preview-file="openFilePreview"
         @share-file="openShareDialog"
+        @share-download-link="openDownloadLinkDialog"
         @toggle-lock="handleToggleLock"
         @move-to-vault="handleMoveToVault"
         @open-vault-import="openVaultImportModal"
@@ -1212,14 +1295,40 @@ onBeforeUnmount(() => {
         <p class="text-sm font-semibold text-blue-600">이곳에 놓으면 업로드가 시작됩니다.</p>
       </div>
       <template v-else>
-        <p class="text-sm">표시할 파일이 없습니다.</p>
-        <p v-if="canDropUpload" class="mt-1 text-xs text-gray-400">
-          {{
-            isVaultMode
-              ? "파일이나 폴더를 드래그하여 놓거나, 우클릭하여 새 폴더 만들기 · 드라이브에서 파일 가져오기를 진행할 수 있습니다."
-              : "파일이나 폴더를 드래그하여 놓거나, 우클릭하여 새 폴더 · 공유 폴더를 만들 수 있습니다."
-          }}
-        </p>
+        <template v-if="hasSearchFilters">
+          <p class="text-sm font-semibold text-gray-600 dark:text-slate-300">
+            {{ useServerPaging ? `"${activeSearchScopeLabel}" 범위에서 검색 조건과 일치하는 파일이 없습니다.` : "검색 조건과 일치하는 파일이 없습니다." }}
+          </p>
+          <div class="mt-3 flex flex-wrap items-center justify-center gap-2">
+            <button
+              v-if="canExpandEmptySearchToRoot"
+              type="button"
+              data-testid="empty-search-expand-root"
+              class="rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-blue-700"
+              @click="expandSearchToWholeRoot"
+            >
+              전체 루트에서 검색
+            </button>
+            <button
+              type="button"
+              data-testid="empty-search-reset"
+              class="rounded-xl border border-gray-200 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              @click="resetFilters"
+            >
+              검색 조건 초기화
+            </button>
+          </div>
+        </template>
+        <template v-else>
+          <p class="text-sm">표시할 파일이 없습니다.</p>
+          <p v-if="canDropUpload" class="mt-1 text-xs text-gray-400">
+            {{
+              isVaultMode
+                ? "파일이나 폴더를 드래그하여 놓거나, 우클릭하여 새 폴더 만들기 · 드라이브에서 파일 가져오기를 진행할 수 있습니다."
+                : "파일이나 폴더를 드래그하여 놓거나, 우클릭하여 새 폴더 · 공유 폴더를 만들 수 있습니다."
+            }}
+          </p>
+        </template>
       </template>
 
       <Teleport to="body">
@@ -1387,7 +1496,37 @@ onBeforeUnmount(() => {
       @submit="submitShare"
       @cancel-share="cancelShare"
     />
-    <FilePreviewModal :file="previewTarget" @close="closeFilePreview" />
+    <FilePreviewModal
+      :file="previewTarget"
+      :allow-download-link-share="!isVaultMode && !sharedLibrary"
+      @close="closeFilePreview"
+      @share-download-link="openDownloadLinkDialog"
+    />
+    <DownloadShareLinkDialog
+      v-model:duration-mode="downloadLinkDurationMode"
+      v-model:custom-minutes="downloadLinkCustomMinutes"
+      v-model:custom-expires-at="downloadLinkCustomExpiresAt"
+      v-model:limit-mode="downloadLinkLimitMode"
+      v-model:custom-max-downloads="downloadLinkCustomMaxDownloads"
+      v-model:password="downloadLinkPassword"
+      :open="isDownloadLinkDialogOpen"
+      :target-file="downloadLinkTargetFile"
+      :resolved-duration-minutes="downloadLinkResolvedMinutes"
+      :resolved-max-downloads="downloadLinkResolvedMaxDownloads"
+      :issued-link="downloadLinkIssued"
+      :existing-links="downloadLinkHistory"
+      :is-loading-links="isDownloadLinkLoading"
+      :is-creating="isDownloadLinkCreating"
+      :revoking-link-idx="revokingDownloadLinkIdx"
+      :error-message="downloadLinkError"
+      :copied-key="downloadLinkCopiedKey"
+      :get-share-page-url="getDownloadSharePageUrl"
+      :get-direct-download-url="getDownloadShareDirectUrl"
+      @close="closeDownloadLinkDialog"
+      @create="createDownloadLinkAction"
+      @revoke="revokeDownloadLinkAction"
+      @copy="copyDownloadShareUrl"
+    />
     <VaultImportModal
       :open="vaultImportModal.open"
       :target-folder-id="vaultImportModal.targetFolderId"

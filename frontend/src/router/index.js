@@ -165,6 +165,12 @@ const router = createRouter({
       meta : { requiresAuth: true},
     },
     {
+      path: '/share-link/:token',
+      name: 'publicShareLink',
+      component: () => import('../views/PublicShareLinkView.vue'),
+      meta: { title: '다운로드 링크 공유', requiresAuth: false },
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'notFound',
       component: NotFound,

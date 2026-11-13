@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -128,6 +129,72 @@ public interface FileUpDownloadRepository extends JpaRepository<FileInfo, Long>,
     ) {
         return findDistinctFileFormatsByUserAndParent(userIdx, parentId, fileNodeType, false, false);
     }
+
+    @Query("""
+            select f
+            from FileInfo f
+            where f.user.idx = :userIdx
+              and (f.trashed is null or f.trashed = false)
+              and f.nodeType = :folderNodeType
+              and (
+                    (:vaultOnly = true and f.spaceType = com.example.WaffleBear.file.model.FileSpaceType.VAULT)
+                    or (:vaultOnly = false and (f.spaceType is null or f.spaceType = com.example.WaffleBear.file.model.FileSpaceType.DRIVE))
+              )
+            order by lower(f.fileOriginName) asc, f.idx asc
+            """)
+    List<FileInfo> findActiveFoldersByUserAndSpace(
+            @Param("userIdx") Long userIdx,
+            @Param("folderNodeType") FileNodeType folderNodeType,
+            @Param("vaultOnly") boolean vaultOnly
+    );
+
+    @Query("""
+            select distinct lower(f.fileFormat)
+            from FileInfo f
+            where f.user.idx = :userIdx
+              and (f.trashed is null or f.trashed = false)
+              and (f.nodeType is null or f.nodeType = :fileNodeType)
+              and f.fileFormat is not null
+              and f.fileFormat <> ''
+              and (
+                    (:vaultOnly = true and f.spaceType = com.example.WaffleBear.file.model.FileSpaceType.VAULT)
+                    or (:vaultOnly = false and (f.spaceType is null or f.spaceType = com.example.WaffleBear.file.model.FileSpaceType.DRIVE))
+              )
+              and (:includeHidden = true or (f.hiddenFolder is null or f.hiddenFolder = false))
+              and f.parent.idx in :parentIds
+            order by lower(f.fileFormat)
+            """)
+    List<String> findDistinctFileFormatsByUserAndParentIn(
+            @Param("userIdx") Long userIdx,
+            @Param("parentIds") Collection<Long> parentIds,
+            @Param("fileNodeType") FileNodeType fileNodeType,
+            @Param("vaultOnly") boolean vaultOnly,
+            @Param("includeHidden") boolean includeHidden
+    );
+
+    @Query("""
+            select distinct lower(f.fileFormat)
+            from FileInfo f
+            where f.user.idx = :userIdx
+              and (f.trashed is null or f.trashed = false)
+              and (f.nodeType is null or f.nodeType = :fileNodeType)
+              and f.fileFormat is not null
+              and f.fileFormat <> ''
+              and (
+                    (:vaultOnly = true and f.spaceType = com.example.WaffleBear.file.model.FileSpaceType.VAULT)
+                    or (:vaultOnly = false and (f.spaceType is null or f.spaceType = com.example.WaffleBear.file.model.FileSpaceType.DRIVE))
+              )
+              and (:includeHidden = true or (f.hiddenFolder is null or f.hiddenFolder = false))
+              and (f.parent is null or f.parent.idx in :parentIds)
+            order by lower(f.fileFormat)
+            """)
+    List<String> findDistinctFileFormatsByUserInRootOrParents(
+            @Param("userIdx") Long userIdx,
+            @Param("parentIds") Collection<Long> parentIds,
+            @Param("fileNodeType") FileNodeType fileNodeType,
+            @Param("vaultOnly") boolean vaultOnly,
+            @Param("includeHidden") boolean includeHidden
+    );
 
     @Query("""
             select f.fileSavePath

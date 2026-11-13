@@ -219,4 +219,48 @@ describe('useFileStore storage summary', () => {
     expect(store.recentAccessedFiles.map((f) => f.id)).toEqual([10])
     expect(store.driveFiles.map((f) => f.id)).toEqual([10])
   })
+
+  it('stores rootFolders and item locationPath during root-scoped search queries', async () => {
+    fetchStorageSummaryApi.mockResolvedValue({ planCode: 'ADMIN', totalQuotaBytes: 1000 })
+    fetchFileListPageApi.mockResolvedValueOnce({
+      fileList: [
+        {
+          idx: 77,
+          fileOriginName: 'report.pdf',
+          fileFormat: 'pdf',
+          nodeType: 'FILE',
+          parentId: 12,
+          locationPath: '홈 / 자료 / 2026',
+        },
+      ],
+      breadcrumbs: [],
+      rootFolders: [
+        { idx: 10, fileOriginName: '자료' },
+        { idx: 11, fileOriginName: '프로그램' },
+      ],
+      availableExtensions: ['pdf', 'png'],
+      totalPage: 1,
+      totalCount: 1,
+      currentPage: 0,
+      currentSize: 20,
+    })
+
+    const store = useFileStore()
+    await store.fetchDrivePage({
+      parentId: null,
+      page: 0,
+      size: 20,
+      searchScope: 'root',
+      searchRootFolderId: 10,
+      searchQuery: '.pdf',
+      extensionFilter: 'pdf',
+    })
+
+    expect(store.driveRootFolders.map((f) => ({ id: f.id, name: f.name }))).toEqual([
+      { id: 10, name: '자료' },
+      { id: 11, name: '프로그램' },
+    ])
+    expect(store.driveFiles[0].location).toBe('홈 / 자료 / 2026')
+    expect(store.driveAvailableExtensions).toEqual(['pdf', 'png'])
+  })
 })

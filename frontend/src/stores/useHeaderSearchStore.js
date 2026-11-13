@@ -1,4 +1,5 @@
 import { reactive } from "vue";
+import { normalizeExtensionToken } from "@/utils/fileSearch.js";
 
 export const FILE_SEARCH_ROUTE_NAMES = new Set([
   "home",
@@ -34,11 +35,14 @@ export const FILE_STATUS_OPTIONS = [
 const createDefaultSearchState = () => ({
   searchQuery: "",
   extensionFilter: "all",
+  searchScope: "current",
+  searchRootFolderId: null,
   sizeFilter: "all",
   customMinSize: "",
   customMaxSize: "",
   statusFilter: "all",
   availableExtensions: [],
+  availableRootFolders: [],
 });
 
 const searchStates = reactive({});
@@ -48,9 +52,31 @@ const normalizeScope = (scope) => String(scope || "files");
 const normalizeExtensions = (extensions = []) => {
   return [...new Set(
     extensions
-      .map((extension) => String(extension || "").trim().toLowerCase())
+      .map((extension) => normalizeExtensionToken(extension))
       .filter(Boolean),
   )].sort((left, right) => left.localeCompare(right));
+};
+
+const normalizeRootFolders = (folders = []) => {
+  if (!Array.isArray(folders)) {
+    return [];
+  }
+  const seen = new Set();
+  const normalized = [];
+  for (const folder of folders) {
+    const id = folder?.id ?? folder?.idx ?? null;
+    const name = String(folder?.name || folder?.fileOriginName || "").trim();
+    if (id == null || !name) {
+      continue;
+    }
+    const key = String(id);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    normalized.push({ id, name });
+  }
+  return normalized;
 };
 
 const ensureScopeState = (scope) => {
@@ -77,27 +103,28 @@ export function useHeaderSearchStore() {
   const setAvailableExtensions = (scope, extensions) => {
     const state = ensureScopeState(scope);
     state.availableExtensions = normalizeExtensions(extensions);
+  };
 
-    if (
-      state.extensionFilter !== "all" &&
-      !state.availableExtensions.includes(state.extensionFilter)
-    ) {
-      state.extensionFilter = "all";
-    }
+  const setAvailableRootFolders = (scope, folders) => {
+    const state = ensureScopeState(scope);
+    state.availableRootFolders = normalizeRootFolders(folders);
   };
 
   const resetScope = (scope) => {
     const state = ensureScopeState(scope);
     const availableExtensions = [...state.availableExtensions];
+    const availableRootFolders = [...state.availableRootFolders];
 
     Object.assign(state, createDefaultSearchState(), {
       availableExtensions,
+      availableRootFolders,
     });
   };
 
   return {
     getScopeState,
     setAvailableExtensions,
+    setAvailableRootFolders,
     resetScope,
   };
 }

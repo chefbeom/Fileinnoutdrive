@@ -217,6 +217,7 @@ export function isCollectionVideo(file) {
 export function getCollectionActionAvailability(file, options = {}) {
   const sharedLibrary = Boolean(options.sharedLibrary);
   const vaultMode = Boolean(options.vaultMode);
+  const hiddenContext = Boolean(options.hiddenContext);
   const deleteMode = options.deleteMode || "trash";
   const canCreateShares = Boolean(options.canCreateShares);
   const canCreateLocks = Boolean(options.canCreateLocks);
@@ -239,6 +240,7 @@ export function getCollectionActionAvailability(file, options = {}) {
     canConfigureSecret: !sharedLibrary && deleteMode !== "permanent" && isFolder && !isTrash && !sharedWithMe && !isCollectionSharedFolder(file) && !isVaultSpace,
     canMoveToVault: !sharedLibrary && !vaultMode && deleteMode !== "permanent" && !sharedWithMe && !isTrash && !locked && !isVaultSpace && !isSharedOut,
     canShare: !sharedLibrary && !sharedWithMe && !isTrash && !locked && !isSecretNode && (canCreateShares || file?.sharedFile),
+    canShareDownloadLink: !sharedLibrary && !sharedWithMe && !isFolder && !isTrash && !locked && !isSecretNode && !vaultMode && !hiddenContext,
     canToggleLock: !sharedLibrary && !sharedWithMe && !isFolder && !isTrash && (canCreateLocks || file?.lockedFile),
     canSaveShared: sharedWithMe && !isFolder && !locked && Boolean(getCollectionPreviewUrl(file) || file?.downloadable),
     canManageSentShare: Boolean(sharedLibrary && file?.sharedFile && !sharedWithMe),

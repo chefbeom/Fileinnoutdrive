@@ -596,15 +596,31 @@ ensureExcludes(deletePermanently, 'FileUpDownloadMinioService.deletePermanently'
 
 ensureTransactionalAnnotation(
   minioFileService,
-  'public FileCommonDto.FileActionRes clearTrash(',
-  'FileUpDownloadMinioService.clearTrash'
+  'public FileCommonDto.FileActionRes clearTrash(Long userIdx)',
+  'FileUpDownloadMinioService.clearTrash(Long userIdx)'
 );
-const clearTrash = extractMethod(minioFileService, 'public FileCommonDto.FileActionRes clearTrash(');
-ensureIncludes(clearTrash, 'FileUpDownloadMinioService.clearTrash', [
+const clearTrashDelegate = extractMethod(
+  minioFileService,
+  'public FileCommonDto.FileActionRes clearTrash(Long userIdx)'
+);
+ensureIncludes(clearTrashDelegate, 'FileUpDownloadMinioService.clearTrash(Long userIdx)', [
+  'return clearTrash(userIdx, false);',
+]);
+
+ensureTransactionalAnnotation(
+  minioFileService,
+  'public FileCommonDto.FileActionRes clearTrash(Long userIdx, boolean vaultMode)',
+  'FileUpDownloadMinioService.clearTrash(Long userIdx, boolean vaultMode)'
+);
+const clearTrash = extractMethod(
+  minioFileService,
+  'public FileCommonDto.FileActionRes clearTrash(Long userIdx, boolean vaultMode)'
+);
+ensureIncludes(clearTrash, 'FileUpDownloadMinioService.clearTrash(Long userIdx, boolean vaultMode)', [
   'removeMinioObjectsAfterCommit(trashedFiles)',
   'fileUpDownloadRepository.deleteAll(FileTreeRules.sortForDelete(trashedFiles))',
 ]);
-ensureExcludes(clearTrash, 'FileUpDownloadMinioService.clearTrash', [
+ensureExcludes(clearTrash, 'FileUpDownloadMinioService.clearTrash(Long userIdx, boolean vaultMode)', [
   'deleteObjectKeys(',
   'minioClient.',
   'removeObject',

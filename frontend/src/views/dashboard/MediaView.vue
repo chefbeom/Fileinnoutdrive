@@ -7,10 +7,13 @@ import { useMediaPhotoStore } from "@/stores/useMediaPhotoStore.js";
 import { downloadFileAsset } from "@/api/filesApi.js";
 import { getCachedFileThumbnailUrl, loadFileThumbnailUrl } from "@/utils/fileThumbnailCache.js";
 import { triggerDesktopUpload } from "@/utils/desktopDropUpload.js";
+import { matchesSearchItem } from "@/utils/fileSearch.js";
 import BaseFileShareDialog from "@/components/BaseFileShareDialog.vue";
+import DownloadShareLinkDialog from "@/components/DownloadShareLinkDialog.vue";
 import MediaHeaderToolbar from "@/components/media/MediaHeaderToolbar.vue";
 import MediaSettingsModal from "@/components/media/MediaSettingsModal.vue";
 import { BASE_SHARE_PERMISSION_OPTIONS, useBaseFileShareDialog } from "@/components/useBaseFileShareDialog.js";
+import { useDownloadShareLinkDialog } from "@/components/useDownloadShareLinkDialog.js";
 
 const props = defineProps({
   vaultOnly: {
@@ -209,6 +212,34 @@ const {
   canCreateShares,
   selectedOwnedShareableFiles,
 });
+const {
+  targetFile: downloadLinkTargetFile,
+  isOpen: isDownloadLinkDialogOpen,
+  durationMode: downloadLinkDurationMode,
+  customMinutes: downloadLinkCustomMinutes,
+  customExpiresAt: downloadLinkCustomExpiresAt,
+  limitMode: downloadLinkLimitMode,
+  customMaxDownloads: downloadLinkCustomMaxDownloads,
+  password: downloadLinkPassword,
+  resolvedDurationMinutes: downloadLinkResolvedMinutes,
+  resolvedMaxDownloads: downloadLinkResolvedMaxDownloads,
+  issuedLink: downloadLinkIssued,
+  existingLinks: downloadLinkHistory,
+  isLoadingLinks: isDownloadLinkLoading,
+  isCreating: isDownloadLinkCreating,
+  revokingLinkIdx: revokingDownloadLinkIdx,
+  errorMessage: downloadLinkError,
+  copiedKey: downloadLinkCopiedKey,
+  openDialog: openDownloadLinkDialog,
+  closeDialog: closeDownloadLinkDialog,
+  createLink: createDownloadLinkAction,
+  revokeLink: revokeDownloadLinkAction,
+  getSharePageUrl: getDownloadSharePageUrl,
+  getDirectDownloadUrl: getDownloadShareDirectUrl,
+  copyLinkUrl: copyDownloadShareUrl,
+} = useDownloadShareLinkDialog({
+  onError: (msg) => window.alert(msg),
+});
 
 const activeSection = computed(() => {
   const raw = String(route.query.section || "series").toLowerCase();
@@ -274,25 +305,16 @@ const filterMediaPool = (items = []) => {
       if (statusFilter.value !== item.watchState) return false;
     }
 
-    const extFilter = headerSearchState.value?.extensionFilter || "all";
-    if (extFilter !== "all" && item.extension !== extFilter) {
+    const matchesQueryAndExt = matchesSearchItem({
+      name: item.name,
+      extension: item.extension,
+      isFolder: false,
+      searchQuery: effectiveSearchQuery.value,
+      extensionFilter: headerSearchState.value?.extensionFilter || "all",
+      extraSearchText: [item.displayTitle, item.folderPathLabel, item.ownerName],
+    });
+    if (!matchesQueryAndExt) {
       return false;
-    }
-
-    if (effectiveSearchQuery.value) {
-      const haystack = [
-        item.name,
-        item.displayTitle,
-        item.extension,
-        item.folderPathLabel,
-        item.ownerName,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      if (!haystack.includes(effectiveSearchQuery.value)) {
-        return false;
-      }
     }
 
     return true;
@@ -1381,6 +1403,15 @@ onBeforeUnmount(() => {
         >
           <i class="fa-solid fa-share-nodes"></i>
           <span>공유</span>
+        </button>
+        <button
+          v-if="!vaultOnly && selectedOwnedShareableFiles.length === 1"
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-3 py-1.5 font-bold text-white hover:bg-sky-500"
+          @click="openDownloadLinkDialog(selectedOwnedShareableFiles[0])"
+        >
+          <i class="fa-solid fa-link"></i>
+          <span>링크 공유</span>
         </button>
         <button
           type="button"
@@ -3148,6 +3179,15 @@ onBeforeUnmount(() => {
                     <span>공유 설정</span>
                   </button>
                   <button
+                    v-if="!vaultOnly && !item.sharedWithMe && !item.lockedFile && !item.hiddenFolder"
+                    type="button"
+                    class="flex w-full items-center gap-2 px-3.5 py-2 text-left font-bold text-[var(--text-main)] hover:bg-[var(--bg-input)]"
+                    @click="activeMenuCardId = null; openDownloadLinkDialog(item)"
+                  >
+                    <i class="fa-solid fa-link w-4 text-sky-500"></i>
+                    <span>다운로드 링크 공유</span>
+                  </button>
+                  <button
                     type="button"
                     class="flex w-full items-center gap-2 px-3.5 py-2 text-left font-bold text-[var(--text-main)] hover:bg-[var(--bg-input)]"
                     @click="activeMenuCardId = null; downloadFileAsset(item, item.name)"
@@ -4317,6 +4357,32 @@ onBeforeUnmount(() => {
       @close="closeShareDialog"
       @submit="submitShare"
       @cancel-share="cancelShare"
+    />
+    <DownloadShareLinkDialog
+      v-if="!vaultOnly"
+      v-model:duration-mode="downloadLinkDurationMode"
+      v-model:custom-minutes="downloadLinkCustomMinutes"
+      v-model:custom-expires-at="downloadLinkCustomExpiresAt"
+      v-model:limit-mode="downloadLinkLimitMode"
+      v-model:custom-max-downloads="downloadLinkCustomMaxDownloads"
+      v-model:password="downloadLinkPassword"
+      :open="isDownloadLinkDialogOpen"
+      :target-file="downloadLinkTargetFile"
+      :resolved-duration-minutes="downloadLinkResolvedMinutes"
+      :resolved-max-downloads="downloadLinkResolvedMaxDownloads"
+      :issued-link="downloadLinkIssued"
+      :existing-links="downloadLinkHistory"
+      :is-loading-links="isDownloadLinkLoading"
+      :is-creating="isDownloadLinkCreating"
+      :revoking-link-idx="revokingDownloadLinkIdx"
+      :error-message="downloadLinkError"
+      :copied-key="downloadLinkCopiedKey"
+      :get-share-page-url="getDownloadSharePageUrl"
+      :get-direct-download-url="getDownloadShareDirectUrl"
+      @close="closeDownloadLinkDialog"
+      @create="createDownloadLinkAction"
+      @revoke="revokeDownloadLinkAction"
+      @copy="copyDownloadShareUrl"
     />
   </div>
 </template>

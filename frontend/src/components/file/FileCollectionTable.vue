@@ -36,6 +36,7 @@ const {
   canDownload,
   canSaveShared,
   canShare,
+  canShareDownloadLink = () => false,
   canManageSentShare,
   canToggleLock,
   canManageFolder,
@@ -50,6 +51,7 @@ const {
   handleDownload,
   onClickSaveShared,
   onClickShare,
+  onClickShareDownloadLink = () => {},
   onClickManageSentShare,
   onClickToggleLock,
   onClickRenameFolder,
@@ -336,6 +338,14 @@ const {
                   @click="onClickShare(file, $event)"
                 >
                   공유
+                </button>
+                <button
+                  v-if="canShareDownloadLink(file)"
+                  type="button"
+                  class="action-button text-sky-700 hover:bg-sky-50"
+                  @click="onClickShareDownloadLink(file, $event)"
+                >
+                  링크 공유
                 </button>
                 <button
                   v-if="canManageSentShare(file)"

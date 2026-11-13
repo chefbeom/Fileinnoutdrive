@@ -8,6 +8,7 @@ import com.example.WaffleBear.file.model.FileNodeType;
 import com.example.WaffleBear.file.service.StoragePlanService;
 import com.example.WaffleBear.file.share.ShareRepository;
 import com.example.WaffleBear.file.share.model.FileShare;
+import com.example.WaffleBear.file.sharelink.FileDownloadShareLinkRepository;
 import com.example.WaffleBear.file.upload.UploadObjectStorageService;
 import com.example.WaffleBear.file.version.FileVersionLifecycleService;
 import com.example.WaffleBear.file.version.FileVersionRepository;
@@ -29,6 +30,7 @@ import com.example.WaffleBear.user.model.User;
 import com.example.WaffleBear.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -64,6 +66,9 @@ public class StorageGrantService {
     private final RelationshipGroupRepository relationshipGroupRepository;
     private final RelationshipGroupMappingRepository relationshipGroupMappingRepository;
     private final NotificationService notificationService;
+
+    @Autowired(required = false)
+    private FileDownloadShareLinkRepository fileDownloadShareLinkRepository;
 
     @Transactional
     public StorageShareDto.CapacityShareOverviewRes getCapacityOverview(Long userIdx) {
@@ -511,6 +516,10 @@ public class StorageGrantService {
         }
         if (!versions.isEmpty()) {
             fileVersionRepository.deleteAll(versions);
+        }
+
+        if (fileDownloadShareLinkRepository != null && file.getIdx() != null) {
+            fileDownloadShareLinkRepository.deleteAllByFile_Idx(file.getIdx());
         }
 
         List<FileShare> shares = shareRepository.findAllByFile_Idx(file.getIdx());

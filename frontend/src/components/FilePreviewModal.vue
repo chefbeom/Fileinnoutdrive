@@ -14,9 +14,24 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  allowDownloadLinkShare: {
+    type: Boolean,
+    default: false,
+  },
 });
 
-const emit = defineEmits(["close"]);
+const emit = defineEmits(["close", "share-download-link"]);
+
+const canShareDownloadLink = computed(() => {
+  const f = props.file;
+  if (!props.allowDownloadLinkShare || !f || Boolean(f.lockedFile)) {
+    return false;
+  }
+  const isFolder = f.nodeType === "FOLDER" || f.type === "folder";
+  const isVault = Boolean(f.isVaultSpace || String(f.spaceType || "").toUpperCase() === "VAULT");
+  const isTrash = Boolean(f.isTrash || f.trashed);
+  return !isFolder && !f.sharedWithMe && !isTrash && !f.hiddenFolder && !isVault;
+});
 const fileStore = useFileStore();
 const mediaPhotoStore = useMediaPhotoStore();
 
@@ -463,6 +478,16 @@ onBeforeUnmount(() => {
           >
             <i class="fa-solid fa-images"></i>
             <span>사진첩 라이트박스로 열기 (확대·회전·슬라이드쇼)</span>
+          </button>
+
+          <button
+            v-if="canShareDownloadLink"
+            type="button"
+            class="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-sky-500/35 bg-sky-500/10 px-4 py-2.5 text-xs font-extrabold text-sky-600 transition hover:bg-sky-500/20 dark:text-sky-300"
+            @click="emit('share-download-link', file)"
+          >
+            <i class="fa-solid fa-link"></i>
+            <span>다운로드 링크 공유</span>
           </button>
 
           <button v-if="!canDownload" type="button" class="inline-flex w-full items-center justify-center rounded-2xl bg-slate-200 px-4 py-3 text-sm font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400" disabled>

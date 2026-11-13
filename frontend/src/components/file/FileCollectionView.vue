@@ -83,6 +83,7 @@ const emit = defineEmits([
   "show-folder-properties",
   "preview-file",
   "share-file",
+  "share-download-link",
   "toggle-lock",
   "move-to-vault",
   "open-vault-import",
@@ -380,6 +381,7 @@ const resolveProtectedShareOptions = (file) => {
 const getActionAvailability = (file) => getCollectionActionAvailability(file, {
   sharedLibrary: props.sharedLibrary,
   vaultMode: secretFolderStore.vaultMode,
+  hiddenContext: (fileStore.currentFolderPath || []).some((folder) => Boolean(folder?.hiddenFolder)),
   deleteMode: props.deleteMode,
   canCreateShares: canCreateShares.value,
   canCreateLocks: canCreateLocks.value,
@@ -415,6 +417,7 @@ const canManageFolder = (file) => getActionAvailability(file).canManageFolder;
 const canConfigureSecret = (file) => getActionAvailability(file).canConfigureSecret;
 const canMoveToVault = (file) => getActionAvailability(file).canMoveToVault;
 const canShare = (file) => getActionAvailability(file).canShare;
+const canShareDownloadLink = (file) => getActionAvailability(file).canShareDownloadLink;
 const canToggleLock = (file) => getActionAvailability(file).canToggleLock;
 const canSaveShared = (file) => getActionAvailability(file).canSaveShared;
 const canManageSentShare = (file) => getActionAvailability(file).canManageSentShare;
@@ -636,6 +639,14 @@ const onClickShare = (file, event) => {
     return;
   }
   emit("share-file", [file]);
+};
+
+const onClickShareDownloadLink = (file, event) => {
+  event.stopPropagation();
+  if (!ensureUnlocked(file)) {
+    return;
+  }
+  emit("share-download-link", file);
 };
 
 const onClickManageSentShare = (file, event) => {
@@ -952,6 +963,23 @@ const handleContextOpenItem = () => {
   }
 };
 
+const canGoToContainingFolder = (target) => {
+  if (!target || props.sharedLibrary || props.deleteMode === "permanent") {
+    return false;
+  }
+  const targetParentId = target.parentId ?? null;
+  const currentId = fileStore.currentFolderId ?? null;
+  return String(targetParentId ?? "") !== String(currentId ?? "");
+};
+
+const handleContextGoToContainingFolder = (target) => {
+  closeContextMenu();
+  if (!target) {
+    return;
+  }
+  fileStore.enterFolder(target.parentId ?? null);
+};
+
 const handleContextCreateFolder = async (targetParentId = fileStore.currentFolderId) => {
   closeContextMenu();
   const folderName = window.prompt("새 폴더 이름을 입력해 주세요.");
@@ -1055,6 +1083,13 @@ const handleContextShare = (target, event) => {
   closeContextMenu();
   if (target) {
     onClickShare(target, event || { stopPropagation() {} });
+  }
+};
+
+const handleContextShareDownloadLink = (target, event) => {
+  closeContextMenu();
+  if (target) {
+    onClickShareDownloadLink(target, event || { stopPropagation() {} });
   }
 };
 
@@ -1257,6 +1292,7 @@ provide(FILE_COLLECTION_CONTEXT_KEY, {
   canDownload,
   canSaveShared,
   canShare,
+  canShareDownloadLink,
   canManageSentShare,
   canToggleLock,
   canMoveToVault,
@@ -1272,6 +1308,7 @@ provide(FILE_COLLECTION_CONTEXT_KEY, {
   handleDownload,
   onClickSaveShared,
   onClickShare,
+  onClickShareDownloadLink,
   onClickManageSentShare,
   onClickToggleLock,
   onClickRenameFolder,
@@ -1413,6 +1450,16 @@ provide(FILE_COLLECTION_CONTEXT_KEY, {
           >
             <i class="fa-regular fa-folder-open w-4 text-center text-blue-500"></i>
             <span>폴더 열기</span>
+          </button>
+
+          <button
+            v-if="canGoToContainingFolder(contextMenu.target)"
+            type="button"
+            class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-indigo-700 transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-slate-800"
+            @click="handleContextGoToContainingFolder(contextMenu.target)"
+          >
+            <i class="fa-solid fa-location-crosshairs w-4 text-center text-indigo-500"></i>
+            <span>상위 위치로 이동</span>
           </button>
 
           <button
@@ -1622,6 +1669,16 @@ provide(FILE_COLLECTION_CONTEXT_KEY, {
           </button>
 
           <button
+            v-if="canGoToContainingFolder(contextMenu.target)"
+            type="button"
+            class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-indigo-700 transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-slate-800"
+            @click="handleContextGoToContainingFolder(contextMenu.target)"
+          >
+            <i class="fa-solid fa-location-crosshairs w-4 text-center text-indigo-500"></i>
+            <span>해당 위치로 이동</span>
+          </button>
+
+          <button
             v-if="deleteMode !== 'permanent' && !isInsideSecretArea && isVideo(contextMenu.target)"
             type="button"
             class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-purple-700 transition hover:bg-purple-50 dark:text-purple-300 dark:hover:bg-slate-800"
@@ -1679,6 +1736,16 @@ provide(FILE_COLLECTION_CONTEXT_KEY, {
           >
             <i class="fa-solid fa-share-nodes w-4 text-center text-emerald-500"></i>
             <span>공유 설정</span>
+          </button>
+
+          <button
+            v-if="canShareDownloadLink(contextMenu.target)"
+            type="button"
+            class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-gray-700 transition hover:bg-sky-50 hover:text-sky-600 dark:text-slate-200 dark:hover:bg-slate-800"
+            @click="handleContextShareDownloadLink(contextMenu.target, $event)"
+          >
+            <i class="fa-solid fa-link w-4 text-center text-sky-500"></i>
+            <span>다운로드 링크 공유</span>
           </button>
 
           <button

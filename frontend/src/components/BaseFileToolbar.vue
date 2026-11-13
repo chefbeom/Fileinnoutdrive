@@ -1,7 +1,8 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
-const isMobileControlsOpen = ref(false);
+const isViewMenuOpen = ref(false);
+const viewMenuRef = ref(null);
 
 const props = defineProps({
   title: { type: String, default: "" },
@@ -42,112 +43,265 @@ const emit = defineEmits([
   "set-item-size",
 ]);
 
+const VIEW_MODE_OPTIONS = [
+  { value: "table", label: "리스트", icon: "fa-solid fa-list" },
+  { value: "grid", label: "카드", icon: "fa-solid fa-table-cells-large" },
+  { value: "icon", label: "아이콘", icon: "fa-solid fa-border-all" },
+];
+
+const ITEM_SIZE_OPTIONS = [
+  { value: "small", label: "작게" },
+  { value: "medium", label: "보통" },
+  { value: "large", label: "크게" },
+];
+
 const sortOptionModel = computed({
   get: () => props.sortOption,
   set: (value) => emit("update:sortOption", value),
 });
+
 const lastFolderSegmentId = computed(() => props.folderPathSegments[props.folderPathSegments.length - 1]?.id);
+
+const activeViewOption = computed(
+  () => VIEW_MODE_OPTIONS.find((opt) => opt.value === props.viewMode) || VIEW_MODE_OPTIONS[0],
+);
+
+const activeItemSizeLabel = computed(
+  () => ITEM_SIZE_OPTIONS.find((opt) => opt.value === props.itemSize)?.label || "보통",
+);
+
+const activeLayoutLabel = computed(() => {
+  const found = props.visibleLayoutPresetOptions?.find((opt) => String(opt.value) === String(props.layoutPreset));
+  return found?.label || (props.layoutPreset === "custom" ? "직접" : `${props.layoutPreset}개`);
+});
+
+const compactFolderSummaryText = computed(() => {
+  if (!Array.isArray(props.folderSummaryCards) || props.folderSummaryCards.length === 0) {
+    return "";
+  }
+  const byKey = new Map(props.folderSummaryCards.map((card) => [card.key, card.value]));
+  const filesCount = byKey.get("files");
+  const foldersCount = byKey.get("folders");
+  const parts = [];
+  if (filesCount !== undefined) parts.push(`파일 ${filesCount}`);
+  if (foldersCount !== undefined) parts.push(`폴더 ${foldersCount}`);
+  return parts.join(" · ");
+});
+
+const hasSubRow = computed(
+  () => props.showFolderNavigation || props.hasVisibleToolbarChips || props.hasActiveFilters,
+);
+
+const handleDocumentPointerDown = (event) => {
+  if (!isViewMenuOpen.value || !viewMenuRef.value) return;
+  if (!viewMenuRef.value.contains(event.target)) {
+    isViewMenuOpen.value = false;
+  }
+};
+
+const handleDocumentKeyDown = (event) => {
+  if (event.key === "Escape" && isViewMenuOpen.value) {
+    isViewMenuOpen.value = false;
+  }
+};
+
+onMounted(() => {
+  document.addEventListener("pointerdown", handleDocumentPointerDown);
+  document.addEventListener("keydown", handleDocumentKeyDown);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("pointerdown", handleDocumentPointerDown);
+  document.removeEventListener("keydown", handleDocumentKeyDown);
+});
 </script>
 
 <template>
-  <div class="mb-5 overflow-hidden rounded-[1.75rem] border border-slate-200/80 bg-white shadow-sm">
-    <div class="toolbar-shell">
-      <div class="toolbar-copy">
-        <div class="toolbar-overview">
-          <div class="toolbar-overview__main">
-            <div class="toolbar-overview__title-wrap">
-              <h2 class="toolbar-overview__title">{{ title }}</h2>
-              <p class="toolbar-overview__meta">{{ toolbarMetaLabel }}</p>
-            </div>
-            <div class="toolbar-overview__slots">
-              <slot name="header-left"></slot>
-              <slot name="header-right"></slot>
-            </div>
-          </div>
-          <div class="toolbar-mobile-quickbar md:hidden">
-            <div class="toolbar-mobile-view-group">
-              <button type="button" class="toolbar-mobile-view-btn" :class="{ 'is-active': viewMode === 'table' }" @click="emit('set-view-mode', 'table')">리스트</button>
-              <button type="button" class="toolbar-mobile-view-btn" :class="{ 'is-active': viewMode === 'grid' }" @click="emit('set-view-mode', 'grid')">카드</button>
-              <button type="button" class="toolbar-mobile-view-btn" :class="{ 'is-active': viewMode === 'icon' }" @click="emit('set-view-mode', 'icon')">아이콘</button>
-            </div>
-            <button
-              type="button"
-              class="toolbar-mobile-settings-btn"
-              :class="{ 'is-active': isMobileControlsOpen }"
-              @click="isMobileControlsOpen = !isMobileControlsOpen"
-            >
-              <i class="fa-solid fa-sliders text-xs"></i>
-              <span>{{ isMobileControlsOpen ? '설정 닫기' : '정렬·배치' }}</span>
-            </button>
-          </div>
-        </div>
-        <div v-if="hasVisibleToolbarChips || hasActiveFilters" class="toolbar-copy__actions">
-          <div v-if="hasVisibleToolbarChips" class="toolbar-chip-row">
-            <span v-for="chip in activeFilterChips" :key="chip" class="toolbar-chip">{{ chip }}</span>
-            <span v-if="searchState.sizeFilter === 'custom'" class="toolbar-chip toolbar-chip--accent">{{ customSizeChipPrefix }}: {{ customSizeRangeLabel }}</span>
-          </div>
-          <button v-if="hasActiveFilters" type="button" class="toolbar-reset" @click="emit('reset-filters')">{{ resetFiltersLabel }}</button>
-        </div>
-        <div v-if="showFolderNavigation" class="toolbar-folder-panel">
-          <div class="toolbar-folder-panel__header">
-            <div class="min-w-0">
-              <p class="toolbar-folder-panel__label">현재 위치</p>
-              <div class="toolbar-folder-panel__path">
-                <template v-for="segment in folderPathSegments" :key="segment.id ?? 'root'">
-                  <button type="button" class="breadcrumb-button" @click="emit('navigate-folder', segment.id)">{{ segment.name }}</button>
-                  <span v-if="segment.id !== lastFolderSegmentId" class="text-gray-300">/</span>
-                </template>
-              </div>
-            </div>
-            <div v-if="currentFolder" class="toolbar-folder-panel__actions">
-              <button type="button" class="toolbar-inline-button toolbar-inline-button--accent" @click="emit('show-folder-properties', currentFolder)">속성 보기</button>
-              <button type="button" class="toolbar-inline-button" @click="emit('go-back')">상위 폴더로</button>
-            </div>
-          </div>
-          <div v-if="folderSummaryCards.length > 0" class="toolbar-folder-stats">
-            <article v-for="card in folderSummaryCards" :key="card.key" class="toolbar-folder-stat">
-              <p class="toolbar-folder-stat__label">{{ card.label }}</p>
-              <p class="toolbar-folder-stat__value">{{ card.value }}</p>
-            </article>
-          </div>
+  <section class="toolbar-shell mb-3.5">
+    <!-- Top row: title + compact inline summary | slots + sort + collapsed view popover -->
+    <div class="toolbar-main">
+      <div class="toolbar-title-area">
+        <div class="toolbar-title-line">
+          <h2 class="toolbar-title">{{ title }}</h2>
+          <span v-if="toolbarMetaLabel" class="toolbar-meta">{{ toolbarMetaLabel }}</span>
+          <span v-if="compactFolderSummaryText" class="toolbar-inline-stat">
+            {{ compactFolderSummaryText }}
+          </span>
         </div>
       </div>
 
-      <div class="toolbar-controls" :class="{ 'is-mobile-collapsed': !isMobileControlsOpen }">
-        <label class="file-filter">
-          <span class="file-filter__label">정렬</span>
-          <select v-model="sortOptionModel" class="file-filter__input"><option v-for="option in sortOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select>
-        </label>
-        <label class="file-filter">
-          <span class="file-filter__label">{{ layoutGuideLabel }}</span>
-          <div class="file-filter__inline-grid file-filter__inline-grid--layout">
-            <select :value="layoutPreset" class="file-filter__input" @change="emit('set-layout-preset', $event.target.value)">
-              <option v-for="option in visibleLayoutPresetOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-            </select>
-            <input v-if="layoutPreset === 'custom'" :value="customLayoutColumns" type="number" min="5" max="20" class="file-filter__input" placeholder="가로 5~20" @input="emit('set-custom-layout-columns', $event.target.value)" />
-            <input v-if="layoutPreset === 'custom'" :value="customLayoutRows" type="number" min="5" max="20" class="file-filter__input" placeholder="세로 5~20" @input="emit('set-custom-layout-rows', $event.target.value)" />
-          </div>
-          <p class="file-filter__hint">{{ layoutGuideHint }}</p>
-        </label>
-        <div class="file-filter">
-          <span class="file-filter__label">보기 모드</span>
-          <div class="toolbar-toggle-group">
-            <button type="button" class="view-toggle" :class="{ 'is-active': viewMode === 'table' }" @click="emit('set-view-mode', 'table')">리스트</button>
-            <button type="button" class="view-toggle" :class="{ 'is-active': viewMode === 'grid' }" @click="emit('set-view-mode', 'grid')">카드</button>
-            <button type="button" class="view-toggle" :class="{ 'is-active': viewMode === 'icon' }" @click="emit('set-view-mode', 'icon')">아이콘</button>
-          </div>
+      <div class="toolbar-controls-strip">
+        <div v-if="$slots['header-left'] || $slots['header-right']" class="toolbar-slots">
+          <slot name="header-left"></slot>
+          <slot name="header-right"></slot>
         </div>
-        <div class="file-filter">
-          <span class="file-filter__label">크기</span>
-          <div class="toolbar-toggle-group">
-            <button type="button" class="view-toggle" :class="{ 'is-active': itemSize === 'small' }" @click="emit('set-item-size', 'small')">작게</button>
-            <button type="button" class="view-toggle" :class="{ 'is-active': itemSize === 'medium' }" @click="emit('set-item-size', 'medium')">보통</button>
-            <button type="button" class="view-toggle" :class="{ 'is-active': itemSize === 'large' }" @click="emit('set-item-size', 'large')">크게</button>
+
+        <label class="toolbar-sort-pill" aria-label="정렬">
+          <i class="fa-solid fa-arrow-up-wide-short toolbar-sort-pill__icon" aria-hidden="true"></i>
+          <select v-model="sortOptionModel" class="toolbar-sort-pill__select">
+            <option v-for="option in sortOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
+
+        <div ref="viewMenuRef" class="toolbar-view-dropdown">
+          <button
+            type="button"
+            class="toolbar-view-trigger"
+            :class="{ 'is-open': isViewMenuOpen }"
+            :aria-expanded="isViewMenuOpen"
+            aria-haspopup="true"
+            @click="isViewMenuOpen = !isViewMenuOpen"
+          >
+            <i :class="activeViewOption.icon" class="text-[11px]" aria-hidden="true"></i>
+            <span>{{ activeViewOption.label }}</span>
+            <span class="toolbar-view-trigger__meta">{{ activeItemSizeLabel }} · {{ activeLayoutLabel }}</span>
+            <i
+              class="fa-solid fa-chevron-down text-[10px] transition-transform"
+              :class="{ 'rotate-180': isViewMenuOpen }"
+              aria-hidden="true"
+            ></i>
+          </button>
+
+          <div
+            v-if="isViewMenuOpen"
+            class="toolbar-view-popover"
+            role="dialog"
+            aria-label="보기 모드 및 표시 설정"
+          >
+            <div class="toolbar-popover-group">
+              <span class="toolbar-popover-label">보기 모드</span>
+              <div class="toolbar-segmented">
+                <button
+                  v-for="opt in VIEW_MODE_OPTIONS"
+                  :key="opt.value"
+                  type="button"
+                  class="toolbar-segmented__btn"
+                  :class="{ 'is-active': viewMode === opt.value }"
+                  @click="emit('set-view-mode', opt.value)"
+                >
+                  <i :class="opt.icon" class="text-[11px]" aria-hidden="true"></i>
+                  <span>{{ opt.label }}</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="toolbar-popover-group">
+              <span class="toolbar-popover-label">항목 크기</span>
+              <div class="toolbar-segmented">
+                <button
+                  v-for="opt in ITEM_SIZE_OPTIONS"
+                  :key="opt.value"
+                  type="button"
+                  class="toolbar-segmented__btn"
+                  :class="{ 'is-active': itemSize === opt.value }"
+                  @click="emit('set-item-size', opt.value)"
+                >
+                  {{ opt.label }}
+                </button>
+              </div>
+            </div>
+
+            <div class="toolbar-popover-group">
+              <div class="flex items-center justify-between gap-2">
+                <span class="toolbar-popover-label">{{ layoutGuideLabel }}</span>
+                <span v-if="layoutGuideHint" class="text-[10px] text-[var(--text-muted)]">
+                  {{ layoutGuideHint }}
+                </span>
+              </div>
+              <select
+                :value="layoutPreset"
+                class="toolbar-popover-select"
+                @change="emit('set-layout-preset', $event.target.value)"
+              >
+                <option
+                  v-for="option in visibleLayoutPresetOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+              <div v-if="layoutPreset === 'custom'" class="mt-1.5 grid grid-cols-2 gap-1.5">
+                <input
+                  :value="customLayoutColumns"
+                  type="number"
+                  min="5"
+                  max="20"
+                  class="toolbar-popover-select"
+                  placeholder="가로 5~20"
+                  @input="emit('set-custom-layout-columns', $event.target.value)"
+                />
+                <input
+                  :value="customLayoutRows"
+                  type="number"
+                  min="5"
+                  max="20"
+                  class="toolbar-popover-select"
+                  placeholder="세로 5~20"
+                  @input="emit('set-custom-layout-rows', $event.target.value)"
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>
     </div>
-  </div>
+
+    <!-- Bottom utility strip: compact directory breadcrumbs + filter chips -->
+    <div v-if="hasSubRow" class="toolbar-subrow">
+      <div v-if="showFolderNavigation" class="toolbar-path-row">
+        <div class="toolbar-path-crumbs">
+          <i class="fa-regular fa-folder-open toolbar-path-icon" aria-hidden="true"></i>
+          <template v-for="segment in folderPathSegments" :key="segment.id ?? 'root'">
+            <button
+              type="button"
+              class="breadcrumb-button"
+              :class="{ 'is-current': segment.id === lastFolderSegmentId }"
+              @click="emit('navigate-folder', segment.id)"
+            >
+              {{ segment.name }}
+            </button>
+            <span v-if="segment.id !== lastFolderSegmentId" class="toolbar-path-sep">/</span>
+          </template>
+        </div>
+
+        <div v-if="currentFolder" class="toolbar-path-actions">
+          <button
+            type="button"
+            class="toolbar-mini-btn toolbar-mini-btn--accent"
+            title="폴더 속성 보기"
+            @click="emit('show-folder-properties', currentFolder)"
+          >
+            <i class="fa-solid fa-circle-info text-[11px]" aria-hidden="true"></i>
+            <span>속성</span>
+          </button>
+          <button
+            type="button"
+            class="toolbar-mini-btn"
+            title="상위 폴더로 이동"
+            @click="emit('go-back')"
+          >
+            <i class="fa-solid fa-arrow-up text-[11px]" aria-hidden="true"></i>
+            <span>상위</span>
+          </button>
+        </div>
+      </div>
+
+      <div v-if="hasVisibleToolbarChips || hasActiveFilters" class="toolbar-chips-row">
+        <div v-if="hasVisibleToolbarChips" class="toolbar-chip-row">
+          <span v-for="chip in activeFilterChips" :key="chip" class="toolbar-chip">{{ chip }}</span>
+          <span v-if="searchState.sizeFilter === 'custom'" class="toolbar-chip toolbar-chip--accent">
+            {{ customSizeChipPrefix }}: {{ customSizeRangeLabel }}
+          </span>
+        </div>
+        <button v-if="hasActiveFilters" type="button" class="toolbar-reset" @click="emit('reset-filters')">
+          {{ resetFiltersLabel }}
+        </button>
+      </div>
+    </div>
+  </section>
 </template>
 
 <style scoped src="./BaseFileToolbar.css"></style>

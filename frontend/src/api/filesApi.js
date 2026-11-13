@@ -488,3 +488,36 @@ export async function configureHiddenFolder(folderId, config = {}) {
   });
   return extractObjectResult(response?.data);
 }
+
+export async function createDownloadShareLink(fileIdx, config = {}) {
+  const payload = {};
+  if (config.expiresInMinutes != null) {
+    payload.expiresInMinutes = Number(config.expiresInMinutes);
+  }
+  if (config.expiresAt) {
+    payload.expiresAt = config.expiresAt;
+  }
+  if (config.maxDownloads !== undefined) {
+    payload.maxDownloads = config.maxDownloads === null ? null : Number(config.maxDownloads);
+  }
+  if (config.password) {
+    payload.password = String(config.password);
+  }
+  const response = await api.post(`/file/share-links/files/${fileIdx}`, payload);
+  return extractObjectResult(response?.data);
+}
+
+export async function fetchFileDownloadShareLinks(fileIdx) {
+  const response = await api.get(`/file/share-links/files/${fileIdx}`);
+  return Array.isArray(response?.data?.result) ? response.data.result : [];
+}
+
+export async function fetchMyDownloadShareLinks() {
+  const response = await api.get("/file/share-links/mine");
+  return Array.isArray(response?.data?.result) ? response.data.result : [];
+}
+
+export async function revokeDownloadShareLink(linkIdx) {
+  const response = await api.delete(`/file/share-links/${linkIdx}`);
+  return extractObjectResult(response?.data);
+}

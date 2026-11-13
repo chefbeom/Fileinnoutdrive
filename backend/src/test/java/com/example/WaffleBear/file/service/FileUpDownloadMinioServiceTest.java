@@ -19,6 +19,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -214,7 +215,138 @@ class FileUpDownloadMinioServiceTest {
 
         assertThat(result.getFileList()).hasSize(1);
         assertThat(result.getFileList().get(0).getPresignedDownloadUrl()).isEqualTo("http://download.example/report.txt");
+        assertThat(result.getFileList().get(0).getLocationPath()).isEqualTo("홈");
         assertThat(result.getAvailableExtensions()).containsExactly("txt");
+    }
+
+    @Test
+    void fileListPageRootScopeExcludesHiddenSubtreesResolvesLocationPathsAndRootFolders() {
+        User owner = User.builder().idx(7L).build();
+        FileInfo docs = folder(10L, owner, null, FileSpaceType.DRIVE);
+        docs.rename("Docs");
+        FileInfo year2026 = folder(11L, owner, docs, FileSpaceType.DRIVE);
+        year2026.rename("2026");
+        FileInfo secretRoot = folder(12L, owner, null, FileSpaceType.DRIVE);
+        secretRoot.rename("HiddenRoot");
+        secretRoot.updateHiddenSettings(true, false, null);
+        FileInfo hiddenChild = folder(13L, owner, docs, FileSpaceType.DRIVE);
+        hiddenChild.rename("HiddenSub");
+        hiddenChild.updateHiddenSettings(true, false, null);
+
+        FileInfo nestedPdf = FileInfo.builder()
+                .idx(20L)
+                .user(owner)
+                .parent(year2026)
+                .nodeType(FileNodeType.FILE)
+                .spaceType(FileSpaceType.DRIVE)
+                .fileOriginName("plan.pdf")
+                .fileFormat("pdf")
+                .fileSaveName("saved-20.pdf")
+                .fileSavePath("7/saved-20.pdf")
+                .fileSize(128L)
+                .lockedFile(false)
+                .sharedFile(false)
+                .trashed(false)
+                .build();
+
+        when(fileUpDownloadRepository.findActiveFoldersByUserAndSpace(7L, FileNodeType.FOLDER, false))
+                .thenReturn(List.of(docs, year2026, secretRoot, hiddenChild));
+        when(fileUpDownloadRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(nestedPdf), PageRequest.of(0, 20), 1));
+        when(fileUpDownloadRepository.findDistinctFileFormatsByUserInRootOrParents(
+                eq(7L),
+                any(),
+                eq(FileNodeType.FILE),
+                eq(false),
+                eq(false)
+        )).thenReturn(List.of(".pdf", "JPG", " "));
+        when(fileListItemUrlService.attachUrls(any(FileCommonDto.FileListItemRes.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = fileService.fileListPage(7L, FileManageDto.ListPageReq.builder()
+                .page(0)
+                .size(20)
+                .searchScope("root")
+                .searchQuery(".pdf")
+                .extensionFilter("*.pdf, jpg")
+                .includeHidden(false)
+                .vaultMode(false)
+                .build());
+
+        assertThat(result.getRootFolders()).hasSize(1);
+        assertThat(result.getRootFolders().get(0).getIdx()).isEqualTo(10L);
+        assertThat(result.getRootFolders().get(0).getFileOriginName()).isEqualTo("Docs");
+        assertThat(result.getAvailableExtensions()).containsExactly("jpg", "pdf");
+        assertThat(result.getFileList()).hasSize(1);
+        assertThat(result.getFileList().get(0).getLocationPath()).isEqualTo("홈 / Docs / 2026");
+
+        ArgumentCaptor<java.util.Collection<Long>> parentIdsCaptor = ArgumentCaptor.forClass(java.util.Collection.class);
+        verify(fileUpDownloadRepository).findDistinctFileFormatsByUserInRootOrParents(
+                eq(7L),
+                parentIdsCaptor.capture(),
+                eq(FileNodeType.FILE),
+                eq(false),
+                eq(false)
+        );
+        assertThat(parentIdsCaptor.getValue()).containsExactlyInAnyOrder(10L, 11L);
+    }
+
+    @Test
+    void fileListPageSelectedRootFolderRejectsHiddenFolderWhenHiddenNotRevealed() {
+        User owner = User.builder().idx(7L).build();
+        FileInfo docs = folder(10L, owner, null, FileSpaceType.DRIVE);
+        docs.updateHiddenSettings(true, false, null);
+        FileInfo child = folder(11L, owner, docs, FileSpaceType.DRIVE);
+
+        when(fileUpDownloadRepository.findActiveFoldersByUserAndSpace(7L, FileNodeType.FOLDER, false))
+                .thenReturn(List.of(docs, child));
+
+        assertThatThrownBy(() -> fileService.fileListPage(7L, FileManageDto.ListPageReq.builder()
+                .searchScope("root")
+                .searchRootFolderId(11L)
+                .includeHidden(false)
+                .vaultMode(false)
+                .build()))
+                .isInstanceOf(BaseException.class);
+    }
+
+    @Test
+    void fileListPageSelectedRootFolderUsesSubtreeExtensionQuery() {
+        User owner = User.builder().idx(7L).build();
+        FileInfo docs = folder(10L, owner, null, FileSpaceType.DRIVE);
+        docs.rename("Docs");
+        FileInfo child = folder(11L, owner, docs, FileSpaceType.DRIVE);
+        child.rename("Child");
+
+        when(fileUpDownloadRepository.findActiveFoldersByUserAndSpace(7L, FileNodeType.FOLDER, false))
+                .thenReturn(List.of(docs, child));
+        when(fileUpDownloadRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+        when(fileUpDownloadRepository.findDistinctFileFormatsByUserAndParentIn(
+                eq(7L),
+                any(),
+                eq(FileNodeType.FILE),
+                eq(false),
+                eq(false)
+        )).thenReturn(List.of("pdf", "docx"));
+
+        var result = fileService.fileListPage(7L, FileManageDto.ListPageReq.builder()
+                .searchScope("root")
+                .searchRootFolderId(10L)
+                .includeHidden(false)
+                .vaultMode(false)
+                .build());
+
+        assertThat(result.getAvailableExtensions()).containsExactly("docx", "pdf");
+        ArgumentCaptor<java.util.Collection<Long>> captor = ArgumentCaptor.forClass(java.util.Collection.class);
+        verify(fileUpDownloadRepository).findDistinctFileFormatsByUserAndParentIn(
+                eq(7L),
+                captor.capture(),
+                eq(FileNodeType.FILE),
+                eq(false),
+                eq(false)
+        );
+        assertThat(captor.getValue()).containsExactlyInAnyOrder(10L, 11L);
     }
 
     @Test

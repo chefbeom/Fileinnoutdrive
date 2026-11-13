@@ -184,15 +184,24 @@ public class GlobalExceptionHandler {
                 || status == BaseResponseStatus.WORKSPACE_SHARE_ENDED
                 || status == BaseResponseStatus.WORKSPACE_NOT_ACCESSIBLE
                 || status == BaseResponseStatus.ADMIN_ONLY_ACTION
-                || status == BaseResponseStatus.GROUP_ACCESS_DENIED) {
+                || status == BaseResponseStatus.GROUP_ACCESS_DENIED
+                || status == BaseResponseStatus.SHARE_LINK_PASSWORD_REQUIRED
+                || status == BaseResponseStatus.SHARE_LINK_PASSWORD_INVALID) {
             return HttpStatus.FORBIDDEN;
+        }
+        if (status == BaseResponseStatus.SHARE_LINK_EXPIRED
+                || status == BaseResponseStatus.SHARE_LINK_DOWNLOAD_LIMIT_REACHED
+                || status == BaseResponseStatus.SHARE_LINK_REVOKED
+                || status == BaseResponseStatus.SHARE_LINK_FILE_UNAVAILABLE) {
+            return HttpStatus.GONE;
         }
         if (status == BaseResponseStatus.USER_NOT_FOUND
                 || status == BaseResponseStatus.WORKSPACE_NOT_FOUND
                 || status == BaseResponseStatus.GROUP_RELATIONSHIP_NOT_FOUND
                 || status == BaseResponseStatus.GROUP_NOT_FOUND
                 || status == BaseResponseStatus.GROUP_INVITE_NOT_FOUND
-                || status == BaseResponseStatus.RELATIONSHIP_INVITE_NOT_FOUND) {
+                || status == BaseResponseStatus.RELATIONSHIP_INVITE_NOT_FOUND
+                || status == BaseResponseStatus.SHARE_LINK_NOT_FOUND) {
             return HttpStatus.NOT_FOUND;
         }
 
