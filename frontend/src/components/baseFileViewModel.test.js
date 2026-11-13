@@ -22,6 +22,7 @@ import {
   hasBaseSearchFilters,
   matchesBaseFileSizeFilter,
   paginateBaseFiles,
+  resolveEmptyFolderNavigationState,
 } from "./baseFileViewModel.js";
 
 const MB = 1024 * 1024;
@@ -203,5 +204,69 @@ describe("baseFileViewModel", () => {
       downloadLimit: 3,
       sharePassword: "secret",
     });
+  });
+
+  it("resolves empty folder parent and back-history navigation states accurately", () => {
+    expect(resolveEmptyFolderNavigationState({
+      showFolderNavigation: true,
+      currentFolderId: null,
+      currentFolder: null,
+    })).toEqual({
+      inSubfolder: false,
+      parentId: null,
+      parentLabel: "",
+      hasHistoryBack: false,
+      historyBackId: null,
+      historyBackLabel: "",
+      isHistorySameAsParent: false,
+      canGoBack: false,
+    });
+
+    expect(resolveEmptyFolderNavigationState({
+      showFolderNavigation: true,
+      currentFolderId: 20,
+      currentFolder: { id: 20, name: "temp", parentId: null },
+      folderPathSegments: [
+        { id: null, name: "홈" },
+        { id: 20, name: "temp" },
+      ],
+      backStackEntry: { id: null, label: "홈" },
+    })).toEqual({
+      inSubfolder: true,
+      parentId: null,
+      parentLabel: "홈",
+      hasHistoryBack: true,
+      historyBackId: null,
+      historyBackLabel: "홈",
+      isHistorySameAsParent: true,
+      canGoBack: true,
+    });
+
+    expect(resolveEmptyFolderNavigationState({
+      showFolderNavigation: true,
+      currentFolderId: 20,
+      currentFolder: { id: 20, name: "temp", parentId: null },
+      folderPathSegments: [
+        { id: null, name: "홈" },
+        { id: 20, name: "temp" },
+      ],
+      backStackEntry: { id: 99, label: "서브" },
+    })).toEqual({
+      inSubfolder: true,
+      parentId: null,
+      parentLabel: "홈",
+      hasHistoryBack: true,
+      historyBackId: 99,
+      historyBackLabel: "서브",
+      isHistorySameAsParent: false,
+      canGoBack: true,
+    });
+
+    expect(resolveEmptyFolderNavigationState({
+      showFolderNavigation: true,
+      isVaultTrashView: true,
+      currentFolderId: 20,
+      currentFolder: { id: 20, name: "temp", parentId: null },
+    }).canGoBack).toBe(false);
   });
 });

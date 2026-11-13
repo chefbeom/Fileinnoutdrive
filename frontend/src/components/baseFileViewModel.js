@@ -437,3 +437,59 @@ export function aggregateBaseShareInfoEntries(items = []) {
     }))
     .sort((left, right) => (new Date(right.createdAt || 0).getTime() || 0) - (new Date(left.createdAt || 0).getTime() || 0));
 }
+
+export function resolveEmptyFolderNavigationState({
+  showFolderNavigation = false,
+  isVaultTrashView = false,
+  currentFolderId = null,
+  currentFolder = null,
+  folderPathSegments = [],
+  rootBreadcrumbLabel = "홈",
+  backStackEntry = null,
+} = {}) {
+  const folderNavEnabled = Boolean(showFolderNavigation) && !Boolean(isVaultTrashView);
+  const resolvedCurrentId = currentFolder?.id ?? currentFolderId ?? null;
+  const inSubfolder = folderNavEnabled && (currentFolder != null || resolvedCurrentId != null);
+
+  let parentId = null;
+  let parentLabel = "";
+  if (inSubfolder) {
+    if (currentFolder && currentFolder.parentId !== undefined) {
+      parentId = currentFolder.parentId ?? null;
+    } else if (Array.isArray(folderPathSegments) && folderPathSegments.length >= 2) {
+      parentId = folderPathSegments[folderPathSegments.length - 2]?.id ?? null;
+    }
+
+    if (Array.isArray(folderPathSegments) && folderPathSegments.length >= 2) {
+      parentLabel = folderPathSegments[folderPathSegments.length - 2]?.name || rootBreadcrumbLabel || "홈";
+    } else {
+      parentLabel = rootBreadcrumbLabel || "홈";
+    }
+  }
+
+  const hasHistoryBack = (
+    folderNavEnabled &&
+    Boolean(backStackEntry) &&
+    String(backStackEntry.id ?? "") !== String(resolvedCurrentId ?? "")
+  );
+  const historyBackId = hasHistoryBack ? (backStackEntry.id ?? null) : null;
+  const historyBackLabel = hasHistoryBack
+    ? (backStackEntry.label || rootBreadcrumbLabel || "홈")
+    : "";
+  const isHistorySameAsParent = (
+    inSubfolder &&
+    hasHistoryBack &&
+    String(historyBackId ?? "") === String(parentId ?? "")
+  );
+
+  return {
+    inSubfolder,
+    parentId,
+    parentLabel,
+    hasHistoryBack,
+    historyBackId,
+    historyBackLabel,
+    isHistorySameAsParent,
+    canGoBack: inSubfolder || hasHistoryBack,
+  };
+}

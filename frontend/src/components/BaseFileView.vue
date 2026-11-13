@@ -43,6 +43,7 @@ import {
   hasBaseSearchFilters,
   isOwnedSharedBaseFile,
   paginateBaseFiles,
+  resolveEmptyFolderNavigationState,
 } from "./baseFileViewModel.js";
 import { BASE_SHARE_PERMISSION_OPTIONS, useBaseFileShareDialog } from "./useBaseFileShareDialog.js";
 import { useDownloadShareLinkDialog } from "./useDownloadShareLinkDialog.js";
@@ -195,6 +196,21 @@ const folderPathSegments = computed(() => [
   { id: null, name: rootBreadcrumbLabel.value },
   ...fileStore.currentFolderPath.map((folder) => ({ id: folder.id, name: folder.name })),
 ]);
+const folderBackStack = ref([]);
+const activeFolderSnapshot = ref({
+  id: fileStore.currentFolderId ?? null,
+  label: fileStore.currentFolder?.name || rootBreadcrumbLabel.value,
+});
+let restoringHistoryToId;
+const emptyFolderNavigation = computed(() => resolveEmptyFolderNavigationState({
+  showFolderNavigation: props.showFolderNavigation,
+  isVaultTrashView: isVaultTrashView.value,
+  currentFolderId: fileStore.currentFolderId,
+  currentFolder: fileStore.currentFolder,
+  folderPathSegments: folderPathSegments.value,
+  rootBreadcrumbLabel: rootBreadcrumbLabel.value,
+  backStackEntry: folderBackStack.value[folderBackStack.value.length - 1] || null,
+}));
 
 const propertyPathLabel = computed(() => {
   if (!propertyTarget.value?.id) return rootBreadcrumbLabel.value;
@@ -390,6 +406,7 @@ watch([isVaultMode, isVaultTrashView], ([vaultEnabled, trashEnabled], prev) => {
 
   if (switchedSpace) {
     searchState.value.searchRootFolderId = null;
+    folderBackStack.value = [];
   }
 
   if (switchedSpace || mismatchedFolder || trashEnabled) {
@@ -502,10 +519,51 @@ watch(() => [
   currentPage.value = 1;
 });
 
+watch([() => fileStore.currentFolder?.name, folderPathSegments, rootBreadcrumbLabel], () => {
+  const currentId = fileStore.currentFolderId ?? null;
+  if (String(activeFolderSnapshot.value.id ?? "") !== String(currentId ?? "")) {
+    return;
+  }
+  const resolvedName = currentId == null
+    ? rootBreadcrumbLabel.value
+    : (
+        fileStore.currentFolder?.name ||
+        folderPathSegments.value[folderPathSegments.value.length - 1]?.name ||
+        activeFolderSnapshot.value.label ||
+        "이전 폴더"
+      );
+  activeFolderSnapshot.value = { id: currentId, label: resolvedName };
+}, { immediate: true });
+
 watch(() => fileStore.currentFolderId, (nextId, prevId) => {
   if (String(nextId ?? "") === String(prevId ?? "")) {
     return;
   }
+
+  const leaving = activeFolderSnapshot.value;
+  const nextLabel = nextId == null
+    ? rootBreadcrumbLabel.value
+    : (fileStore.currentFolder?.name || folderPathSegments.value[folderPathSegments.value.length - 1]?.name || "현재 폴더");
+  activeFolderSnapshot.value = { id: nextId ?? null, label: nextLabel };
+
+  const isRestoringTarget = (
+    restoringHistoryToId !== undefined &&
+    String(nextId ?? "") === String(restoringHistoryToId ?? "")
+  );
+  restoringHistoryToId = undefined;
+
+  if (!isRestoringTarget && prevId !== undefined && String(leaving?.id ?? "") !== String(nextId ?? "")) {
+    const nextStack = folderBackStack.value.slice(-49);
+    const top = nextStack[nextStack.length - 1];
+    if (!top || String(top.id ?? "") !== String(leaving.id ?? "")) {
+      nextStack.push({
+        id: leaving.id ?? null,
+        label: leaving.label || rootBreadcrumbLabel.value,
+      });
+    }
+    folderBackStack.value = nextStack;
+  }
+
   const hadActiveSearchScope = normalizeSearchScope(searchState.value.searchScope) !== "current";
   const hadSearchText = String(searchState.value.searchQuery || "").trim() !== "";
   const hadExtensionFilter = parseExtensionTokens(searchState.value.extensionFilter).length > 0;
@@ -551,6 +609,21 @@ const handleGoBack = () => {
     currentPage.value = 1;
   }
   fileStore.goBack();
+};
+
+const handleHistoryBack = () => {
+  if (!emptyFolderNavigation.value.hasHistoryBack) {
+    handleGoBack();
+    return;
+  }
+  const nextStack = [...folderBackStack.value];
+  const target = nextStack.pop();
+  folderBackStack.value = nextStack;
+  restoringHistoryToId = target?.id ?? null;
+  if (useServerPaging.value) {
+    currentPage.value = 1;
+  }
+  fileStore.navigateToFolder(target?.id ?? null);
 };
 
 const handleDelete = (fileId) => {
@@ -1076,6 +1149,7 @@ onBeforeUnmount(() => {
       :custom-size-range-label="customSizeRangeLabel"
       :reset-filters-label="resetFiltersLabel"
       :show-folder-navigation="showFolderNavigation && !isVaultTrashView"
+      :can-go-back="emptyFolderNavigation.inSubfolder"
       :folder-path-segments="folderPathSegments"
       :current-folder="fileStore.currentFolder"
       :folder-summary-cards="folderSummaryCards"
@@ -1239,7 +1313,7 @@ onBeforeUnmount(() => {
         :selected-ids="selectedIds"
         :files="paginatedFiles"
         :delete-mode="effectiveDeleteMode"
-        :show-parent-navigator="showFolderNavigation && !isVaultTrashView && Boolean(fileStore.currentFolder)"
+        :show-parent-navigator="emptyFolderNavigation.inSubfolder"
         :parent-folder-target-id="fileStore.currentFolder?.parentId ?? null"
         :shared-library="sharedLibrary"
         @update:selected-ids="selectedIds = $event"
@@ -1320,7 +1394,7 @@ onBeforeUnmount(() => {
           </div>
         </template>
         <template v-else>
-          <p class="text-sm">표시할 파일이 없습니다.</p>
+          <p class="text-sm font-semibold text-gray-600 dark:text-slate-300">표시할 파일이 없습니다.</p>
           <p v-if="canDropUpload" class="mt-1 text-xs text-gray-400">
             {{
               isVaultMode
@@ -1328,6 +1402,52 @@ onBeforeUnmount(() => {
                 : "파일이나 폴더를 드래그하여 놓거나, 우클릭하여 새 폴더 · 공유 폴더를 만들 수 있습니다."
             }}
           </p>
+          <div
+            v-if="emptyFolderNavigation.canGoBack"
+            data-testid="empty-folder-nav-actions"
+            class="mt-4 flex flex-wrap items-center justify-center gap-2"
+          >
+            <button
+              v-if="emptyFolderNavigation.hasHistoryBack && !emptyFolderNavigation.isHistorySameAsParent"
+              type="button"
+              data-testid="empty-go-back"
+              class="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-bold text-gray-700 shadow-sm transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-blue-500/60 dark:hover:bg-slate-700"
+              @click="handleHistoryBack"
+            >
+              <i class="fa-solid fa-arrow-left text-[11px]" aria-hidden="true"></i>
+              <span>뒤로가기 ({{ emptyFolderNavigation.historyBackLabel }})</span>
+            </button>
+            <button
+              v-if="emptyFolderNavigation.inSubfolder"
+              type="button"
+              data-testid="empty-go-parent"
+              class="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-bold text-gray-700 shadow-sm transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-blue-500/60 dark:hover:bg-slate-700"
+              @click="handleGoBack"
+            >
+              <i
+                class="fa-solid text-[11px]"
+                :class="emptyFolderNavigation.hasHistoryBack && !emptyFolderNavigation.isHistorySameAsParent ? 'fa-arrow-up' : 'fa-arrow-left'"
+                aria-hidden="true"
+              ></i>
+              <span>
+                {{
+                  emptyFolderNavigation.hasHistoryBack && !emptyFolderNavigation.isHistorySameAsParent
+                    ? `이전(상위) 디렉터리 (${emptyFolderNavigation.parentLabel})`
+                    : `뒤로가기 · 이전 디렉터리 (${emptyFolderNavigation.parentLabel})`
+                }}
+              </span>
+            </button>
+            <button
+              v-else-if="emptyFolderNavigation.hasHistoryBack"
+              type="button"
+              data-testid="empty-go-back"
+              class="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-bold text-gray-700 shadow-sm transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-blue-500/60 dark:hover:bg-slate-700"
+              @click="handleHistoryBack"
+            >
+              <i class="fa-solid fa-arrow-left text-[11px]" aria-hidden="true"></i>
+              <span>뒤로가기 ({{ emptyFolderNavigation.historyBackLabel }})</span>
+            </button>
+          </div>
         </template>
       </template>
 
@@ -1428,14 +1548,29 @@ onBeforeUnmount(() => {
               <i class="fa-solid fa-pen-to-square w-4 text-center text-gray-500"></i>
               <span>현재 폴더 이름 변경</span>
             </button>
+          </template>
+
+          <template v-if="emptyFolderNavigation.canGoBack">
+            <div class="my-1 border-t border-gray-100 dark:border-slate-800"></div>
 
             <button
+              v-if="emptyFolderNavigation.hasHistoryBack && !emptyFolderNavigation.isHistorySameAsParent"
+              type="button"
+              class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-gray-700 transition hover:bg-blue-50 hover:text-blue-600 dark:text-slate-200 dark:hover:bg-slate-800"
+              @click="closeEmptyContextMenu(); handleHistoryBack()"
+            >
+              <i class="fa-solid fa-arrow-left w-4 text-center text-gray-500"></i>
+              <span>뒤로가기 ({{ emptyFolderNavigation.historyBackLabel }})</span>
+            </button>
+
+            <button
+              v-if="emptyFolderNavigation.inSubfolder"
               type="button"
               class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-gray-700 transition hover:bg-blue-50 hover:text-blue-600 dark:text-slate-200 dark:hover:bg-slate-800"
               @click="closeEmptyContextMenu(); handleGoBack()"
             >
               <i class="fa-solid fa-level-up-alt w-4 text-center text-gray-500"></i>
-              <span>상위 폴더로 이동</span>
+              <span>이전 디렉터리로 이동</span>
             </button>
           </template>
 

@@ -15,6 +15,7 @@ const props = defineProps({
   customSizeRangeLabel: { type: String, default: "" },
   resetFiltersLabel: { type: String, default: "조건 초기화" },
   showFolderNavigation: { type: Boolean, default: false },
+  canGoBack: { type: Boolean, default: false },
   folderPathSegments: { type: Array, default: () => [] },
   currentFolder: { type: Object, default: null },
   folderSummaryCards: { type: Array, default: () => [] },
@@ -267,8 +268,9 @@ onBeforeUnmount(() => {
           </template>
         </div>
 
-        <div v-if="currentFolder" class="toolbar-path-actions">
+        <div v-if="currentFolder || canGoBack" class="toolbar-path-actions">
           <button
+            v-if="currentFolder"
             type="button"
             class="toolbar-mini-btn toolbar-mini-btn--accent"
             title="폴더 속성 보기"
@@ -280,7 +282,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="toolbar-mini-btn"
-            title="상위 폴더로 이동"
+            title="이전(상위) 폴더로 이동"
             @click="emit('go-back')"
           >
             <i class="fa-solid fa-arrow-up text-[11px]" aria-hidden="true"></i>

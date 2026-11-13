@@ -93,4 +93,22 @@ describe("BaseFileToolbar.vue", () => {
     await backBtn.trigger("click");
     expect(wrapper.emitted("go-back")).toBeTruthy();
   });
+
+  it("renders 상위 button when canGoBack is true even before currentFolder metadata finishes hydrating", async () => {
+    const wrapper = mount(BaseFileToolbar, {
+      props: {
+        ...defaultProps,
+        currentFolder: null,
+        canGoBack: true,
+      },
+    });
+
+    const propBtn = wrapper.findAll("button").find((b) => b.text().includes("속성"));
+    const backBtn = wrapper.findAll("button").find((b) => b.text().includes("상위"));
+    expect(propBtn).toBeUndefined();
+    expect(backBtn).toBeDefined();
+
+    await backBtn.trigger("click");
+    expect(wrapper.emitted("go-back")).toBeTruthy();
+  });
 });
