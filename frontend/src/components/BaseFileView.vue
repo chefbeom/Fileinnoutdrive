@@ -1,6 +1,6 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import BaseFilePaginationBar from "./BaseFilePaginationBar.vue";
 import BaseFileSelectionBar from "./BaseFileSelectionBar.vue";
 import BaseFileShareDialog from "./BaseFileShareDialog.vue";
@@ -9,8 +9,15 @@ import BaseFolderPropertyDialog from "./BaseFolderPropertyDialog.vue";
 import BaseFolderRenameDialog from "./BaseFolderRenameDialog.vue";
 import FilePreviewModal from "@/components/FilePreviewModal.vue";
 import FileCollectionView from "@/components/file/FileCollectionView.vue";
+import VaultImportModal from "@/components/file/VaultImportModal.vue";
 import { downloadFileAsset } from "@/api/filesApi.js";
+import {
+  extractDropItems,
+  isDesktopDragEvent,
+  triggerDesktopUpload,
+} from "@/utils/desktopDropUpload.js";
 import { useFileStore } from "@/stores/useFileStore.js";
+import { useSecretFolderStore } from "@/stores/useSecretFolderStore.js";
 import { useViewStore } from "@/stores/viewStore.js";
 import {
   FILE_SIZE_OPTIONS,
@@ -51,15 +58,41 @@ const props = defineProps({
 const emit = defineEmits(["delete"]);
 
 const fileStore = useFileStore();
+const secretFolderStore = useSecretFolderStore();
 const route = useRoute();
+const router = useRouter();
 const headerSearchStore = useHeaderSearchStore();
+const isSecretDriveContext = computed(() => props.showFolderNavigation && !props.sharedLibrary);
+const isVaultMode = computed(() => isSecretDriveContext.value && secretFolderStore.vaultMode);
+const isVaultTrashView = computed(() => isVaultMode.value && secretFolderStore.vaultTrashView);
+const effectiveDeleteMode = computed(() => (isVaultTrashView.value ? "permanent" : props.deleteMode));
+const isCurrentTreeSecret = computed(() => (
+  Boolean(
+    isVaultMode.value ||
+    fileStore.currentFolder?.hiddenFolder ||
+    fileStore.currentFolder?.isVaultSpace ||
+    (fileStore.currentFolderPath || []).some((folder) => Boolean(folder?.hiddenFolder || folder?.isVaultSpace)),
+  )
+));
+const displayTitle = computed(() => {
+  if (isVaultTrashView.value) {
+    return "자체 비밀 폴더 · 휴지통";
+  }
+  if (isVaultMode.value) {
+    return "자체 비밀 폴더";
+  }
+  return props.title;
+});
+const rootBreadcrumbLabel = computed(() => (isVaultMode.value ? "비밀 폴더" : FILE_ROOT_LABEL));
 const {
   viewMode,
+  itemSize,
   layoutPreset,
   customLayoutColumns,
   customLayoutRows,
   resolvedPageSize,
   setViewMode,
+  setItemSize,
   setLayoutPreset,
   setCustomLayoutColumns,
   setCustomLayoutRows,
@@ -107,6 +140,14 @@ const desktopQueryPath = computed(() => {
   const value = Array.isArray(rawValue) ? rawValue[0] : rawValue;
   return String(value || "").trim();
 });
+const parseRouteFolderId = (rawFolderId) => {
+  const value = Array.isArray(rawFolderId) ? rawFolderId[0] : rawFolderId;
+  if (value == null || String(value).trim() === "") {
+    return null;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : String(value).trim();
+};
 const sharePermissionOptions = BASE_SHARE_PERMISSION_OPTIONS;
 const layoutPresetOptions = [
   { value: "10", label: "10개" },
@@ -130,7 +171,7 @@ const resolveProtectedShareOptions = (file) => {
 };
 
 const triggerDownload = async (file) => {
-  if (!file?.downloadUrl && !file?.presignedDownloadUrl && !file?.sharedWithMe) return;
+  if (!file?.downloadUrl && !file?.presignedDownloadUrl && !file?.sharedWithMe && file?.type !== "folder") return;
 
   try {
     await downloadFileAsset(file, "file", resolveProtectedShareOptions(file));
@@ -144,13 +185,13 @@ const extensionOptions = computed(() => collectBaseFileExtensions({
   files: effectiveFiles.value,
 }));
 const folderPathSegments = computed(() => [
-  { id: null, name: FILE_ROOT_LABEL },
+  { id: null, name: rootBreadcrumbLabel.value },
   ...fileStore.currentFolderPath.map((folder) => ({ id: folder.id, name: folder.name })),
 ]);
 
 const propertyPathLabel = computed(() => {
-  if (!propertyTarget.value?.id) return FILE_ROOT_LABEL;
-  return [FILE_ROOT_LABEL, ...fileStore.getFolderPath(propertyTarget.value.id).map((folder) => folder.name)].join(" / ");
+  if (!propertyTarget.value?.id) return rootBreadcrumbLabel.value;
+  return [rootBreadcrumbLabel.value, ...fileStore.getFolderPath(propertyTarget.value.id).map((folder) => folder.name)].join(" / ");
 });
 
 const currentFolderVisibleSummary = computed(() => buildCurrentFolderVisibleSummary(fileStore.currentFolder, effectiveFiles.value));
@@ -196,6 +237,8 @@ const isOwnedSharedFile = isOwnedSharedBaseFile;
 const selectedFileGroups = computed(() => buildSelectedBaseFileGroups(selectedFiles.value, {
   sharedLibrary: props.sharedLibrary,
   canCreateShares: canCreateShares.value,
+  vaultMode: isVaultMode.value,
+  deleteMode: effectiveDeleteMode.value,
 }));
 const selectedDownloadableFiles = computed(() => selectedFileGroups.value.downloadableFiles);
 const selectedSharedFiles = computed(() => selectedFileGroups.value.sharedFiles);
@@ -204,6 +247,7 @@ const selectedCancelableSentSharedFiles = computed(() => selectedFileGroups.valu
 const selectedLockableFiles = computed(() => selectedFileGroups.value.lockableFiles);
 const selectedLockCandidates = computed(() => selectedFileGroups.value.lockCandidates);
 const selectedLockedFiles = computed(() => selectedFileGroups.value.lockedFiles);
+const selectedVaultMovableFiles = computed(() => selectedFileGroups.value.vaultMovableFiles);
 const {
   shareTargets,
   shareInfo,
@@ -251,6 +295,9 @@ const serverListQuery = computed(() => buildBaseServerListQuery({
   pageSize: pageSize.value,
   sortOption: sortOption.value,
   searchState: searchState.value,
+  vaultMode: isVaultMode.value,
+  includeHidden: isVaultMode.value ? true : secretFolderStore.showHiddenFolders,
+  trashedOnly: isVaultTrashView.value,
 }));
 const isInitialLoading = computed(() => (
   fileStore.isLoading &&
@@ -270,6 +317,75 @@ watch(extensionOptions, (extensions) => {
   headerSearchStore.setAvailableExtensions(searchScope.value, extensions);
 }, { immediate: true });
 
+watch([isVaultMode, isVaultTrashView], ([vaultEnabled, trashEnabled], prev) => {
+  const [prevVault, prevTrash] = prev || [false, false];
+  currentPage.value = 1;
+  selectedIds.value = [];
+
+  const switchedSpace = prev != null && (vaultEnabled !== prevVault || trashEnabled !== prevTrash);
+  const mismatchedFolder = Boolean(
+    fileStore.currentFolderId != null &&
+    (vaultEnabled ? !fileStore.currentFolder?.isVaultSpace : fileStore.currentFolder?.isVaultSpace),
+  );
+
+  if (switchedSpace || mismatchedFolder || trashEnabled) {
+    fileStore.invalidateFolderSnapshots?.();
+    if (fileStore.currentFolderId != null) {
+      fileStore.navigateToFolder(null);
+    }
+  }
+
+  if (vaultEnabled && route.query.folderId != null) {
+    const nextQuery = { ...route.query };
+    delete nextQuery.folderId;
+    router.replace({ query: nextQuery }).catch(() => {});
+  }
+}, { immediate: true, flush: "sync" });
+
+watch(() => route.query.folderId, (rawFolderId) => {
+  if (!useServerPaging.value || desktopQueryPath.value || isVaultMode.value) {
+    return;
+  }
+  const targetFolderId = parseRouteFolderId(rawFolderId);
+  if (targetFolderId == null && isCurrentTreeSecret.value) {
+    return;
+  }
+  if (String(fileStore.currentFolderId ?? "") !== String(targetFolderId ?? "")) {
+    currentPage.value = 1;
+    selectedIds.value = [];
+    fileStore.navigateToFolder(targetFolderId);
+  }
+}, { immediate: true });
+
+watch(() => fileStore.currentFolderId, (folderId, previousFolderId) => {
+  if (String(folderId ?? "") !== String(previousFolderId ?? "")) {
+    currentPage.value = 1;
+    selectedIds.value = [];
+  }
+  if (!useServerPaging.value) {
+    return;
+  }
+  if (isVaultMode.value || isCurrentTreeSecret.value) {
+    if (route.query.folderId != null) {
+      const nextQuery = { ...route.query };
+      delete nextQuery.folderId;
+      router.replace({ query: nextQuery }).catch(() => {});
+    }
+    return;
+  }
+  const currentRouteFolderId = parseRouteFolderId(route.query.folderId);
+  if (String(currentRouteFolderId ?? "") === String(folderId ?? "")) {
+    return;
+  }
+  const nextQuery = { ...route.query };
+  if (folderId == null || folderId === "") {
+    delete nextQuery.folderId;
+  } else {
+    nextQuery.folderId = String(folderId);
+  }
+  router.push({ query: nextQuery }).catch(() => {});
+});
+
 watch(desktopQueryPath, async (path) => {
   if (!path) {
     return;
@@ -286,6 +402,17 @@ watch(desktopQueryPath, async (path) => {
   }
   if (result?.target?.id != null) {
     selectedIds.value = [String(result.target.id)];
+  }
+}, { immediate: true });
+
+watch(() => route.query.spotlightId, (rawSpotlightId) => {
+  const value = Array.isArray(rawSpotlightId) ? rawSpotlightId[0] : rawSpotlightId;
+  if (!value) {
+    return;
+  }
+  const targetId = String(value).trim();
+  if (targetId && !selectedIds.value.includes(targetId)) {
+    selectedIds.value = [targetId];
   }
 }, { immediate: true });
 
@@ -377,13 +504,13 @@ const handleDeleteSelected = async () => {
   }
   const confirmMessage = selectedFiles.value.some(isOwnedSharedFile)
     ? "공유한 파일입니다. 삭제하시겠습니까? 공유받은 사람에게도 사라집니다."
-    : props.deleteMode === "permanent"
+    : effectiveDeleteMode.value === "permanent"
       ? `선택한 ${selectedFiles.value.length}개 항목을 영구 삭제하시겠습니까?`
       : `선택한 ${selectedFiles.value.length}개 항목을 휴지통으로 이동하시겠습니까?`;
   if (!window.confirm(confirmMessage)) return;
   try {
     const ids = selectedFiles.value.map((file) => file.id);
-    if (props.deleteMode === "permanent") await fileStore.permanentlyDeleteBatch(ids);
+    if (effectiveDeleteMode.value === "permanent") await fileStore.permanentlyDeleteBatch(ids);
     else await fileStore.trashFilesBatch(ids);
     clearSelection();
   } catch (error) {
@@ -482,6 +609,105 @@ const handleToggleLock = async (file) => {
   }
 };
 
+const moveItemsToVault = async (targets = []) => {
+  const validTargets = (Array.isArray(targets) ? targets : [targets]).filter((item) => item?.id != null);
+  if (!validTargets.length || isVaultMode.value || props.sharedLibrary || effectiveDeleteMode.value === "permanent") {
+    return;
+  }
+
+  for (const item of validTargets) {
+    if (item.hiddenFolder && item.pinEnabled) {
+      const folderUnlocked = await secretFolderStore.ensureFolderUnlocked(item);
+      if (!folderUnlocked) {
+        return;
+      }
+    }
+  }
+
+  const firstName = validTargets[0]?.name || validTargets[0]?.fileOriginName || "선택한 항목";
+  const promptSubject = validTargets.length > 1
+    ? `'${firstName}' 외 ${validTargets.length - 1}개 항목을`
+    : `'${firstName}'을(를)`;
+
+  const vaultReady = await secretFolderStore.ensureVaultUnlocked({
+    enterVault: false,
+    registerTitle: "자체 비밀구역 PIN 등록",
+    title: "자체 비밀구역으로 옮기기",
+    registerDescription: `${promptSubject} 자체 비밀구역(자체 비밀 폴더)으로 옮기려면 사용할 4자리 숫자 PIN 번호를 먼저 등록해 주세요.`,
+    description: `${promptSubject} 자체 비밀구역(홈 버튼 두 번)으로 옮기려면 4자리 숫자 PIN 번호를 입력하세요.`,
+  });
+  if (!vaultReady) {
+    return;
+  }
+
+  try {
+    await fileStore.moveFilesToVault(validTargets.map((item) => item.id), null);
+    const movedIdSet = new Set(validTargets.map((item) => String(item.id)));
+    selectedIds.value = selectedIds.value.filter((id) => !movedIdSet.has(String(id)));
+    window.alert(
+      validTargets.length > 1
+        ? `${validTargets.length}개 항목을 자체 비밀구역으로 옮겼습니다.\n(홈 버튼을 빠르게 두 번 누르면 자체 비밀 폴더에서 확인할 수 있습니다.)`
+        : `'${firstName}'을(를) 자체 비밀구역으로 옮겼습니다.\n(홈 버튼을 빠르게 두 번 누르면 자체 비밀 폴더에서 확인할 수 있습니다.)`,
+    );
+  } catch (error) {
+    const code = error?.response?.data?.code;
+    if (code === 7304) {
+      secretFolderStore.invalidateVaultUnlock?.();
+    }
+    if (code === 7306) {
+      window.alert("하위에 PIN으로 잠긴 비밀 폴더가 있어 먼저 해당 폴더의 PIN 잠금을 해제해 주세요.");
+      return;
+    }
+    window.alert(error?.response?.data?.message || error?.message || "자체 비밀구역으로 옮기지 못했습니다.");
+  }
+};
+
+const vaultImportModal = ref({
+  open: false,
+  targetFolderId: null,
+  targetFolderName: "",
+});
+
+const openVaultImportModal = (payload = {}) => {
+  if (!isVaultMode.value || isVaultTrashView.value) return;
+  closeEmptyContextMenu();
+  const targetFolderId = payload?.targetFolderId ?? fileStore.currentFolderId ?? null;
+  const targetFolderName =
+    payload?.targetFolderName ||
+    (targetFolderId != null && String(targetFolderId) === String(fileStore.currentFolderId ?? "")
+      ? (fileStore.currentFolder?.name || "")
+      : "");
+  vaultImportModal.value = {
+    open: true,
+    targetFolderId,
+    targetFolderName,
+  };
+};
+
+const closeVaultImportModal = () => {
+  vaultImportModal.value = {
+    open: false,
+    targetFolderId: null,
+    targetFolderName: "",
+  };
+};
+
+const handleVaultImported = ({ affectedCount = 0 } = {}) => {
+  currentPage.value = 1;
+  selectedIds.value = [];
+  window.alert(`${affectedCount}개 항목을 자체 비밀 폴더로 가져왔습니다.`);
+};
+
+const handleMoveToVault = (target) => moveItemsToVault([target]);
+
+const handleBatchMoveToVault = () => {
+  if (!selectedVaultMovableFiles.value.length) {
+    window.alert("비밀 폴더로 옮길 수 있는 항목이 선택되지 않았습니다.");
+    return;
+  }
+  return moveItemsToVault(selectedVaultMovableFiles.value);
+};
+
 const openRenameFolder = (folder) => {
   if (!folder || folder.type !== "folder") return;
   renameTarget.value = folder;
@@ -546,7 +772,199 @@ const closeFilePreview = () => {
   previewTarget.value = null;
 };
 
+const canDropUpload = computed(() => effectiveDeleteMode.value !== "permanent" && !props.sharedLibrary);
+const isEmptyDraggingOver = ref(false);
+let emptyDragCounter = 0;
+
+const onEmptyDragEnter = (event) => {
+  if (!isDesktopDragEvent(event) || !canDropUpload.value) return;
+  emptyDragCounter += 1;
+  isEmptyDraggingOver.value = true;
+};
+
+const onEmptyDragOver = (event) => {
+  if (!isDesktopDragEvent(event) || !canDropUpload.value) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "copy";
+};
+
+const onEmptyDragLeave = (event) => {
+  if (!isDesktopDragEvent(event) || !canDropUpload.value) return;
+  emptyDragCounter = Math.max(0, emptyDragCounter - 1);
+  if (emptyDragCounter === 0) {
+    isEmptyDraggingOver.value = false;
+  }
+};
+
+const onEmptyDrop = async (event) => {
+  if (!isDesktopDragEvent(event) || !canDropUpload.value) return;
+  event.preventDefault();
+  emptyDragCounter = 0;
+  isEmptyDraggingOver.value = false;
+
+  const { files, emptyDirectories } = await extractDropItems(event.dataTransfer);
+  triggerDesktopUpload(files, fileStore.currentFolderId, emptyDirectories);
+};
+
+
+const emptyContextMenu = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+});
+const emptyFileUploadInputRef = ref(null);
+const emptyFolderUploadInputRef = ref(null);
+
+const closeEmptyContextMenu = () => {
+  if (emptyContextMenu.value.visible) {
+    emptyContextMenu.value.visible = false;
+  }
+};
+
+const onEmptyContextMenu = (event) => {
+  const menuWidth = 248;
+  const maxX = Math.max(16, (window.innerWidth || 1024) - menuWidth - 16);
+  const maxY = Math.max(16, (window.innerHeight || 768) - 360 - 16);
+  emptyContextMenu.value = {
+    visible: true,
+    x: Math.min(Math.max(12, event?.clientX || 0), maxX),
+    y: Math.min(Math.max(12, event?.clientY || 0), maxY),
+  };
+};
+
+const handleEmptyCreateFolder = async () => {
+  closeEmptyContextMenu();
+  const folderName = window.prompt("새 폴더 이름을 입력해 주세요.");
+  if (!folderName?.trim()) return;
+  try {
+    await fileStore.createFolder(folderName.trim(), fileStore.currentFolderId ?? null);
+  } catch (error) {
+    window.alert(error?.response?.data?.message || error?.message || "폴더를 생성하지 못했습니다.");
+  }
+};
+
+const handleEmptyCreateSharedFolder = () => {
+  closeEmptyContextMenu();
+  window.dispatchEvent(
+    new CustomEvent("open-storage-share-modal", {
+      detail: {
+        page: "create-space",
+        targetParentId: fileStore.currentFolderId ?? null,
+      },
+    }),
+  );
+};
+
+const handleEmptyCreateHiddenFolder = async () => {
+  closeEmptyContextMenu();
+  const created = await secretFolderStore.openCreateHiddenFolderDialog(fileStore.currentFolderId ?? null);
+  if (created) {
+    fileStore.invalidateFolderSnapshots?.();
+    await Promise.all([
+      fileStore.refreshDrivePage().catch(() => {}),
+      fileStore.fetchFiles({ background: true }).catch(() => {}),
+    ]);
+  }
+};
+
+const handleToggleHiddenFolders = async () => {
+  if (!isSecretDriveContext.value || isVaultMode.value) return;
+  const nextVisible = secretFolderStore.toggleShowHiddenFolders();
+  if (!nextVisible) {
+    fileStore.exitHiddenSubtreeIfNeeded?.();
+  }
+  currentPage.value = 1;
+  selectedIds.value = [];
+  fileStore.invalidateFolderSnapshots?.();
+  try {
+    await fileStore.refreshDrivePage();
+  } catch {
+    // Ignore transient refresh failure
+  }
+};
+
+const handleExitVaultMode = async () => {
+  closeVaultImportModal();
+  secretFolderStore.exitVaultMode({ lockVault: true });
+  fileStore.invalidateFolderSnapshots?.();
+  fileStore.navigateToFolder(null);
+  currentPage.value = 1;
+  selectedIds.value = [];
+};
+
+const handleToggleVaultTrashView = () => {
+  if (!isVaultMode.value) return;
+  closeVaultImportModal();
+  secretFolderStore.setVaultTrashView(!isVaultTrashView.value);
+  currentPage.value = 1;
+  selectedIds.value = [];
+};
+
+const handleClearVaultTrash = async () => {
+  if (!isVaultMode.value || !isVaultTrashView.value) return;
+  if (!window.confirm("자체 비밀 폴더의 휴지통 항목을 모두 영구 삭제하시겠습니까?")) {
+    return;
+  }
+  try {
+    await fileStore.emptyTrash();
+    currentPage.value = 1;
+    selectedIds.value = [];
+    fileStore.invalidateFolderSnapshots?.();
+    await fileStore.refreshDrivePage();
+  } catch (error) {
+    window.alert(error?.response?.data?.message || error?.message || "비밀 휴지통을 비우지 못했습니다.");
+  }
+};
+
+const isEditableEventTarget = (target) => {
+  if (!target || typeof target !== "object") return false;
+  const tagName = String(target.tagName || "").toUpperCase();
+  return (
+    tagName === "INPUT" ||
+    tagName === "TEXTAREA" ||
+    tagName === "SELECT" ||
+    Boolean(target.isContentEditable)
+  );
+};
+
+const onGlobalKeyDown = (event) => {
+  if (!isSecretDriveContext.value || isVaultMode.value) return;
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  if (event.repeat) return;
+  if (secretFolderStore.pinModal?.open || secretFolderStore.folderDialog?.open || previewTarget.value) return;
+  if (isEditableEventTarget(event.target)) return;
+  const key = String(event.key || "").toLowerCase();
+  if (event.code === "KeyH" || key === "h" || key === "ㅗ") {
+    event.preventDefault();
+    void handleToggleHiddenFolders();
+  }
+};
+
+const onEmptyContextUploadChange = (event) => {
+  const selected = Array.from(event?.target?.files || []);
+  if (selected.length > 0) {
+    triggerDesktopUpload(selected, fileStore.currentFolderId, []);
+  }
+  if (event?.target) {
+    event.target.value = "";
+  }
+};
+
+const handleEmptyRefresh = async () => {
+  closeEmptyContextMenu();
+  try {
+    if (fileStore.driveHasLoaded) {
+      await fileStore.refreshDrivePage();
+    }
+    await fileStore.fetchFiles({ background: fileStore.driveHasLoaded });
+  } catch {
+  }
+};
+
 onMounted(() => {
+  window.addEventListener("click", closeEmptyContextMenu);
+  window.addEventListener("scroll", closeEmptyContextMenu, true);
+  window.addEventListener("keydown", onGlobalKeyDown);
   if (props.sharedLibrary) {
     fileStore.fetchFiles().catch(() => {});
     setLayoutPreset("20");
@@ -555,12 +973,18 @@ onMounted(() => {
     fileStore.fetchFiles().catch(() => {});
   }
 });
+
+onBeforeUnmount(() => {
+  window.removeEventListener("click", closeEmptyContextMenu);
+  window.removeEventListener("scroll", closeEmptyContextMenu, true);
+  window.removeEventListener("keydown", onGlobalKeyDown);
+});
 </script>
 
 <template>
   <div>
     <BaseFileToolbar
-      :title="title"
+      :title="displayTitle"
       :toolbar-meta-label="toolbarMetaLabel"
       :has-visible-toolbar-chips="hasVisibleToolbarChips"
       :has-active-filters="hasActiveFilters"
@@ -569,7 +993,7 @@ onMounted(() => {
       :custom-size-chip-prefix="customSizeChipPrefix"
       :custom-size-range-label="customSizeRangeLabel"
       :reset-filters-label="resetFiltersLabel"
-      :show-folder-navigation="showFolderNavigation"
+      :show-folder-navigation="showFolderNavigation && !isVaultTrashView"
       :folder-path-segments="folderPathSegments"
       :current-folder="fileStore.currentFolder"
       :folder-summary-cards="folderSummaryCards"
@@ -582,6 +1006,7 @@ onMounted(() => {
       :custom-layout-rows="customLayoutRows"
       :layout-guide-hint="layoutGuideHint"
       :view-mode="viewMode"
+      :item-size="itemSize"
       @update:sort-option="sortOption = $event"
       @reset-filters="resetFilters"
       @navigate-folder="navigateToFolder"
@@ -591,10 +1016,114 @@ onMounted(() => {
       @set-custom-layout-columns="setCustomLayoutColumns"
       @set-custom-layout-rows="setCustomLayoutRows"
       @set-view-mode="setViewMode"
+      @set-item-size="setItemSize"
     >
       <template #header-left><slot name="header-left"></slot></template>
-      <template #header-right><slot name="header-right"></slot></template>
+      <template #header-right>
+        <div v-if="isSecretDriveContext" class="flex flex-wrap items-center gap-2">
+          <template v-if="isVaultMode">
+            <button
+              v-if="!isVaultTrashView"
+              type="button"
+              data-testid="vault-open-secret-media"
+              class="inline-flex items-center gap-1.5 rounded-xl border border-amber-300/80 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 transition hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300"
+              @click="router.push({ name: 'secretMedia' })"
+            >
+              <i class="fa-solid fa-clapperboard"></i>
+              <span>비밀 미디어</span>
+            </button>
+            <button
+              v-if="!isVaultTrashView"
+              type="button"
+              data-testid="vault-open-secret-photos"
+              class="inline-flex items-center gap-1.5 rounded-xl border border-amber-300/80 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 transition hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300"
+              @click="router.push({ name: 'secretPhotos' })"
+            >
+              <i class="fa-solid fa-images"></i>
+              <span>비밀 사진첩</span>
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-xl border border-amber-300/80 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 transition hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300"
+              @click="handleToggleVaultTrashView"
+            >
+              <i class="fa-solid" :class="isVaultTrashView ? 'fa-folder-open' : 'fa-trash-can'"></i>
+              <span>{{ isVaultTrashView ? '비밀 파일로' : '비밀 휴지통' }}</span>
+            </button>
+            <button
+              v-if="isVaultTrashView"
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-xl border border-rose-300/80 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 transition hover:bg-rose-100 dark:border-rose-500/40 dark:bg-rose-500/15 dark:text-rose-300"
+              @click="handleClearVaultTrash"
+            >
+              <i class="fa-solid fa-broom"></i>
+              <span>비밀 휴지통 비우기</span>
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              @click="secretFolderStore.openChangeVaultPinModal()"
+            >
+              <i class="fa-solid fa-key"></i>
+              <span>PIN 변경</span>
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-slate-800 dark:bg-blue-600 dark:hover:bg-blue-500"
+              @click="handleExitVaultMode"
+            >
+              <i class="fa-solid fa-lock"></i>
+              <span>일반 홈으로 · 잠금</span>
+            </button>
+          </template>
+          <template v-else>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition md:hidden"
+              :class="secretFolderStore.showHiddenFolders
+                ? 'border-indigo-400 bg-indigo-50 text-indigo-700 dark:border-indigo-500/50 dark:bg-indigo-500/20 dark:text-indigo-200'
+                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'"
+              @click="handleToggleHiddenFolders"
+            >
+              <i class="fa-solid" :class="secretFolderStore.showHiddenFolders ? 'fa-eye' : 'fa-eye-slash'"></i>
+              <span>{{ secretFolderStore.showHiddenFolders ? '숨긴 폴더 숨기기' : '숨긴 폴더 (H)' }}</span>
+            </button>
+          </template>
+        </div>
+        <slot name="header-right"></slot>
+      </template>
     </BaseFileToolbar>
+    <div
+      v-if="isVaultMode"
+      class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300/70 bg-amber-50/80 px-4 py-3 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-950/35 dark:text-amber-200"
+    >
+      <div class="flex items-center gap-2.5">
+        <i class="fa-solid fa-shield-halved text-sm text-amber-600 dark:text-amber-400"></i>
+        <span class="font-semibold">
+          {{
+            isVaultTrashView
+              ? "자체 비밀 폴더 휴지통입니다. 이곳의 항목은 일반 휴지통에 나타나지 않으며 영구 삭제 또는 복구할 수 있습니다."
+              : "자체 비밀 폴더 공간입니다. 일반 홈·최근 문서·미디어·사진첩에 노출되지 않습니다."
+          }}
+        </span>
+      </div>
+    </div>
+    <div
+      v-else-if="isSecretDriveContext && secretFolderStore.showHiddenFolders"
+      class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-indigo-300/70 bg-indigo-50/85 px-4 py-2.5 text-xs text-indigo-900 dark:border-indigo-500/35 dark:bg-indigo-950/35 dark:text-indigo-200"
+    >
+      <div class="flex items-center gap-2.5">
+        <i class="fa-solid fa-eye text-sm text-indigo-600 dark:text-indigo-400"></i>
+        <span class="font-semibold">숨긴 폴더 표시 중 · H 키로 다시 숨기기</span>
+      </div>
+      <button
+        type="button"
+        class="rounded-lg border border-indigo-300 bg-white px-2.5 py-1 text-[11px] font-bold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/40 dark:bg-slate-900 dark:text-indigo-200 dark:hover:bg-slate-800"
+        @click="handleToggleHiddenFolders"
+      >
+        숨기기
+      </button>
+    </div>
     <slot name="header-bottom"></slot>
 
     <BaseFileSelectionBar
@@ -605,14 +1134,17 @@ onMounted(() => {
       :owned-shareable-count="selectedOwnedShareableFiles.length"
       :lock-candidate-count="selectedLockCandidates.length"
       :locked-count="selectedLockedFiles.length"
+      :vault-movable-count="selectedVaultMovableFiles.length"
       :shared-library="sharedLibrary"
-      :delete-mode="deleteMode"
+      :vault-mode="isVaultMode"
+      :delete-mode="effectiveDeleteMode"
       :can-create-locks="canCreateLocks"
       @download="handleBatchDownload"
       @save-shared="handleBatchSaveShared"
       @cancel-sent-shares="handleBatchCancelSentShares"
       @share="openShareDialog()"
       @lock="handleBatchLock"
+      @move-to-vault="handleBatchMoveToVault"
       @restore="handleRestoreSelected"
       @delete="handleDeleteSelected"
       @clear="clearSelection"
@@ -624,8 +1156,8 @@ onMounted(() => {
       <FileCollectionView
         :selected-ids="selectedIds"
         :files="paginatedFiles"
-        :delete-mode="deleteMode"
-        :show-parent-navigator="showFolderNavigation && Boolean(fileStore.currentFolder)"
+        :delete-mode="effectiveDeleteMode"
+        :show-parent-navigator="showFolderNavigation && !isVaultTrashView && Boolean(fileStore.currentFolder)"
         :parent-folder-target-id="fileStore.currentFolder?.parentId ?? null"
         :shared-library="sharedLibrary"
         @update:selected-ids="selectedIds = $event"
@@ -636,6 +1168,8 @@ onMounted(() => {
         @preview-file="openFilePreview"
         @share-file="openShareDialog"
         @toggle-lock="handleToggleLock"
+        @move-to-vault="handleMoveToVault"
+        @open-vault-import="openVaultImportModal"
         @save-to-drive="handleSaveSharedToDrive"
       />
 
@@ -645,7 +1179,170 @@ onMounted(() => {
         :page-numbers="pageNumbers"
       />
     </div>
-    <div v-else-if="showEmpty" class="rounded-2xl border border-dashed border-gray-200 bg-white px-6 py-14 text-center text-sm text-gray-400">{{ "\uD45C\uC2DC\uD560 \uD30C\uC77C\uC774 \uC5C6\uC2B5\uB2C8\uB2E4." }}</div>
+    <div
+      v-else-if="showEmpty"
+      class="relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-14 text-center transition-all"
+      :class="isEmptyDraggingOver ? 'border-blue-500 bg-blue-50/70' : 'border-gray-200 bg-white text-gray-400'"
+      @contextmenu.prevent="onEmptyContextMenu($event)"
+      @dragenter="onEmptyDragEnter"
+      @dragover="onEmptyDragOver"
+      @dragleave="onEmptyDragLeave"
+      @drop="onEmptyDrop"
+    >
+      <input
+        ref="emptyFileUploadInputRef"
+        type="file"
+        multiple
+        class="hidden"
+        @change="onEmptyContextUploadChange"
+      />
+      <input
+        ref="emptyFolderUploadInputRef"
+        type="file"
+        webkitdirectory
+        directory
+        multiple
+        class="hidden"
+        @change="onEmptyContextUploadChange"
+      />
+      <div v-if="isEmptyDraggingOver" class="flex flex-col items-center gap-2">
+        <svg class="h-10 w-10 text-blue-500 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+        </svg>
+        <p class="text-sm font-semibold text-blue-600">이곳에 놓으면 업로드가 시작됩니다.</p>
+      </div>
+      <template v-else>
+        <p class="text-sm">표시할 파일이 없습니다.</p>
+        <p v-if="canDropUpload" class="mt-1 text-xs text-gray-400">
+          {{
+            isVaultMode
+              ? "파일이나 폴더를 드래그하여 놓거나, 우클릭하여 새 폴더 만들기 · 드라이브에서 파일 가져오기를 진행할 수 있습니다."
+              : "파일이나 폴더를 드래그하여 놓거나, 우클릭하여 새 폴더 · 공유 폴더를 만들 수 있습니다."
+          }}
+        </p>
+      </template>
+
+      <Teleport to="body">
+        <div
+          v-if="emptyContextMenu.visible"
+          class="fixed z-[260] w-60 overflow-hidden rounded-2xl border border-gray-200 bg-white py-1.5 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+          :style="{ left: `${emptyContextMenu.x}px`, top: `${emptyContextMenu.y}px` }"
+          @click.stop
+          @contextmenu.prevent.stop
+        >
+          <div class="border-b border-gray-100 px-3.5 py-2 dark:border-slate-800">
+            <p class="truncate text-xs font-black text-gray-900 dark:text-slate-100">
+              {{ fileStore.currentFolder?.name || (isVaultMode ? "비밀 폴더 (최상위)" : "홈 (최상위)") }}
+            </p>
+            <p class="text-[10px] font-semibold text-gray-500 dark:text-slate-400">
+              현재 디렉터리 작업
+            </p>
+          </div>
+
+          <button
+            v-if="canDropUpload"
+            type="button"
+            class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-gray-700 transition hover:bg-blue-50 hover:text-blue-600 dark:text-slate-200 dark:hover:bg-slate-800"
+            @click="handleEmptyCreateFolder"
+          >
+            <i class="fa-solid fa-folder-plus w-4 text-center text-amber-500"></i>
+            <span>새 폴더 만들기 (현재 위치)</span>
+          </button>
+
+          <button
+            v-if="canDropUpload && isVaultMode && !isVaultTrashView"
+            type="button"
+            class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-amber-700 transition hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-slate-800"
+            @click="openVaultImportModal({ targetFolderId: fileStore.currentFolderId ?? null, targetFolderName: fileStore.currentFolder?.name || '' })"
+          >
+            <i class="fa-solid fa-file-import w-4 text-center text-amber-500"></i>
+            <span>드라이브에서 파일 · 폴더 가져오기</span>
+          </button>
+
+          <button
+            v-if="canDropUpload && isSecretDriveContext && !isVaultMode"
+            type="button"
+            class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:text-slate-200 dark:hover:bg-slate-800"
+            @click="handleEmptyCreateHiddenFolder"
+          >
+            <i class="fa-solid fa-eye-slash w-4 text-center text-indigo-500"></i>
+            <span>비밀 폴더 만들기 (숨김)</span>
+          </button>
+
+          <button
+            v-if="canDropUpload && !isVaultMode && !isCurrentTreeSecret"
+            type="button"
+            class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-gray-700 transition hover:bg-blue-50 hover:text-blue-600 dark:text-slate-200 dark:hover:bg-slate-800"
+            @click="handleEmptyCreateSharedFolder"
+          >
+            <i class="fa-solid fa-share-nodes w-4 text-center text-indigo-500"></i>
+            <span>공유 폴더 만들기 (위치 선택)</span>
+          </button>
+
+          <button
+            v-if="canDropUpload"
+            type="button"
+            class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-gray-700 transition hover:bg-blue-50 hover:text-blue-600 dark:text-slate-200 dark:hover:bg-slate-800"
+            @click="closeEmptyContextMenu(); emptyFileUploadInputRef?.click()"
+          >
+            <i class="fa-solid fa-file-arrow-up w-4 text-center text-blue-500"></i>
+            <span>파일 업로드</span>
+          </button>
+
+          <button
+            v-if="canDropUpload"
+            type="button"
+            class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-gray-700 transition hover:bg-blue-50 hover:text-blue-600 dark:text-slate-200 dark:hover:bg-slate-800"
+            @click="closeEmptyContextMenu(); emptyFolderUploadInputRef?.click()"
+          >
+            <i class="fa-solid fa-cloud-arrow-up w-4 text-center text-indigo-500"></i>
+            <span>폴더 업로드</span>
+          </button>
+
+          <template v-if="fileStore.currentFolder && canDropUpload">
+            <div class="my-1 border-t border-gray-100 dark:border-slate-800"></div>
+
+            <button
+              type="button"
+              class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-gray-700 transition hover:bg-blue-50 hover:text-blue-600 dark:text-slate-200 dark:hover:bg-slate-800"
+              @click="closeEmptyContextMenu(); openFolderProperties(fileStore.currentFolder)"
+            >
+              <i class="fa-solid fa-circle-info w-4 text-center text-sky-500"></i>
+              <span>현재 폴더 속성</span>
+            </button>
+
+            <button
+              type="button"
+              class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-gray-700 transition hover:bg-blue-50 hover:text-blue-600 dark:text-slate-200 dark:hover:bg-slate-800"
+              @click="closeEmptyContextMenu(); openRenameFolder(fileStore.currentFolder)"
+            >
+              <i class="fa-solid fa-pen-to-square w-4 text-center text-gray-500"></i>
+              <span>현재 폴더 이름 변경</span>
+            </button>
+
+            <button
+              type="button"
+              class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-gray-700 transition hover:bg-blue-50 hover:text-blue-600 dark:text-slate-200 dark:hover:bg-slate-800"
+              @click="closeEmptyContextMenu(); handleGoBack()"
+            >
+              <i class="fa-solid fa-level-up-alt w-4 text-center text-gray-500"></i>
+              <span>상위 폴더로 이동</span>
+            </button>
+          </template>
+
+          <div class="my-1 border-t border-gray-100 dark:border-slate-800"></div>
+
+          <button
+            type="button"
+            class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-gray-700 transition hover:bg-blue-50 hover:text-blue-600 dark:text-slate-200 dark:hover:bg-slate-800"
+            @click="handleEmptyRefresh"
+          >
+            <i class="fa-solid fa-rotate-right w-4 text-center text-gray-500"></i>
+            <span>새로고침</span>
+          </button>
+        </div>
+      </Teleport>
+    </div>
 
     <BaseFolderRenameDialog
       v-if="renameTarget"
@@ -691,5 +1388,12 @@ onMounted(() => {
       @cancel-share="cancelShare"
     />
     <FilePreviewModal :file="previewTarget" @close="closeFilePreview" />
+    <VaultImportModal
+      :open="vaultImportModal.open"
+      :target-folder-id="vaultImportModal.targetFolderId"
+      :target-folder-name="vaultImportModal.targetFolderName"
+      @close="closeVaultImportModal"
+      @imported="handleVaultImported"
+    />
   </div>
 </template>

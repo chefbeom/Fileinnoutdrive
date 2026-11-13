@@ -6,6 +6,10 @@ export const FILE_SEARCH_ROUTE_NAMES = new Set([
   "shareFile",
   "recentFile",
   "trash",
+  "media",
+  "photos",
+  "secretMedia",
+  "secretPhotos",
 ]);
 
 export const FILE_SIZE_OPTIONS = [

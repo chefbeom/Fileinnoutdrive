@@ -34,7 +34,11 @@ public interface WorkspaceAssetRepository extends JpaRepository<WorkspaceAsset, 
 
     List<WorkspaceAsset> findAllByWorkspace_Idx(Long workspaceIdx);
 
+    List<WorkspaceAsset> findAllByUploader_Idx(Long uploaderIdx);
+
     Optional<WorkspaceAsset> findByIdxAndWorkspace_Idx(Long assetIdx, Long workspaceIdx);
+
+    void deleteAllByUploader_Idx(Long uploaderIdx);
 
     @Query("""
             select
@@ -79,6 +83,7 @@ public interface WorkspaceAssetRepository extends JpaRepository<WorkspaceAsset, 
             group by a.uploader.idx
             """)
     List<UserStoredBytesProjection> aggregateStoredBytesByUploader();
+
     @Query("""
             select a.objectKey
             from WorkspaceAsset a

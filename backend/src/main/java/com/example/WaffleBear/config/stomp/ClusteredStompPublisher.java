@@ -1,14 +1,18 @@
 package com.example.WaffleBear.config.stomp;
 
+import com.example.WaffleBear.config.RedisConfig;
 import com.example.WaffleBear.config.realtime.RealtimeNodeIdProvider;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ClusteredStompPublisher {
@@ -18,6 +22,9 @@ public class ClusteredStompPublisher {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final RealtimeNodeIdProvider nodeIdProvider;
+
+    @Value("${REDIS_KEY_PREFIX:}")
+    private String redisKeyPrefix;
 
     public void send(String destination, Object payload) {
         if (!StringUtils.hasText(destination)) {
@@ -36,9 +43,12 @@ public class ClusteredStompPublisher {
                     destination,
                     payloadJson
             );
-            redisTemplate.convertAndSend(CHANNEL, objectMapper.writeValueAsString(message));
+            String channel = RedisConfig.resolvePrefixedName(redisKeyPrefix, CHANNEL);
+            redisTemplate.convertAndSend(channel, objectMapper.writeValueAsString(message));
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize STOMP broadcast message", e);
+        } catch (Exception e) {
+            log.debug("Redis STOMP broadcast skipped: {}", e.getMessage());
         }
     }
 

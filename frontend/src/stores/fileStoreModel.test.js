@@ -57,10 +57,29 @@ describe("fileStoreModel", () => {
     expect(normalizeIdList(["1", 1, "2", "x", null])).toEqual([1, 2]);
     expect(normalizePathSegments("Root\\Folder / file.txt")).toEqual(["Root", "Folder", "file.txt"]);
     expect(areDriveQueriesEqual(
-      { parentId: null, page: 0, size: 10, sortOption: "updatedAt-desc", searchQuery: "a" },
-      { parentId: null, page: "0", size: "10", sortOption: "updatedAt-desc", searchQuery: "a" },
+      { parentId: null, page: 0, size: 10, sortOption: "updatedAt-desc", searchQuery: "a", vaultMode: true, includeHidden: true, trashedOnly: false },
+      { parentId: null, page: "0", size: "10", sortOption: "updatedAt-desc", searchQuery: "a", vaultMode: true, includeHidden: true, trashedOnly: false },
     )).toBe(true);
+    expect(areDriveQueriesEqual({ page: 0, vaultMode: false }, { page: 0, vaultMode: true })).toBe(false);
+    expect(areDriveQueriesEqual({ page: 0, includeHidden: false }, { page: 0, includeHidden: true })).toBe(false);
     expect(areDriveQueriesEqual({ page: 0 }, { page: 1 })).toBe(false);
+
+    const hiddenFolder = normalizeFileRecord({
+      idx: 99,
+      fileOriginName: "Secret",
+      nodeType: "FOLDER",
+      spaceType: "VAULT",
+      hiddenFolder: true,
+      pinEnabled: true,
+      pinRegistered: false,
+    });
+    expect(hiddenFolder).toMatchObject({
+      spaceType: "VAULT",
+      isVaultSpace: true,
+      hiddenFolder: true,
+      pinEnabled: true,
+      pinRegistered: false,
+    });
   });
 
   it("reuses non-expired asset urls only for the same object revision", () => {

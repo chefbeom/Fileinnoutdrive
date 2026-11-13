@@ -1,6 +1,7 @@
 package com.example.WaffleBear.chat;
 
 import com.example.WaffleBear.chat.model.dto.ChatRoomsDto;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
@@ -11,6 +12,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class ChatListCacheService {
 
@@ -36,34 +38,45 @@ public class ChatListCacheService {
     }
 
     public ChatRoomsDto.PageRes get(Long userIdx, int page, int size) {
-        Object value = readRedisTemplate.opsForValue().get(cacheKey(userIdx, page, size));
-        if (value instanceof ChatRoomsDto.PageRes pageRes) {
-            return pageRes;
+        try {
+            Object value = readRedisTemplate.opsForValue().get(cacheKey(userIdx, page, size));
+            if (value instanceof ChatRoomsDto.PageRes pageRes) {
+                return pageRes;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to read chat room list cache for userIdx={}: {}", userIdx, e.getMessage());
         }
         return null;
     }
 
     public void put(Long userIdx, int page, int size, ChatRoomsDto.PageRes value) {
-        String key = cacheKey(userIdx, page, size);
-        writeRedisTemplate.opsForValue().set(key, value, TTL);
-        writeRedisTemplate.opsForSet().add(indexKey(userIdx), key);
-        writeRedisTemplate.expire(indexKey(userIdx), TTL.multipliedBy(2));
+        try {
+            String key = cacheKey(userIdx, page, size);
+            writeRedisTemplate.opsForValue().set(key, value, TTL);
+            writeRedisTemplate.opsForSet().add(indexKey(userIdx), key);
+            writeRedisTemplate.expire(indexKey(userIdx), TTL.multipliedBy(2));
+        } catch (Exception e) {
+            log.warn("Failed to write chat room list cache for userIdx={}: {}", userIdx, e.getMessage());
+        }
     }
 
     public void evictUser(Long userIdx) {
-        String indexKey = indexKey(userIdx);
-        Set<Object> rawKeys = writeRedisTemplate.opsForSet().members(indexKey);
+        try {
+            String indexKey = indexKey(userIdx);
+            Set<Object> rawKeys = writeRedisTemplate.opsForSet().members(indexKey);
 
-        if (rawKeys != null && !rawKeys.isEmpty()) {
-            Set<String> keys = rawKeys.stream()
-                    .map(String::valueOf)
-                    .collect(Collectors.toSet());
-            writeRedisTemplate.delete(keys);
+            if (rawKeys != null && !rawKeys.isEmpty()) {
+                Set<String> keys = rawKeys.stream()
+                        .map(String::valueOf)
+                        .collect(Collectors.toSet());
+                writeRedisTemplate.delete(keys);
+            }
+
+            writeRedisTemplate.delete(indexKey);
+        } catch (Exception e) {
+            log.warn("Failed to evict chat room list cache for userIdx={}: {}", userIdx, e.getMessage());
         }
-
-        writeRedisTemplate.delete(indexKey);
     }
-
 
     public void evictUsers(Collection<Long> userIds) {
         if (userIds == null) return;

@@ -44,6 +44,30 @@ const router = createRouter({
           meta: { title: '홈', requiresAuth: true },
         },
         {
+          path: 'media',
+          name: 'media',
+          component: () => import('../views/dashboard/MediaView.vue'),
+          meta: { title: '미디어 스트리밍', requiresAuth: true },
+        },
+        {
+          path: 'photos',
+          name: 'photos',
+          component: () => import('../views/dashboard/PhotosView.vue'),
+          meta: { title: '사진첩', requiresAuth: true },
+        },
+        {
+          path: 'secret-media',
+          name: 'secretMedia',
+          component: () => import('../views/dashboard/SecretMediaView.vue'),
+          meta: { title: '비밀 미디어', requiresAuth: true },
+        },
+        {
+          path: 'secret-photos',
+          name: 'secretPhotos',
+          component: () => import('../views/dashboard/SecretPhotosView.vue'),
+          meta: { title: '비밀 사진첩', requiresAuth: true },
+        },
+        {
           path: 'drive',
           name: 'drive',
           redirect: { name: 'home' },
@@ -149,14 +173,62 @@ const router = createRouter({
   ],
 })
 
+const GUEST_ENTRY_ROUTES = new Set(['intro', 'login', 'signup'])
+const GUEST_REFRESH_FAILED_KEY = 'FILEINNOUT_GUEST_REFRESH_FAILED'
+
+const readGuestRefreshFailedHint = () => {
+  try {
+    return globalThis.sessionStorage?.getItem?.(GUEST_REFRESH_FAILED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+const writeGuestRefreshFailedHint = (failed) => {
+  try {
+    if (failed) {
+      globalThis.sessionStorage?.setItem?.(GUEST_REFRESH_FAILED_KEY, '1')
+    } else {
+      globalThis.sessionStorage?.removeItem?.(GUEST_REFRESH_FAILED_KEY)
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
+let guestRefreshFailed = readGuestRefreshFailedHint()
+
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
 
-  // Protected routes try refresh-token based session restore before redirecting.
-  const needsSession = Boolean(to.meta.requiresAuth || to.meta.requiresAdmin)
+  if (authStore.token) {
+    guestRefreshFailed = false
+    writeGuestRefreshFailedHint(false)
+  } else if (from?.meta?.requiresAuth || readGuestRefreshFailedHint()) {
+    guestRefreshFailed = true
+    writeGuestRefreshFailedHint(true)
+  }
+
+  // Protected routes and initial entry on guest routes try refresh-token based session restore before redirecting.
+  const isGuestEntryRoute = GUEST_ENTRY_ROUTES.has(to.name)
+  const needsSession = Boolean(
+    to.meta.requiresAuth ||
+    to.meta.requiresAdmin ||
+    (isGuestEntryRoute && !guestRefreshFailed)
+  )
   const isAuthenticated = needsSession
     ? await authStore.ensureSession()
     : (authStore.token ? true : authStore.checkLogin())
+
+  if (needsSession && !isAuthenticated) {
+    guestRefreshFailed = true
+    writeGuestRefreshFailedHint(true)
+  }
+
+  if (isAuthenticated && isGuestEntryRoute) {
+    return next({ name: 'home', replace: true })
+  }
+
   const adminEmail = String(authStore.user?.email || '').toLowerCase()
   const adminRole = String(authStore.user?.role || '').toUpperCase()
   const isAdministrator =

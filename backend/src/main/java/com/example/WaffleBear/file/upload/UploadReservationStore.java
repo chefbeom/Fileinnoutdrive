@@ -208,7 +208,16 @@ public class UploadReservationStore {
         try {
             return supplier.get();
         } finally {
-            redisTemplate.execute(RELEASE_LOCK_SCRIPT, List.of(lockKey), lockValue);
+            try {
+                redisTemplate.execute(RELEASE_LOCK_SCRIPT, List.of(lockKey), lockValue);
+            } catch (Exception ignored) {
+                try {
+                    if (Objects.equals(lockValue, redisTemplate.opsForValue().get(lockKey))) {
+                        redisTemplate.delete(lockKey);
+                    }
+                } catch (Exception ignoredFallback) {
+                }
+            }
         }
     }
 

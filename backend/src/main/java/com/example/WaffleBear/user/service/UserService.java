@@ -10,6 +10,7 @@ import com.example.WaffleBear.user.model.User;
 import com.example.WaffleBear.user.model.UserDto;
 import com.example.WaffleBear.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -27,8 +28,19 @@ public class UserService implements UserDetailsService {
     private final EmailVerifyRepository emailVerifyRepository;
     private final EmailVerifyService emailVerifyService;
 
+    @Value("${spring.mail.username:}")
+    private String mailUsername;
+
+    @Value("${spring.mail.password:}")
+    private String mailPassword;
 
     public UserDto.SignupRes signup(UserDto.SignupReq dto) {
+        if (dto == null || dto.email() == null || dto.email().isBlank() || !dto.email().contains("@")) {
+            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
+        if (dto.password() == null || dto.password().length() < 8) {
+            throw BaseException.from(BaseResponseStatus.PASSWORD_POLICY_INVALID);
+        }
         if (userRepository.findByEmail(dto.email()).isPresent()) {
             throw BaseException.from(BaseResponseStatus.SIGNUP_DUPLICATE_EMAIL);
         }
@@ -36,11 +48,15 @@ public class UserService implements UserDetailsService {
         User user = dto.toEntity();
         user.setPassword(passwordEncoder.encode(dto.password()));
 
-        String token = UUID.randomUUID().toString();
-        emailVerifyRepository.save(new EmailVerify(token, user.getEmail()));
-
-        userRepository.save(user);
-        emailVerifyService.sendVerificationEmail(user.getEmail(), token);
+        if (isEmailVerificationEnabled()) {
+            String token = UUID.randomUUID().toString();
+            emailVerifyRepository.save(new EmailVerify(token, user.getEmail()));
+            userRepository.save(user);
+            emailVerifyService.sendVerificationEmail(user.getEmail(), token);
+        } else {
+            user.setEnable(true);
+            userRepository.save(user);
+        }
 
         return UserDto.SignupRes.from(user);
     }
@@ -65,6 +81,16 @@ public class UserService implements UserDetailsService {
         User user = userRepository.findByEmail(username)
                 .orElseThrow(() -> new UsernameNotFoundException("user not found"));
 
+        if (!Boolean.TRUE.equals(user.getEnable()) && !isEmailVerificationEnabled()) {
+            user.setEnable(true);
+            user = userRepository.save(user);
+        }
+
         return AuthUserDetails.from(user);
+    }
+
+    private boolean isEmailVerificationEnabled() {
+        return mailUsername != null && !mailUsername.isBlank()
+                && mailPassword != null && !mailPassword.isBlank();
     }
 }

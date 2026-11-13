@@ -73,8 +73,12 @@ public class FileInfoDto {
         private Long maxUploadFileBytes;
         private Integer maxUploadCount;
         private Long quotaBytes;
+        private Long ownQuotaBytes;
         private Long baseQuotaBytes;
         private Long addonQuotaBytes;
+        private Long grantedInBytes;
+        private Long grantedOutBytes;
+        private Long sharedStorageContributionBytes;
         private Long usedBytes;
         private Long activeUsedBytes;
         private Long trashUsedBytes;

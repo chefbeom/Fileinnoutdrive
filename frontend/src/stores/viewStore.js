@@ -1,6 +1,7 @@
 import { computed, ref, watch } from "vue";
 
 const VIEW_MODE_KEY = "file-view-mode";
+const ITEM_SIZE_KEY = "file-item-size";
 const GRID_SIZE_KEY = "file-grid-size";
 const GRID_CUSTOM_COLUMNS_KEY = "file-grid-custom-columns";
 const LAYOUT_PRESET_KEY = "file-layout-preset";
@@ -8,11 +9,13 @@ const LAYOUT_COLUMNS_KEY = "file-layout-columns";
 const LAYOUT_ROWS_KEY = "file-layout-rows";
 
 const DEFAULT_VIEW_MODE = "table";
+const DEFAULT_ITEM_SIZE = "medium";
 const DEFAULT_LAYOUT_PRESET = "10";
 const DEFAULT_LAYOUT_COLUMNS = 5;
 const DEFAULT_LAYOUT_ROWS = 2;
 
 const VIEW_MODE_SET = new Set(["table", "grid", "icon"]);
+const ITEM_SIZE_SET = new Set(["small", "medium", "large"]);
 const LAYOUT_PRESET_SET = new Set(["10", "20", "30"]);
 const LAYOUT_PRESETS = {
   "10": { columns: 5, rows: 2 },
@@ -46,6 +49,11 @@ const normalizeViewMode = (mode) => {
   return VIEW_MODE_SET.has(mode) ? mode : DEFAULT_VIEW_MODE;
 };
 
+const normalizeItemSize = (value) => {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return ITEM_SIZE_SET.has(normalized) ? normalized : DEFAULT_ITEM_SIZE;
+};
+
 const normalizeLayoutPreset = (value) => {
   const normalized = String(value ?? "").trim();
 
@@ -70,6 +78,7 @@ const normalizeLayoutCount = (value, fallback) => {
 };
 
 const viewMode = ref(normalizeViewMode(readStorageValue(VIEW_MODE_KEY, DEFAULT_VIEW_MODE)));
+const itemSize = ref(normalizeItemSize(readStorageValue(ITEM_SIZE_KEY, DEFAULT_ITEM_SIZE)));
 const layoutPreset = ref(
   normalizeLayoutPreset(
     readStorageValue(
@@ -112,6 +121,12 @@ watch(viewMode, (value) => {
   }
 });
 
+watch(itemSize, (value) => {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(ITEM_SIZE_KEY, normalizeItemSize(value));
+  }
+});
+
 watch(layoutPreset, (value) => {
   if (typeof window !== "undefined") {
     window.localStorage.setItem(LAYOUT_PRESET_KEY, normalizeLayoutPreset(value));
@@ -139,6 +154,10 @@ watch(customLayoutRows, (value) => {
 export function useViewStore() {
   const setViewMode = (mode) => {
     viewMode.value = normalizeViewMode(mode);
+  };
+
+  const setItemSize = (size) => {
+    itemSize.value = normalizeItemSize(size);
   };
 
   const toggleViewMode = () => {
@@ -169,6 +188,7 @@ export function useViewStore() {
 
   return {
     viewMode,
+    itemSize,
     layoutPreset,
     customLayoutColumns,
     customLayoutRows,
@@ -179,6 +199,7 @@ export function useViewStore() {
     customGridColumns,
     resolvedGridColumns,
     setViewMode,
+    setItemSize,
     toggleViewMode,
     setLayoutPreset,
     setCustomLayoutColumns,

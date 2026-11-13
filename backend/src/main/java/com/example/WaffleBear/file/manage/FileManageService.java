@@ -18,6 +18,10 @@ public class FileManageService {
         return fileUpDownloadService.fileList(userIdx);
     }
 
+    public List<FileCommonDto.FileListItemRes> listVault(Long userIdx) {
+        return fileUpDownloadService.vaultFileList(userIdx);
+    }
+
     public FileCommonDto.FileListPageRes listPage(Long userIdx, FileManageDto.ListPageReq request) {
         return fileUpDownloadService.fileListPage(userIdx, request);
     }
@@ -42,8 +46,16 @@ public class FileManageService {
         return fileUpDownloadService.clearTrash(userIdx);
     }
 
+    public FileCommonDto.FileActionRes clearTrash(Long userIdx, boolean vaultMode) {
+        return fileUpDownloadService.clearTrash(userIdx, vaultMode);
+    }
+
     public FileCommonDto.FileActionRes moveToFolder(Long userIdx, Long fileIdx, Long targetParentId) {
         return fileUpDownloadService.moveToFolder(userIdx, fileIdx, targetParentId);
+    }
+
+    public FileCommonDto.FileActionRes moveToVault(Long userIdx, Long fileIdx, Long targetParentId) {
+        return fileUpDownloadService.moveToVault(userIdx, fileIdx, targetParentId);
     }
 
     public FileCommonDto.FileListItemRes renameFolder(Long userIdx, Long folderIdx, String folderName) {
@@ -52,6 +64,10 @@ public class FileManageService {
 
     public FileCommonDto.FileActionRes moveFilesToFolder(Long userIdx, List<Long> fileIdxList, Long targetParentId) {
         return fileUpDownloadService.moveFilesToFolder(userIdx, fileIdxList, targetParentId);
+    }
+
+    public FileCommonDto.FileActionRes moveFilesToVault(Long userIdx, List<Long> fileIdxList, Long targetParentId) {
+        return fileUpDownloadService.moveFilesToVault(userIdx, fileIdxList, targetParentId);
     }
 
     public FileCommonDto.FileActionRes restoreFilesFromTrash(Long userIdx, List<Long> fileIdxList) {
@@ -64,5 +80,9 @@ public class FileManageService {
 
     public String getDownloadUrl(Long userIdx, Long fileIdx) {
         return fileUpDownloadService.getDownloadUrl(userIdx, fileIdx);
+    }
+
+    public FileCommonDto.FolderZipDownloadPayload downloadFolderZip(Long userIdx, Long folderIdx) {
+        return fileUpDownloadService.downloadFolderZip(userIdx, folderIdx);
     }
 }

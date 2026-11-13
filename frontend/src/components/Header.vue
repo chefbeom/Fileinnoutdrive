@@ -18,6 +18,7 @@ import {
   rejectRelationshipInvite,
 } from "@/api/groupApi.js";
 import { useFileStore } from "@/stores/useFileStore.js";
+import { useUiLayoutStore } from "@/stores/useUiLayoutStore.js";
 import { registerPushNotification } from "@/utils/pushNotification.js";
 import {
   buildCustomSizeRangeLabel,
@@ -37,6 +38,7 @@ import {
 } from "./headerViewModel.js";
 import ProfileModal from "./ProfileModal.vue";
 import GamesHubModal from "@/components/games/GamesHubModal.vue";
+import HeaderCustomNavGroup from "./layout/HeaderCustomNavGroup.vue";
 import postApi from "@/api/postApi.js";
 
 const emit = defineEmits(["toggle-chat", "toggle-theme", "switch-view"]);
@@ -46,10 +48,35 @@ const route = useRoute();
 const authStore = useAuthStore();
 const fileStore = useFileStore();
 const headerSearchStore = useHeaderSearchStore();
+const uiLayoutStore = useUiLayoutStore();
+
+const layout = computed(() => uiLayoutStore.layout);
+const headerNavItems = computed(() => uiLayoutStore.headerNavItems);
+const isHeaderActionVisible = (actionId) => layout.value.headerActionVisibility?.[actionId] !== false;
+const getHeaderActionOrder = (actionId) => {
+  const index = layout.value.headerActionOrder?.indexOf(actionId) ?? -1;
+  return index >= 0 ? index + 1 : 50;
+};
+const triggerQuickUpload = (mode = "file") => {
+  showQuickUploadDropdown.value = false;
+  window.dispatchEvent(new CustomEvent("trigger-quick-upload", { detail: { mode } }));
+};
+const toggleQuickUploadMenu = () => {
+  showQuickUploadDropdown.value = !showQuickUploadDropdown.value;
+  if (showQuickUploadDropdown.value) {
+    showNotifDropdown.value = false;
+    showProfileDropdown.value = false;
+    showSearchDropdown.value = false;
+  }
+};
+const handleOpenLayoutSettingsEvent = () => {
+  openSettings("layout");
+};
 
 const showNotifDropdown = ref(false);
 const showProfileDropdown = ref(false);
 const showSearchDropdown = ref(false);
+const showQuickUploadDropdown = ref(false);
 const isProfileModalOpen = ref(false);
 const isGamesModalOpen = ref(false);
 
@@ -463,7 +490,10 @@ const openSettings = async (tab = "profile") => {
   settingsTab.value = tab;
   showProfileDropdown.value = false;
   isProfileModalOpen.value = true;
-  await loadSettingsProfile();
+  await Promise.all([
+    loadSettingsProfile(),
+    uiLayoutStore.hydrateForCurrentUser({ forceRemote: true }).catch(() => {}),
+  ]);
 };
 
 const openGamesHub = async () => {
@@ -503,10 +533,14 @@ const handleLogout = async () => {
 };
 
 const handleToggleChat = () => emit("toggle-chat");
+const handleToggleMobileSidebar = () => {
+  window.dispatchEvent(new CustomEvent("toggle-mobile-sidebar"));
+};
 
 const handleClickOutside = (event) => {
   if (!event.target.closest("#profile-container")) showProfileDropdown.value = false;
   if (!event.target.closest("#notif-container")) showNotifDropdown.value = false;
+  if (!event.target.closest("#quick-upload-container")) showQuickUploadDropdown.value = false;
   if (!event.target.closest("#header-search-container")) showSearchDropdown.value = false;
 };
 
@@ -539,12 +573,33 @@ watch(
   { immediate: true },
 );
 
+let lastLayoutVisibilitySyncAt = 0;
+const LAYOUT_VISIBILITY_SYNC_COOLDOWN_MS = 15 * 1000;
+
+const handleVisibilityChange = () => {
+  if (typeof document === "undefined" || document.visibilityState !== "visible") {
+    return;
+  }
+  if (isProfileModalOpen.value || uiLayoutStore.hasPendingSave || uiLayoutStore.isSaving) {
+    return;
+  }
+  const now = Date.now();
+  if (now - lastLayoutVisibilitySyncAt < LAYOUT_VISIBILITY_SYNC_COOLDOWN_MS) {
+    return;
+  }
+  lastLayoutVisibilitySyncAt = now;
+  uiLayoutStore.hydrateForCurrentUser({ forceRemote: true }).catch(() => {});
+};
+
 onMounted(() => {
   initTheme();
   authStore.ensureSession().catch(() => {});
   loadSettingsProfile();
+  uiLayoutStore.hydrateForCurrentUser().catch(() => {});
   setupNotificationChannel();
   window.addEventListener("sse-notification", handleSseNotification);
+  window.addEventListener("open-layout-settings", handleOpenLayoutSettingsEvent);
+  document.addEventListener("visibilitychange", handleVisibilityChange);
   if (!fileStore.storageSummary && !fileStore.storageLoading) {
     fileStore.fetchStorageSummary().catch(() => {});
   }
@@ -553,7 +608,9 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener("click", handleClickOutside);
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
   window.removeEventListener("sse-notification", handleSseNotification);
+  window.removeEventListener("open-layout-settings", handleOpenLayoutSettingsEvent);
   if (broadcastChannel) {
     broadcastChannel.close();
     broadcastChannel = null;
@@ -562,6 +619,17 @@ onBeforeUnmount(() => {
     navigator.serviceWorker.removeEventListener("message", swDirectMessageHandler);
   }
 });
+
+watch(
+  () => [Boolean(authStore.isAuthenticated || authStore.isLogin), authStore.user?.idx, authStore.user?.email],
+  ([authenticated]) => {
+    if (authenticated) {
+      uiLayoutStore.hydrateForCurrentUser({ forceRemote: true }).catch(() => {});
+    } else {
+      uiLayoutStore.resetForLoggedOutSession?.();
+    }
+  }
+);
 </script>
 
 <template>
@@ -581,12 +649,27 @@ onBeforeUnmount(() => {
     />
 
     <header class="header-container">
-      <div class="header-search-wrap" id="header-search-container">
+      <div class="header-main-row">
+        <button
+          type="button"
+          class="icon-button mobile-sidebar-trigger md:hidden"
+          title="메뉴 열기"
+          aria-label="메뉴 열기"
+          @click.stop="handleToggleMobileSidebar"
+        >
+          <i class="fa-solid fa-bars text-base"></i>
+        </button>
+        <div
+          v-if="layout.showHeaderSearchBar"
+          class="header-search-wrap"
+          :class="{ 'is-compact': layout.headerSearchCompact }"
+          id="header-search-container"
+        >
         <span class="search-icon"><i class="fa-solid fa-search"></i></span>
         <input v-model="searchState.searchQuery" type="search" :disabled="!canUseFileSearch" :placeholder="searchPlaceholder" class="search-input" />
         <button type="button" class="search-filter-button" :class="{ 'is-active': showSearchDropdown, 'has-filters': activeSearchFilterCount > 0 }" :disabled="!canUseFileSearch" @click="toggleSearchMenu">
           <i class="fa-solid fa-sliders"></i>
-          <span>속성</span>
+          <span class="hidden sm:inline">속성</span>
           <span v-if="activeSearchFilterCount > 0" class="search-filter-count">{{ activeSearchFilterCount }}</span>
         </button>
 
@@ -636,10 +719,69 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </div>
-      </div>
+        </div>
+
+        <HeaderCustomNavGroup
+          v-if="layout.headerNavPosition !== 'right-actions' && headerNavItems.length > 0"
+          position="after-search"
+          :items="headerNavItems"
+          :nav-style="layout.headerNavStyle"
+          :align="layout.headerNavAlign"
+        />
 
       <div class="header-actions">
-        <div class="relative" id="notif-container">
+        <HeaderCustomNavGroup
+          v-if="layout.headerNavPosition === 'right-actions' && headerNavItems.length > 0"
+          position="right-actions"
+          :items="headerNavItems"
+          :nav-style="layout.headerNavStyle"
+          align="right"
+          :style="{ order: 0 }"
+        />
+
+        <div
+          v-if="isHeaderActionVisible('uploadQuick')"
+          class="relative"
+          id="quick-upload-container"
+          :style="{ order: getHeaderActionOrder('uploadQuick') }"
+        >
+          <button
+            type="button"
+            class="icon-button upload-quick-button"
+            title="빠른 업로드"
+            aria-label="빠른 업로드"
+            @click="toggleQuickUploadMenu"
+          >
+            <i class="fa-solid fa-cloud-arrow-up"></i>
+          </button>
+
+          <div v-if="showQuickUploadDropdown" class="dropdown-container active quick-upload-dropdown">
+            <div class="dropdown-header">
+              <p class="dropdown-header__label">빠른 업로드</p>
+            </div>
+            <div class="py-1.5">
+              <button type="button" class="dropdown-item" @click="triggerQuickUpload('file')">
+                <i class="fa-solid fa-file-arrow-up"></i>
+                <span>파일 업로드</span>
+              </button>
+              <button type="button" class="dropdown-item" @click="triggerQuickUpload('folder')">
+                <i class="fa-solid fa-folder-plus"></i>
+                <span>폴더 업로드</span>
+              </button>
+              <button type="button" class="dropdown-item" @click="triggerQuickUpload('new-folder')">
+                <i class="fa-regular fa-folder-open"></i>
+                <span>새 폴더 만들기</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-if="isHeaderActionVisible('notifications')"
+          class="relative"
+          id="notif-container"
+          :style="{ order: getHeaderActionOrder('notifications') }"
+        >
           <button @click="toggleNotifMenu" class="icon-button bell-button">
             <i class="fa-solid fa-bell"></i>
             <span v-if="hasNewNotif" class="notif-badge"></span>
@@ -693,10 +835,37 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <button @click="handleToggleTheme" class="icon-button theme-button" :title="isDarkMode ? '라이트 모드로 변경' : '다크 모드로 변경'"><i :class="themeIcon" class="theme-icon"></i></button>
-        <button @click="handleToggleChat" class="icon-button chat-button" title="작업 채팅"><i class="fa-solid fa-comments"></i></button>
+        <button
+          v-if="isHeaderActionVisible('theme')"
+          @click="handleToggleTheme"
+          class="icon-button theme-button"
+          :style="{ order: getHeaderActionOrder('theme') }"
+          :title="isDarkMode ? '라이트 모드로 변경' : '다크 모드로 변경'"
+        >
+          <i :class="themeIcon" class="theme-icon"></i>
+        </button>
+        <button
+          v-if="isHeaderActionVisible('chat')"
+          @click="handleToggleChat"
+          class="icon-button chat-button"
+          :style="{ order: getHeaderActionOrder('chat') }"
+          title="작업 채팅"
+        >
+          <i class="fa-solid fa-comments"></i>
+        </button>
+        <button
+          v-if="isHeaderActionVisible('layoutSettings')"
+          type="button"
+          class="icon-button layout-settings-button"
+          :style="{ order: getHeaderActionOrder('layoutSettings') }"
+          title="화면 · 버튼 배치 설정"
+          aria-label="화면 · 버튼 배치 설정"
+          @click="openSettings('layout')"
+        >
+          <i class="fa-solid fa-sliders"></i>
+        </button>
 
-        <div class="relative" id="profile-container">
+        <div class="relative" id="profile-container" :style="{ order: 99 }">
           <button @click="toggleProfileMenu" class="profile-trigger">
             <div class="profile-trigger__copy">
               <p class="profile-trigger__name">{{ userName }}</p>
@@ -716,6 +885,7 @@ onBeforeUnmount(() => {
             <div class="py-2">
               <button type="button" class="dropdown-item" @click="openSettings('profile')"><i class="fa-solid fa-user-gear"></i><span>개인 프로필 설정</span></button>
               <button type="button" class="dropdown-item" @click="openSettings('group')"><i class="fa-solid fa-user-group"></i><span>그룹 관리</span></button>
+              <button type="button" class="dropdown-item" @click="openSettings('layout')"><i class="fa-solid fa-table-columns"></i><span>화면 · 버튼 배치</span></button>
               <button v-if="canUseGames" type="button" class="dropdown-item" @click="openGamesHub"><i class="fa-solid fa-gamepad"></i><span>게임</span></button>
               <button type="button" class="dropdown-item dropdown-item--disabled" disabled title="데스크톱 앱 설치 파일은 아직 준비 중입니다."><i class="fa-solid fa-desktop"></i><span>데스크톱 ZIP</span><span class="dropdown-item__status">준비 중</span></button>
               <button type="button" class="dropdown-item" @click="openSettings('security')"><i class="fa-solid fa-shield-halved"></i><span>보안 및 비밀번호</span></button>
@@ -726,6 +896,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </div>
+      </div>
       </div>
     </header>
   </div>

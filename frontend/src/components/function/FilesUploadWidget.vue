@@ -1,6 +1,6 @@
 <template>
   <div class="upload-widget">
-    <button type="button" class="upload-trigger" @click="toggleDropdown">
+    <button v-if="!hideTrigger" type="button" class="upload-trigger" @click="toggleDropdown">
       <i class="fa-solid fa-plus"></i>
       <span>업로드 / 폴더 만들기</span>
       <span v-if="activeCount > 0" class="upload-trigger__count">{{ activeCount }}</span>
@@ -12,16 +12,37 @@
         <span>새 폴더 만들기</span>
       </button>
 
+      <button
+        v-if="!secretFolderStore.vaultMode"
+        type="button"
+        class="upload-dropdown__item text-indigo-700 dark:text-indigo-300"
+        @click="createHiddenFolder"
+      >
+        <i class="fa-solid fa-eye-slash"></i>
+        <span>비밀 폴더 만들기 (숨김)</span>
+      </button>
+
+      <button
+        v-if="!secretFolderStore.vaultMode"
+        type="button"
+        class="upload-dropdown__item"
+        @click="openCreateSharedFolderModal"
+      >
+        <i class="fa-solid fa-folder-tree"></i>
+        <span>공유 폴더 만들기</span>
+      </button>
+
       <label class="upload-dropdown__item">
         <i class="fa-solid fa-file-arrow-up"></i>
         <span>파일 업로드</span>
-        <input type="file" hidden multiple :disabled="isUploading" @change="handleFileChange" />
+        <input ref="quickFileInputRef" type="file" hidden multiple :disabled="isUploading" @change="handleFileChange" />
       </label>
 
       <label class="upload-dropdown__item">
         <i class="fa-solid fa-folder-plus"></i>
         <span>폴더 업로드</span>
         <input
+          ref="quickFolderInputRef"
           type="file"
           hidden
           webkitdirectory
@@ -63,6 +84,7 @@
     :can-clear-dismissed="canClearDismissed"
     :panel-title="panelTitle"
     :panel-subtitle="panelSubtitleDisplay"
+    :overall-progress="totalProgressPercent"
     :items="panelItems"
     @cancel="cancelUploads"
     @clear-dismissed="clearDismissedItems"
@@ -79,6 +101,14 @@
     :action-label="exitDialogActionLabel"
     @cancel="closeExitDialog(false)"
     @confirm="confirmExitDialog"
+  />
+
+  <FolderUploadStructureModal
+    :is-open="isFolderUploadModalOpen"
+    :tree-data="folderUploadTreeData"
+    :target-location-name="folderUploadTargetLocation"
+    @confirm="handleFolderUploadConfirm"
+    @cancel="handleFolderUploadCancel"
   />
 </template>
 
@@ -97,10 +127,13 @@ import {
 } from "@/constants/uploadOptions.js";
 import { api } from "@/plugins/axiosinterceptor.js";
 import { useFileStore } from "@/stores/useFileStore.js";
+import { useSecretFolderStore } from "@/stores/useSecretFolderStore.js";
 import { useAuthStore } from "@/stores/useAuthStore.js";
 import { formatBytes } from "@/utils/formatBytes.js";
+import { buildFolderUploadTree, hasFolderHierarchy } from "@/utils/folderTreeBuilder.js";
 import FilesUploadExitDialog from "./FilesUploadExitDialog.vue";
 import FilesUploadStatusPanel from "./FilesUploadStatusPanel.vue";
+import FolderUploadStructureModal from "./FolderUploadStructureModal.vue";
 import {
   applyUploadItemState,
   buildAbortPayload,
@@ -113,12 +146,59 @@ import {
   updateUploadItemProgress,
 } from "./uploadState.js";
 
+const props = defineProps({
+  hideTrigger: { type: Boolean, default: false },
+});
 const emit = defineEmits(["upload-complete", "upload-fail"]);
 const fileStore = useFileStore();
+const secretFolderStore = useSecretFolderStore();
 const authStore = useAuthStore();
+const quickFileInputRef = ref(null);
+const quickFolderInputRef = ref(null);
+
+const isFolderUploadModalOpen = ref(false);
+const folderUploadTreeData = ref({
+  roots: [],
+  totalFolders: 0,
+  totalFiles: 0,
+  totalBytes: 0,
+  totalBytesFormatted: "0 B",
+});
+const folderUploadTargetLocation = ref("홈 (최상위)");
+const pendingFolderUpload = ref(null);
 
 const transientStatuses = ACTIVE_UPLOAD_STATUSES;
 const activeUploadControllers = new Map();
+
+function registerController(itemId, controller) {
+  let set = activeUploadControllers.get(itemId);
+  if (!set) {
+    set = new Set();
+    activeUploadControllers.set(itemId, set);
+  }
+  set.add(controller);
+}
+
+function unregisterController(itemId, controller) {
+  const set = activeUploadControllers.get(itemId);
+  if (set) {
+    set.delete(controller);
+    if (set.size === 0) {
+      activeUploadControllers.delete(itemId);
+    }
+  }
+}
+
+function abortAllActiveControllers() {
+  activeUploadControllers.forEach((item) => {
+    if (item instanceof Set) {
+      item.forEach((controller) => controller.abort());
+    } else if (item?.abort) {
+      item.abort();
+    }
+  });
+  activeUploadControllers.clear();
+}
 
 const isDropdownOpen = ref(false);
 const isUploading = ref(false);
@@ -159,11 +239,103 @@ const canCancel = computed(() =>
 const canClearDismissed = computed(() =>
   uploadItems.value.some((item) => ["completed", "failed", "canceled"].includes(item.status)),
 );
+const totalUploadBytes = computed(() =>
+  uploadItems.value.reduce((total, item) => total + Math.max(0, Number(item.fileSize || 0)), 0),
+);
+
+const totalUploadedBytes = computed(() =>
+  uploadItems.value.reduce((total, item) => total + Math.max(0, Number(item.uploadedBytes || 0)), 0),
+);
+
+const totalUploadCount = computed(() => uploadItems.value.length);
+
+const totalProgressPercent = computed(() => {
+  if (totalUploadCount.value === 0) {
+    return 0;
+  }
+  if (completedCount.value === totalUploadCount.value) {
+    return 100;
+  }
+  if (totalUploadBytes.value > 0) {
+    const bytePercent = Math.round((totalUploadedBytes.value / totalUploadBytes.value) * 100);
+    return activeCount.value > 0 ? Math.min(99, Math.max(0, bytePercent)) : Math.min(100, Math.max(0, bytePercent));
+  }
+  const countPercent = Math.round((completedCount.value / totalUploadCount.value) * 100);
+  return activeCount.value > 0 ? Math.min(99, countPercent) : Math.min(100, countPercent);
+});
+
 const totalUploadSpeedBytesPerSecond = computed(() =>
   uploadItems.value
     .filter((item) => item.status === "uploading")
     .reduce((total, item) => total + Math.max(0, Number(item.speedBytesPerSecond || 0)), 0),
 );
+
+const sessionSpeedBytesPerSecond = ref(0);
+let sessionSpeedSamples = [];
+let speedIntervalId = null;
+
+function recordSessionThroughputSample() {
+  if (activeCount.value === 0) {
+    sessionSpeedBytesPerSecond.value = 0;
+    sessionSpeedSamples = [];
+    return;
+  }
+
+  const now = Date.now();
+  const currentTotalBytes = totalUploadedBytes.value;
+
+  sessionSpeedSamples.push({ time: now, bytes: currentTotalBytes });
+
+  const cutoff = now - 1500;
+  while (sessionSpeedSamples.length > 2 && sessionSpeedSamples[0].time < cutoff) {
+    sessionSpeedSamples.shift();
+  }
+
+  if (sessionSpeedSamples.length >= 2) {
+    const oldest = sessionSpeedSamples[0];
+    const latest = sessionSpeedSamples[sessionSpeedSamples.length - 1];
+    const deltaMs = latest.time - oldest.time;
+    const deltaBytes = latest.bytes - oldest.bytes;
+
+    if (deltaMs >= 200 && deltaBytes > 0) {
+      const calculatedSpeed = (deltaBytes / deltaMs) * 1000;
+      sessionSpeedBytesPerSecond.value = sessionSpeedBytesPerSecond.value > 0
+        ? (sessionSpeedBytesPerSecond.value * 0.35) + (calculatedSpeed * 0.65)
+        : calculatedSpeed;
+    } else if (deltaMs >= 1200 && deltaBytes === 0) {
+      sessionSpeedBytesPerSecond.value = Math.max(0, sessionSpeedBytesPerSecond.value * 0.5);
+    }
+  }
+}
+
+watch(
+  () => activeCount.value > 0,
+  (isActive) => {
+    if (isActive) {
+      if (!speedIntervalId) {
+        sessionSpeedSamples = [
+          { time: Date.now(), bytes: totalUploadedBytes.value },
+        ];
+        speedIntervalId = setInterval(recordSessionThroughputSample, 250);
+      }
+    } else {
+      if (speedIntervalId) {
+        clearInterval(speedIntervalId);
+        speedIntervalId = null;
+      }
+      sessionSpeedBytesPerSecond.value = 0;
+      sessionSpeedSamples = [];
+    }
+  },
+  { immediate: true },
+);
+
+const displayUploadSpeedBytesPerSecond = computed(() => {
+  if (activeCount.value === 0) {
+    return 0;
+  }
+  return Math.max(sessionSpeedBytesPerSecond.value, totalUploadSpeedBytesPerSecond.value);
+});
 const showFloatingPanel = computed(() => uploadItems.value.length > 0 && !isPanelHidden.value);
 const panelItems = computed(() => [...uploadItems.value].reverse());
 const hasBlockingUploads = computed(() =>
@@ -181,7 +353,10 @@ const exitDialogActionLabel = computed(() =>
 
 const panelTitle = computed(() => {
   if (activeCount.value > 0) {
-    return `항목 ${activeCount.value}개 업로드 진행 중`;
+    return `항목 ${totalUploadCount.value}개 업로드 진행 중 (${totalProgressPercent.value}%)`;
+  }
+  if (failedCount.value > 0 && completedCount.value > 0) {
+    return `항목 ${completedCount.value}개 완료, ${failedCount.value}개 확인 필요 (${totalProgressPercent.value}%)`;
   }
   if (failedCount.value > 0) {
     return `항목 ${failedCount.value}개 업로드 확인 필요`;
@@ -190,7 +365,7 @@ const panelTitle = computed(() => {
     return `항목 ${canceledCount.value}개 업로드 취소`;
   }
   if (completedCount.value > 0) {
-    return `항목 ${completedCount.value}개 업로드 완료`;
+    return `항목 ${completedCount.value}개 업로드 완료 (100%)`;
   }
   return "업로드 상태";
 });
@@ -220,10 +395,14 @@ const isAllActiveMerging = computed(() =>
 
 const panelSubtitleDisplay = computed(() => {
   if (activeCount.value > 0) {
+    const formattedSpeed = formatBytesPerSecond(displayUploadSpeedBytesPerSecond.value);
     if (isAllActiveMerging.value) {
-      return defaultStatusText("merging");
+      return `총 진행률 ${totalProgressPercent.value}% (${completedCount.value}/${totalUploadCount.value}) · ${defaultStatusText("merging")}`;
     }
-    return `현재 총 전송 속도 ${formatBytesPerSecond(totalUploadSpeedBytesPerSecond.value)}`;
+    return `총 진행률 ${totalProgressPercent.value}% (${completedCount.value}/${totalUploadCount.value}) · 현재 총 전송 속도 ${formattedSpeed}`;
+  }
+  if (completedCount.value > 0 && failedCount.value === 0 && canceledCount.value === 0) {
+    return "모든 업로드가 완료되었습니다. (100%)";
   }
   return panelSubtitle.value;
 });
@@ -359,6 +538,7 @@ function updateItemProgress(itemId, uploadedBytes, statusText) {
   if (item.status !== "completed" && item.progress >= 100) {
     item.progress = 99;
   }
+  recordSessionThroughputSample();
 }
 
 async function uploadChunkToUrl(blob, uploadMeta, contentType, options = {}) {
@@ -366,15 +546,39 @@ async function uploadChunkToUrl(blob, uploadMeta, contentType, options = {}) {
     throw new Error("업로드 URL을 찾을 수 없습니다.");
   }
 
-  await axios.put(uploadMeta.presignedUploadUrl, blob, {
-    signal: options.signal,
-    headers: {
-      "Content-Type": contentType || "application/octet-stream",
-    },
-    onUploadProgress: (event) => {
-      options.onProgress?.(event?.loaded ?? 0);
-    },
-  });
+  const maxRetries = options.maxRetries ?? 3;
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    if (options.signal?.aborted || isCancelRequested.value) {
+      throw new DOMException("Upload canceled", "AbortError");
+    }
+
+    try {
+      await axios.put(uploadMeta.presignedUploadUrl, blob, {
+        signal: options.signal,
+        headers: {
+          "Content-Type": contentType || "application/octet-stream",
+        },
+        onUploadProgress: (event) => {
+          options.onProgress?.(event?.loaded ?? 0);
+        },
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (isAbortError(error) || options.signal?.aborted || isCancelRequested.value) {
+        throw error;
+      }
+
+      if (attempt < maxRetries) {
+        const delayMs = Math.min(3000, 1000 * Math.pow(2, attempt));
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+
+  throw lastError;
 }
 
 async function abortUploadedFile(uploadMetas) {
@@ -389,7 +593,7 @@ async function abortUploadedFile(uploadMetas) {
   }
 }
 
-async function uploadFileByChunks(file, uploadMetas, itemId) {
+async function uploadFileByChunks(file, uploadMetas, itemId, chunkConcurrency = 1) {
   const chunkCount = Array.isArray(uploadMetas) ? uploadMetas.length : 0;
   if (chunkCount === 0) {
     throw new Error(`"${file?.name || "파일"}" 업로드 정보를 찾을 수 없습니다.`);
@@ -401,52 +605,75 @@ async function uploadFileByChunks(file, uploadMetas, itemId) {
   });
 
   const totalFileSize = Number(file.size || 0);
-  let completedBytes = 0;
-  for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
-    if (isCancelRequested.value) {
-      throw new DOMException("Upload canceled", "AbortError");
-    }
+  const chunkLoadedBytes = new Array(chunkCount).fill(0);
 
-    const start = chunkIndex * CHUNK_SIZE_BYTES;
-    const end =
-      chunkIndex === chunkCount - 1
-        ? totalFileSize
-        : Math.min(start + CHUNK_SIZE_BYTES, totalFileSize);
-    const chunkBlob = file.slice(start, end, file.type || "application/octet-stream");
-    const chunkSize = Number(chunkBlob.size || 0);
-    const controller = new AbortController();
-
-    activeUploadControllers.set(itemId, controller);
-
-    try {
-      await uploadChunkToUrl(chunkBlob, uploadMetas[chunkIndex], file.type, {
-        signal: controller.signal,
-        onProgress: (loadedBytes) => {
-          const nextBytes = completedBytes + Math.min(chunkSize, Number(loadedBytes || 0));
-          const progress = totalFileSize > 0
-            ? Math.min(99, Math.round((nextBytes / totalFileSize) * 100))
-            : 0;
-          updateItemProgress(itemId, nextBytes, `업로드 중 (${progress}%)`);
-        },
-      });
-    } finally {
-      activeUploadControllers.delete(itemId);
-    }
-
-    completedBytes += chunkSize;
-    const isFinalChunk = chunkIndex === chunkCount - 1;
-    const nextProgress = totalFileSize > 0
-      ? Math.min(99, Math.round((completedBytes / totalFileSize) * 100))
+  const notifyProgress = (isMerging = false) => {
+    const currentLoaded = chunkLoadedBytes.reduce((sum, b) => sum + b, 0);
+    const progress = totalFileSize > 0
+      ? Math.min(99, Math.round((currentLoaded / totalFileSize) * 100))
       : 0;
     updateItemProgress(
       itemId,
-      completedBytes,
-      isFinalChunk ? defaultStatusText("merging") : `업로드 중 (${nextProgress}%)`,
+      currentLoaded,
+      isMerging ? defaultStatusText("merging") : `업로드 중 (${progress}%)`,
     );
+  };
+
+  const parallelWorkers = Math.max(1, Math.min(Number(chunkConcurrency) || 1, chunkCount));
+  let nextChunkIndex = 0;
+  let firstError = null;
+
+  const chunkWorker = async () => {
+    while (nextChunkIndex < chunkCount) {
+      if (firstError || isCancelRequested.value) {
+        return;
+      }
+
+      const chunkIndex = nextChunkIndex;
+      nextChunkIndex += 1;
+
+      const start = chunkIndex * CHUNK_SIZE_BYTES;
+      const end =
+        chunkIndex === chunkCount - 1
+          ? totalFileSize
+          : Math.min(start + CHUNK_SIZE_BYTES, totalFileSize);
+      const chunkBlob = file.slice(start, end, file.type || "application/octet-stream");
+      const chunkSize = Number(chunkBlob.size || 0);
+      const controller = new AbortController();
+
+      registerController(itemId, controller);
+
+      try {
+        await uploadChunkToUrl(chunkBlob, uploadMetas[chunkIndex], file.type, {
+          signal: controller.signal,
+          onProgress: (loadedBytes) => {
+            chunkLoadedBytes[chunkIndex] = Math.min(chunkSize, Number(loadedBytes || 0));
+            notifyProgress(false);
+          },
+        });
+        chunkLoadedBytes[chunkIndex] = chunkSize;
+        notifyProgress(false);
+      } catch (error) {
+        if (!firstError) {
+          firstError = error;
+        }
+        return;
+      } finally {
+        unregisterController(itemId, controller);
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: parallelWorkers }, chunkWorker));
+
+  if (firstError) {
+    throw firstError;
   }
+
+  notifyProgress(true);
 }
 
-async function completeUploadedFile(file, uploadMetas, partitioned, itemId, parentId) {
+async function completeUploadedFile(file, uploadMetas, partitioned, itemId, parentId, vaultMode = false) {
   const firstMeta = uploadMetas?.[0];
   const finalObjectKey = firstMeta?.finalObjectKey || firstMeta?.objectKey;
   const chunkObjectKeys = partitioned ? uploadMetas.map((meta) => meta?.objectKey).filter(Boolean) : [];
@@ -471,6 +698,7 @@ async function completeUploadedFile(file, uploadMetas, partitioned, itemId, pare
     parentId,
     relativePath: file?.webkitRelativePath || file?.name || "unnamed-file",
     lastModified: Number(file?.lastModified || 0) || 0,
+    ...(vaultMode ? { vaultMode: true, spaceType: "VAULT" } : {}),
   });
 
   setItemState(itemId, {
@@ -479,17 +707,22 @@ async function completeUploadedFile(file, uploadMetas, partitioned, itemId, pare
     progress: 100,
     uploadedBytes: Number(file?.size || 0),
   });
+  recordSessionThroughputSample();
 }
 
 function isAbortError(error) {
   return error?.name === "AbortError" || error?.code === "ERR_CANCELED";
 }
 
-async function runJobs(jobs, parentId) {
+async function runJobs(jobs, parentId, vaultMode = false) {
   const successList = [];
   const failureList = [];
   let nextJobIndex = 0;
-  const workerCount = Math.min(normalizeUploadConcurrency(uploadConcurrency.value), jobs.length);
+  const configuredConcurrency = normalizeUploadConcurrency(uploadConcurrency.value);
+  const workerCount = Math.min(configuredConcurrency, jobs.length);
+  const chunkConcurrency = jobs.length === 1
+    ? configuredConcurrency
+    : Math.max(1, Math.floor(configuredConcurrency / workerCount));
 
   const worker = async () => {
     while (!isCancelRequested.value) {
@@ -503,8 +736,8 @@ async function runJobs(jobs, parentId) {
       const job = jobs[currentIndex];
 
       try {
-        await uploadFileByChunks(job.file, job.metas, job.itemId);
-        await completeUploadedFile(job.file, job.metas, job.partitioned, job.itemId, parentId);
+        await uploadFileByChunks(job.file, job.metas, job.itemId, chunkConcurrency);
+        await completeUploadedFile(job.file, job.metas, job.partitioned, job.itemId, parentId, vaultMode);
         successList.push(job.file.name);
       } catch (error) {
         await abortUploadedFile(job.metas);
@@ -544,8 +777,7 @@ async function terminateUploadsForExit() {
     item.statusText = defaultStatusText("canceling");
   });
 
-  activeUploadControllers.forEach((controller) => controller.abort());
-  activeUploadControllers.clear();
+  abortAllActiveControllers();
 
   try {
     await Promise.all(abortableItems.map((item) => abortUploadedFile(item.uploadMetas)));
@@ -591,8 +823,8 @@ function abortUploadsKeepalive() {
   });
 }
 
-async function handleUpload(event, uploadTypeLabel) {
-  const selectedFiles = Array.from(event?.target?.files || []);
+async function startUploadFiles(files, targetFolderId = fileStore.currentFolderId, uploadTypeLabel = "파일") {
+  const selectedFiles = Array.from(files || []);
   if (selectedFiles.length === 0) {
     return;
   }
@@ -626,25 +858,30 @@ async function handleUpload(event, uploadTypeLabel) {
     openPanel();
     uploadItems.value = selectedFiles.map((file) => createUploadItem(file));
 
-    const response = await initUploadFiles(selectedFiles, fileStore.currentFolderId);
+    const uploadVaultMode = Boolean(secretFolderStore.vaultMode);
+    const response = await initUploadFiles(selectedFiles, targetFolderId, {
+      vaultMode: uploadVaultMode,
+    });
     const uploadMetas = parseUploadResponse(response?.data);
     if (!Array.isArray(uploadMetas) || uploadMetas.length === 0) {
       throw new Error("업로드 준비 응답이 비어 있습니다.");
     }
 
     const jobs = buildUploadJobs(selectedFiles, uploadMetas, uploadItems.value);
-    const { successList, failureList } = await runJobs(jobs, fileStore.currentFolderId);
+    const { successList, failureList } = await runJobs(jobs, targetFolderId, uploadVaultMode);
 
     if (isCancelRequested.value) {
       return;
     }
 
     if (successList.length > 0) {
-      if (fileStore.driveHasLoaded && !fileStore.hasLoaded) {
+      if (fileStore.driveHasLoaded) {
         await fileStore.refreshDrivePage().catch(() => {});
-      } else {
-        await fileStore.fetchFiles().catch(() => {});
       }
+      if (uploadVaultMode && secretFolderStore.vaultUnlocked) {
+        await fileStore.fetchVaultFiles({ background: true }).catch(() => {});
+      }
+      await fileStore.fetchFiles({ background: fileStore.driveHasLoaded }).catch(() => {});
       emit("upload-complete", successList);
     }
 
@@ -660,6 +897,92 @@ async function handleUpload(event, uploadTypeLabel) {
   } finally {
     isUploading.value = false;
     closeDropdown();
+  }
+}
+
+function resolveTargetLocationName(targetParentId) {
+  if (!targetParentId) {
+    return "홈 (최상위)";
+  }
+  const pathList = typeof fileStore.getFolderPath === "function" ? fileStore.getFolderPath(targetParentId) : [];
+  if (Array.isArray(pathList) && pathList.length > 0) {
+    return "홈 / " + pathList.map((item) => item.name).join(" / ");
+  }
+  const folder = fileStore.fileById?.get?.(String(targetParentId));
+  if (folder?.name) {
+    return folder.name;
+  }
+  return `폴더 #${targetParentId}`;
+}
+
+function showFolderUploadStructureModal(files, parentId, emptyDirectories = [], uploadTypeLabel = "폴더") {
+  const tree = buildFolderUploadTree(files, emptyDirectories);
+  folderUploadTreeData.value = tree;
+  folderUploadTargetLocation.value = resolveTargetLocationName(parentId);
+  pendingFolderUpload.value = {
+    files,
+    parentId,
+    emptyDirectories,
+    uploadTypeLabel,
+  };
+  isFolderUploadModalOpen.value = true;
+  closeDropdown();
+}
+
+async function handleFolderUploadConfirm() {
+  if (!pendingFolderUpload.value) {
+    isFolderUploadModalOpen.value = false;
+    return;
+  }
+
+  const { files, parentId, emptyDirectories, uploadTypeLabel } = pendingFolderUpload.value;
+  pendingFolderUpload.value = null;
+  isFolderUploadModalOpen.value = false;
+
+  if (Array.isArray(files) && files.length > 0) {
+    await startUploadFiles(files, parentId, uploadTypeLabel);
+  }
+
+  if (Array.isArray(emptyDirectories) && emptyDirectories.length > 0) {
+    for (const emptyDir of emptyDirectories) {
+      const topSegment = emptyDir.split("/")[0]?.trim();
+      if (topSegment) {
+        await fileStore.createFolder(topSegment, parentId).catch(() => {});
+      }
+    }
+  }
+}
+
+function handleFolderUploadCancel() {
+  pendingFolderUpload.value = null;
+  isFolderUploadModalOpen.value = false;
+}
+
+async function handleDesktopUploadEvent(event) {
+  const { files, parentId, emptyDirectories } = event?.detail || {};
+  const targetParentId = parentId !== undefined ? parentId : fileStore.currentFolderId;
+  const fileList = Array.isArray(files) ? files : [];
+  const emptyDirs = Array.isArray(emptyDirectories) ? emptyDirectories : [];
+
+  if (fileList.length === 0 && emptyDirs.length === 0) {
+    return;
+  }
+
+  if (hasFolderHierarchy(fileList, emptyDirs)) {
+    showFolderUploadStructureModal(fileList, targetParentId, emptyDirs, "드롭 폴더");
+    return;
+  }
+
+  if (fileList.length > 0) {
+    await startUploadFiles(fileList, targetParentId, "드롭 파일");
+  }
+}
+
+async function handleUpload(event, uploadTypeLabel) {
+  const selectedFiles = Array.from(event?.target?.files || []);
+  try {
+    await startUploadFiles(selectedFiles, fileStore.currentFolderId, uploadTypeLabel);
+  } finally {
     if (event?.target) {
       event.target.value = "";
     }
@@ -698,12 +1021,66 @@ function createNewFolder() {
   closeDropdown();
 }
 
+async function createHiddenFolder() {
+  closeDropdown();
+  const created = await secretFolderStore.openCreateHiddenFolderDialog(fileStore.currentFolderId ?? null);
+  if (created) {
+    fileStore.invalidateFolderSnapshots?.();
+    await Promise.all([
+      fileStore.refreshDrivePage?.().catch(() => {}),
+      fileStore.fetchFiles({ background: true }).catch(() => {}),
+    ]);
+  }
+}
+
+function openCreateSharedFolderModal() {
+  closeDropdown();
+  window.dispatchEvent(
+    new CustomEvent("open-storage-share-modal", {
+      detail: {
+        page: "create-space",
+        targetParentId: fileStore.currentFolderId ?? null,
+      },
+    }),
+  );
+}
+
 async function handleFileChange(event) {
-  await handleUpload(event, "파일");
+  const selectedFiles = Array.from(event?.target?.files || []);
+  const inputEl = event?.target;
+  try {
+    if (selectedFiles.length === 0) {
+      return;
+    }
+    if (hasFolderHierarchy(selectedFiles, [])) {
+      showFolderUploadStructureModal(selectedFiles, fileStore.currentFolderId, [], "파일");
+      return;
+    }
+    await startUploadFiles(selectedFiles, fileStore.currentFolderId, "파일");
+  } finally {
+    if (inputEl) {
+      inputEl.value = "";
+    }
+  }
 }
 
 async function handleFolderChange(event) {
-  await handleUpload(event, "폴더");
+  const selectedFiles = Array.from(event?.target?.files || []);
+  const inputEl = event?.target;
+  try {
+    if (selectedFiles.length === 0) {
+      return;
+    }
+    if (hasFolderHierarchy(selectedFiles, [])) {
+      showFolderUploadStructureModal(selectedFiles, fileStore.currentFolderId, [], "폴더");
+      return;
+    }
+    await startUploadFiles(selectedFiles, fileStore.currentFolderId, "폴더");
+  } finally {
+    if (inputEl) {
+      inputEl.value = "";
+    }
+  }
 }
 
 function handleKeydown(event) {
@@ -753,10 +1130,25 @@ onBeforeRouteLeave(async () => {
   return true;
 });
 
+function handleQuickUploadEvent(event) {
+  const mode = event?.detail?.mode || "file";
+  if (mode === "new-folder") {
+    createNewFolder();
+    return;
+  }
+  if (mode === "folder") {
+    quickFolderInputRef.value?.click();
+    return;
+  }
+  quickFileInputRef.value?.click();
+}
+
 onMounted(() => {
   document.addEventListener("keydown", handleKeydown);
   window.addEventListener("beforeunload", handleBeforeUnload);
   window.addEventListener("pagehide", handlePageHide);
+  window.addEventListener("start-desktop-upload", handleDesktopUploadEvent);
+  window.addEventListener("trigger-quick-upload", handleQuickUploadEvent);
   fileStore.fetchStorageSummary().catch(() => {});
 });
 
@@ -764,6 +1156,12 @@ onBeforeUnmount(() => {
   document.removeEventListener("keydown", handleKeydown);
   window.removeEventListener("beforeunload", handleBeforeUnload);
   window.removeEventListener("pagehide", handlePageHide);
+  window.removeEventListener("start-desktop-upload", handleDesktopUploadEvent);
+  window.removeEventListener("trigger-quick-upload", handleQuickUploadEvent);
+  if (speedIntervalId) {
+    clearInterval(speedIntervalId);
+    speedIntervalId = null;
+  }
   activeUploadControllers.forEach((controller) => controller.abort());
   activeUploadControllers.clear();
   if (exitDialogResolver) {

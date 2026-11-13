@@ -26,6 +26,9 @@ describe("uploadState", () => {
     expect(formatBytesPerSecond(0)).toBe("0.00 MB/s");
     expect(formatBytesPerSecond(12 * 1024 * 1024)).toBe("12.0 MB/s");
     expect(formatBytesPerSecond(120 * 1024 * 1024)).toBe("120 MB/s");
+    expect(formatBytesPerSecond(250 * 1024)).toBe("250 KB/s");
+    expect(formatBytesPerSecond(25.6 * 1024)).toBe("25.6 KB/s");
+    expect(formatBytesPerSecond(500)).toBe("500 B/s");
 
     expect(getFileFormat({ name: "Report.PDF" })).toBe("pdf");
     expect(getFileFormat({ name: ".env" })).toBe("");

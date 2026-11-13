@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, shallowRef } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 import { logoutSession, refreshAccessToken } from '@/api/authSession.js'
 import postApi from '@/api/postApi.js'
 import sseApi from '@/api/sseApi.js'
@@ -8,12 +8,26 @@ import { apiPath } from '@/utils/backendUrl.js'
 const TOKEN_REFRESH_SKEW_MS = 30 * 1000
 const SSE_RECONNECT_DELAY_MS = 5 * 1000
 const LEGACY_SESSION_KEYS = ['USERINFO', 'ACCESS_TOKEN']
+const GUEST_REFRESH_FAILED_KEY = 'FILEINNOUT_GUEST_REFRESH_FAILED'
 const DEMO_ACCOUNT_EMAIL = 'demo@fileinnout.local'
+
+const setGuestRefreshFailedHint = (failed) => {
+  try {
+    if (failed) {
+      globalThis.sessionStorage?.setItem?.(GUEST_REFRESH_FAILED_KEY, '1')
+    } else {
+      globalThis.sessionStorage?.removeItem?.(GUEST_REFRESH_FAILED_KEY)
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
 
 export const useAuthStore = defineStore('auth', () => {
   const isLogin = ref(false)
   const user = ref(null)
   const token = ref(null)
+  const isAuthenticated = computed(() => Boolean(isLogin.value))
   const sseInstance = shallowRef(null)
   let sseReconnectTimer = null
   let sseConnectionVersion = 0
@@ -79,12 +93,24 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  const scheduleSseReconnect = (userId, accessToken, connectionVersion) => {
+  const scheduleSseReconnect = (userId, accessToken, connectionVersion, error) => {
     clearSseReconnectTimer()
+    const errorStatus = Number(error?.status || error?.statusCode || 0)
+    if (errorStatus === 403) {
+      return
+    }
     sseReconnectTimer = globalThis.setTimeout(() => {
       sseReconnectTimer = null
       if (connectionVersion !== sseConnectionVersion) return
       if (user.value?.idx !== userId || token.value !== accessToken) return
+      if (errorStatus === 401 || isAccessTokenExpired(token.value)) {
+        void refreshSession().then((refreshed) => {
+          if (!refreshed) {
+            clearLocalSession()
+          }
+        })
+        return
+      }
       startSseConnection(userId)
     }, SSE_RECONNECT_DELAY_MS)
   }
@@ -119,12 +145,12 @@ export const useAuthStore = defineStore('auth', () => {
       onTitleUpdated: (payload) => dispatchSseEvent('sse-title-updated', payload),
       onRoleChanged: (payload) => dispatchSseEvent('sse-role-changed', payload),
       onChatPreviewUpdated: (payload) => dispatchSseEvent('sse-chat-preview-update', payload),
-      onError: () => {
+      onError: (error) => {
         if (connectionVersion !== sseConnectionVersion) return
         sseInstance.value = null
         activeSseUserId = null
         activeSseAccessToken = null
-        scheduleSseReconnect(userId, accessToken, connectionVersion)
+        scheduleSseReconnect(userId, accessToken, connectionVersion, error)
       },
     })
   }
@@ -174,6 +200,7 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = accessToken
     user.value = userInfo
     isLogin.value = true
+    setGuestRefreshFailedHint(false)
     clearLegacyLocalSession()
 
     if (userInfo.idx) {
@@ -220,6 +247,7 @@ export const useAuthStore = defineStore('auth', () => {
       const { accessToken } = await refreshAccessToken()
       return applyAccessToken(accessToken)
     } catch (error) {
+      setGuestRefreshFailedHint(true)
       console.error('Session refresh failed:', error)
       return false
     }
@@ -264,6 +292,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   return {
     isLogin,
+    isAuthenticated,
     user,
     token,
     login,

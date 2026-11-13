@@ -1,8 +1,7 @@
 package com.example.WaffleBear.config.interceptor;
 
-
 import com.example.WaffleBear.user.model.AuthUserDetails;
-import com.example.WaffleBear.utils.JwtUtil;
+import com.example.WaffleBear.user.service.AuthService;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -23,43 +22,53 @@ import java.util.Map;
 @Component
 @RequiredArgsConstructor
 public class JwtHandshakeInterceptor implements HandshakeInterceptor {
-    private final JwtUtil jwtUtil;
+
+    private final AuthService authService;
+
     @Override
-    public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response, WebSocketHandler wsHandler, Map<String, Object> attributes) throws Exception {
-        if(request instanceof ServletServerHttpRequest serverHttpRequest) {
-            HttpServletRequest httpReq = serverHttpRequest.getServletRequest();
-            if (httpReq.getCookies() != null) {
-                for (Cookie cookie : httpReq.getCookies()) {
-                    if (cookie.getName().equals("refresh")) {
-                        // JwtUtil에서 토큰 생성 및 확인하도록 리팩토링
-                        Long idx = jwtUtil.getUserIdx(cookie.getValue());
-                        String email = jwtUtil.getEmail(cookie.getValue());
-                        String role = jwtUtil.getRole(cookie.getValue());
+    public boolean beforeHandshake(
+            ServerHttpRequest request,
+            ServerHttpResponse response,
+            WebSocketHandler wsHandler,
+            Map<String, Object> attributes
+    ) {
+        if (!(request instanceof ServletServerHttpRequest serverHttpRequest)) {
+            return false;
+        }
 
-                        AuthUserDetails user = AuthUserDetails.builder()
-                                .idx(idx)
-                                .email(email)
-                                .role(role)
-                                .build();
+        HttpServletRequest httpReq = serverHttpRequest.getServletRequest();
+        Cookie[] cookies = httpReq.getCookies();
+        if (cookies == null) {
+            return false;
+        }
 
-                        Authentication authentication = new UsernamePasswordAuthenticationToken(
-                                user,
-                                null,
-                                List.of(new SimpleGrantedAuthority(role))
-                        );
-                        attributes.put("user", authentication);
-
-                        return true;
-                    }
-                }
+        for (Cookie cookie : cookies) {
+            if (!"refresh".equals(cookie.getName())) {
+                continue;
+            }
+            AuthUserDetails user = authService.resolveUserByRefreshToken(cookie.getValue());
+            if (user == null || !user.isEnabled() || !user.isAccountNonLocked()) {
+                return false;
             }
 
+            String role = (user.getRole() == null || user.getRole().isBlank()) ? "ROLE_USER" : user.getRole();
+            Authentication authentication = new UsernamePasswordAuthenticationToken(
+                    user,
+                    null,
+                    List.of(new SimpleGrantedAuthority(role))
+            );
+            attributes.put("user", authentication);
+            return true;
         }
         return false;
     }
 
     @Override
-    public void afterHandshake(ServerHttpRequest request, ServerHttpResponse response, WebSocketHandler wsHandler, @Nullable Exception exception) {
-
+    public void afterHandshake(
+            ServerHttpRequest request,
+            ServerHttpResponse response,
+            WebSocketHandler wsHandler,
+            @Nullable Exception exception
+    ) {
     }
 }

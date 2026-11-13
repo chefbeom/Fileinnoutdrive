@@ -88,12 +88,24 @@ const applyDeletedMessage = (messageId, deletedText = DELETED_MESSAGE_TEXT) => {
   emitRoomPreviewUpdate(target)
 }
 
+const clampMessageMenuPos = (x, y, menuWidth = 140, menuHeight = 56) => {
+  if (typeof window === 'undefined') return { x, y }
+  const margin = 12
+  return {
+    x: Math.max(margin, Math.min(x, window.innerWidth - menuWidth - margin)),
+    y: Math.max(margin, Math.min(y, window.innerHeight - menuHeight - margin)),
+  }
+}
+
 const openMessageMenu = (event, msg) => {
   if (!msg?.isMe || msg?.isSystem || msg?.isPending || msg?.deleted) return
 
   event.preventDefault()
   selectedMessage.value = msg
-  messageMenuPos.value = { x: event.clientX, y: event.clientY }
+  const rect = event.currentTarget?.getBoundingClientRect?.()
+  const rawX = event.clientX || (rect ? rect.left : 16)
+  const rawY = event.clientY || (rect ? rect.bottom : 120)
+  messageMenuPos.value = clampMessageMenuPos(rawX, rawY)
   messageMenuVisible.value = true
 }
 
@@ -639,9 +651,20 @@ watch(() => props.participantsRefreshKey, () => {
                 >
                   {{ getMessageUnreadCount(msg) }}
                 </span>
-                <span class="text-[9px] text-gray-400 whitespace-nowrap">
-                  {{ formatTime(msg.time) }}
-                </span>
+                <div class="flex items-center gap-1">
+                  <button
+                    v-if="msg.isMe && !msg.isSystem && !msg.isPending && !msg.deleted"
+                    type="button"
+                    aria-label="메시지 옵션"
+                    class="md:hidden inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-input)]"
+                    @click.stop="openMessageMenu($event, msg)"
+                  >
+                    <i class="fa-solid fa-ellipsis"></i>
+                  </button>
+                  <span class="text-[9px] text-gray-400 whitespace-nowrap">
+                    {{ formatTime(msg.time) }}
+                  </span>
+                </div>
                 <span
                   v-if="formatReadPeople(msg)"
                   class="max-w-[120px] truncate text-[9px] text-gray-400"

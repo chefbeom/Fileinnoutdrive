@@ -25,6 +25,8 @@ public class UploadDto {
         private String relativePath;
         private Long lastModified;
         private Long replaceFileId;
+        private String spaceType;
+        private Boolean vaultMode;
     }
 
     // 파일을 업로드할 때 사용할 파일 정보들 클라이언트 응답용
@@ -67,6 +69,8 @@ public class UploadDto {
         private String relativePath;
         private Long lastModified;
         private Long replaceFileId;
+        private String spaceType;
+        private Boolean vaultMode;
     }
 
     @Getter

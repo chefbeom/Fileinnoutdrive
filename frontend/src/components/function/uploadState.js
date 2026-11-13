@@ -15,6 +15,16 @@ export function formatBytesPerSecond(bytesPerSecond) {
     return "0.00 MB/s";
   }
 
+  if (normalizedBytesPerSecond < 1024) {
+    return `${Math.round(normalizedBytesPerSecond)} B/s`;
+  }
+
+  if (normalizedBytesPerSecond < 1024 * 1024) {
+    const kilobytesPerSecond = normalizedBytesPerSecond / 1024;
+    const fractionDigits = kilobytesPerSecond >= 100 ? 0 : kilobytesPerSecond >= 10 ? 1 : 2;
+    return `${kilobytesPerSecond.toFixed(fractionDigits)} KB/s`;
+  }
+
   const megabytesPerSecond = normalizedBytesPerSecond / (1024 * 1024);
   const fractionDigits = megabytesPerSecond >= 100 ? 0 : megabytesPerSecond >= 10 ? 1 : 2;
   return `${megabytesPerSecond.toFixed(fractionDigits)} MB/s`;

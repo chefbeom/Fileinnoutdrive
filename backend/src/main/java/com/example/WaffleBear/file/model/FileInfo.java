@@ -10,6 +10,10 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
+@Table(indexes = {
+        @Index(name = "idx_file_info_user_parent_trashed", columnList = "user_idx, parent_idx, trashed"),
+        @Index(name = "idx_file_info_user_space_trashed", columnList = "user_idx, space_type, trashed")
+})
 @Getter
 @Builder
 @NoArgsConstructor
@@ -30,6 +34,13 @@ public class FileInfo {
 
     @Enumerated(EnumType.STRING)
     private FileNodeType nodeType;
+
+    @Enumerated(EnumType.STRING)
+    private FileSpaceType spaceType;
+
+    private Boolean hiddenFolder;
+    private Boolean folderPinEnabled;
+    private String folderPinHash;
 
     @Column(nullable = false)
     private String fileOriginName;
@@ -54,6 +65,17 @@ public class FileInfo {
     public void prePersist() {
         if (this.nodeType == null) {
             this.nodeType = FileNodeType.FILE;
+        }
+        if (this.spaceType == null) {
+            this.spaceType = (this.parent != null && this.parent.isVaultSpace())
+                    ? FileSpaceType.VAULT
+                    : FileSpaceType.DRIVE;
+        }
+        if (this.hiddenFolder == null) {
+            this.hiddenFolder = false;
+        }
+        if (this.folderPinEnabled == null) {
+            this.folderPinEnabled = false;
         }
         if (this.trashed == null) {
             this.trashed = false;
@@ -81,6 +103,45 @@ public class FileInfo {
         return Boolean.TRUE.equals(this.trashed);
     }
 
+    public FileSpaceType resolveSpaceType() {
+        return this.spaceType == null ? FileSpaceType.DRIVE : this.spaceType;
+    }
+
+    public boolean isVaultSpace() {
+        return resolveSpaceType() == FileSpaceType.VAULT;
+    }
+
+    public boolean isHiddenFolder() {
+        return Boolean.TRUE.equals(this.hiddenFolder);
+    }
+
+    public boolean isFolderPinEnabled() {
+        return Boolean.TRUE.equals(this.folderPinEnabled);
+    }
+
+    public boolean hasFolderPin() {
+        return this.folderPinHash != null && !this.folderPinHash.isBlank();
+    }
+
+    public void changeSpaceType(FileSpaceType spaceType) {
+        this.spaceType = spaceType == null ? FileSpaceType.DRIVE : spaceType;
+    }
+
+    public void updateHiddenSettings(Boolean hidden, Boolean pinEnabled, String pinHash) {
+        if (hidden != null) {
+            this.hiddenFolder = hidden;
+        }
+        if (pinEnabled != null) {
+            this.folderPinEnabled = pinEnabled;
+        }
+        if (Boolean.FALSE.equals(this.hiddenFolder) || Boolean.FALSE.equals(this.folderPinEnabled)) {
+            this.folderPinEnabled = false;
+            this.folderPinHash = null;
+        } else if (pinHash != null) {
+            this.folderPinHash = pinHash;
+        }
+    }
+
     public void changeParent(FileInfo parent) {
         this.parent = parent;
     }
@@ -104,6 +165,9 @@ public class FileInfo {
         this.fileSize = fileSize;
         this.parent = parent;
         this.nodeType = FileNodeType.FILE;
+        if (parent != null) {
+            this.spaceType = parent.resolveSpaceType();
+        }
         this.trashed = false;
         this.deletedAt = null;
     }

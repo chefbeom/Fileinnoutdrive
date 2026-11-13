@@ -18,6 +18,12 @@ public class FileManageDto {
     public static class FolderReq {
         private String folderName;
         private Long parentId;
+        private Boolean sharedFile;
+        private Boolean hidden;
+        private Boolean pinEnabled;
+        private String pin;
+        private String spaceType;
+        private Boolean vaultMode;
     }
 
     @Getter
@@ -36,6 +42,8 @@ public class FileManageDto {
     @Builder
     public static class MoveReq {
         private Long targetParentId;
+        private String targetSpaceType;
+        private Boolean vaultMode;
     }
 
     @Getter
@@ -46,6 +54,8 @@ public class FileManageDto {
     public static class MoveBatchReq {
         private List<Long> fileIdxList;
         private Long targetParentId;
+        private String targetSpaceType;
+        private Boolean vaultMode;
     }
 
     @Getter
@@ -73,5 +83,8 @@ public class FileManageDto {
         private String customMinSize;
         private String customMaxSize;
         private String statusFilter;
+        private Boolean vaultMode;
+        private Boolean includeHidden;
+        private Boolean trashedOnly;
     }
 }

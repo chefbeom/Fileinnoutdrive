@@ -4,9 +4,11 @@ import com.example.WaffleBear.common.exception.BaseException;
 import com.example.WaffleBear.common.model.BaseResponseStatus;
 import com.example.WaffleBear.file.FileUpDownloadRepository;
 import com.example.WaffleBear.file.model.FileInfo;
+import com.example.WaffleBear.file.secret.SecretAccessGuard;
 import com.example.WaffleBear.file.share.ShareRepository;
 import com.example.WaffleBear.file.share.model.FileShare;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -17,6 +19,9 @@ public class FileThumbnailQueryService {
     private final ShareRepository shareRepository;
     private final FileThumbnailService fileThumbnailService;
 
+    @Autowired(required = false)
+    private SecretAccessGuard secretAccessGuard;
+
     public FileThumbnailService.ThumbnailPayload loadOwnedThumbnail(Long userIdx, Long fileIdx) {
         requireAuthenticated(userIdx);
         if (fileIdx == null) {
@@ -25,6 +30,9 @@ public class FileThumbnailQueryService {
 
         FileInfo file = fileUpDownloadRepository.findByIdxAndUser_Idx(fileIdx, userIdx)
                 .orElseThrow(() -> BaseException.from(BaseResponseStatus.REQUEST_ERROR));
+        if (secretAccessGuard != null) {
+            secretAccessGuard.assertNodeAccess(userIdx, file, true);
+        }
         return fileThumbnailService.loadThumbnail(file);
     }
 

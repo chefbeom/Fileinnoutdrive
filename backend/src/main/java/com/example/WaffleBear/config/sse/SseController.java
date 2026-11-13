@@ -37,14 +37,21 @@ public class SseController {
 
         // 연결 종료나 타임아웃 발생 시 해당 emitter 인스턴스만 제거 (멀티 탭 연결 유지 및 메모리 누수 방지)
         emitter.onCompletion(() -> emitterStore.remove(userIdx, emitter));
-        emitter.onTimeout(() -> emitterStore.remove(userIdx, emitter));
-        emitter.onError((e) -> emitterStore.remove(userIdx, emitter));
+        emitter.onTimeout(() -> {
+            emitterStore.remove(userIdx, emitter);
+            emitter.complete();
+        });
+        emitter.onError((e) -> {
+            emitterStore.remove(userIdx, emitter);
+            emitter.complete();
+        });
 
         try {
             emitter.send(SseEmitter.event().name(
                     user.getName() + " => SSE").data("연결 성공"));
         } catch (IOException e) {
             emitterStore.remove(userIdx, emitter);
+            emitter.complete();
         }
         return emitter;
     }

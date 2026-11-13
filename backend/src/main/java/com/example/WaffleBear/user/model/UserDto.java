@@ -4,6 +4,7 @@ import lombok.Builder;
 
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 
 public class UserDto {
     public record SignupReq(String email, String name, String password) {
@@ -112,11 +113,27 @@ public class UserDto {
             return provider + "-" + normalizedId + "@" + provider + ".social";
         }
 
+        public boolean isEmailVerified(Map<String, Object> attributes) {
+            if (attributes == null || attributes.isEmpty()) {
+                return true;
+            }
+            if ("google".equals(provider)) {
+                Object verified = attributes.get("email_verified");
+                return verified == null || Boolean.parseBoolean(String.valueOf(verified));
+            }
+            if ("kakao".equals(provider)) {
+                Map<String, Object> account = asMap(attributes.get("kakao_account"));
+                Object verified = account.get("is_email_verified");
+                return verified == null || Boolean.parseBoolean(String.valueOf(verified));
+            }
+            return true;
+        }
+
         public User toEntity() {
             return User.builder()
                     .email(email)
                     .name(name)
-                    .password(provider)
+                    .password(UUID.randomUUID().toString())
                     .enable(enable)
                     .role(role)
                     .accountStatus(UserAccountStatus.ACTIVE)
@@ -125,5 +142,12 @@ public class UserDto {
     }
 
     public record LoginReq(String email, String name, String password) {
+    }
+
+    public record WithdrawReq(String password, String confirmationText) {
+    }
+
+    @Builder
+    public record WithdrawRes(Long userIdx, String email, boolean withdrawn) {
     }
 }

@@ -9,12 +9,17 @@ import com.example.WaffleBear.feater.model.FeaterDto;
 import com.example.WaffleBear.file.service.StoragePlanService;
 import com.example.WaffleBear.user.model.User;
 import com.example.WaffleBear.user.repository.UserRepository;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.RemoveObjectArgs;
 import io.minio.http.Method;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.imageio.ImageIO;
@@ -24,11 +29,15 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 @Service
@@ -39,8 +48,12 @@ public class FeaterService {
     private static final int PROFILE_IMAGE_MAX_DIMENSION = 4096;
     private static final long PROFILE_IMAGE_MAX_SOURCE_BYTES = 50L * 1024 * 1024;
     private static final Set<String> SUPPORTED_IMAGE_TYPES = Set.of("image/png", "image/jpeg", "image/jpg");
+    private static final Set<String> SOCIAL_PROVIDERS = Set.of("google", "kakao", "naver");
     private static final String PROFILE_IMAGE_DIRECTORY = "userProfileImage";
     private static final String PROFILE_IMAGE_FILE_NAME = "profile.png";
+    private static final int MAX_UI_LAYOUT_JSON_BYTES = 262_144;
+    private static final TypeReference<Map<String, Object>> UI_LAYOUT_MAP_TYPE = new TypeReference<>() {
+    };
 
     private final FeaterRepository featerRepository;
     private final UserRepository userRepository;
@@ -48,6 +61,10 @@ public class FeaterService {
     private final MinioPresignedUrlService minioPresignedUrlService;
     private final MinioProperties minioProperties;
     private final StoragePlanService storagePlanService;
+    private final ObjectMapper objectMapper;
+
+    @Value("${app.demo.email:demo@fileinnout.local}")
+    private String demoEmail;
 
     public FeaterDto.SettingsRes getSettings(Long userIdx) {
         User user = getUser(userIdx);
@@ -101,6 +118,34 @@ public class FeaterService {
         return toResponse(user, saved);
     }
 
+    @Transactional
+    public void deleteAccountSettings(Long userIdx) {
+        if (userIdx == null) {
+            return;
+        }
+
+        featerRepository.findByUser_Idx(userIdx).ifPresent(settings -> {
+            String storedImage = settings.getProfileImageUrl();
+            featerRepository.delete(settings);
+            featerRepository.flush();
+            if (storedImage != null && storedImage.startsWith(PROFILE_IMAGE_DIRECTORY + "/")) {
+                removeProfileImageQuietly(storedImage);
+            }
+        });
+    }
+
+    private void removeProfileImageQuietly(String objectKey) {
+        try {
+            minioClient.removeObject(
+                    RemoveObjectArgs.builder()
+                            .bucket(minioProperties.getBucket_cloud())
+                            .object(objectKey)
+                            .build()
+            );
+        } catch (Exception ignored) {
+        }
+    }
+
     private User getUser(Long userIdx) {
         if (userIdx == null) {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
@@ -129,6 +174,10 @@ public class FeaterService {
 
     private FeaterDto.SettingsRes toResponse(User user, Feater settings) {
         StoragePlanService.StorageQuota storageQuota = storagePlanService.resolveQuota(user);
+        String socialProvider = resolveSocialProvider(user);
+        boolean socialAccount = socialProvider != null;
+        String withdrawBlockedReason = resolveWithdrawBlockedReason(user);
+        boolean withdrawAllowed = withdrawBlockedReason == null;
 
         return FeaterDto.SettingsRes.builder()
                 .userIdx(user.getIdx())
@@ -151,7 +200,38 @@ public class FeaterService {
                 .storageAddonBytes(storageQuota.addonQuotaBytes())
                 .joinedAt(settings.getCreatedAt())
                 .updatedAt(settings.getUpdatedAt())
+                .socialAccount(socialAccount)
+                .socialProvider(socialProvider)
+                .withdrawAllowed(withdrawAllowed)
+                .withdrawBlockedReason(withdrawBlockedReason)
                 .build();
+    }
+
+    private String resolveSocialProvider(User user) {
+        if (user == null || user.getPassword() == null) {
+            return null;
+        }
+        String normalized = user.getPassword().trim().toLowerCase(Locale.ROOT);
+        if (SOCIAL_PROVIDERS.contains(normalized)) {
+            return normalized;
+        }
+        return null;
+    }
+
+    private String resolveWithdrawBlockedReason(User user) {
+        if (user == null) {
+            return "계정 정보를 확인할 수 없습니다.";
+        }
+        if (storagePlanService.isAdministrator(user)) {
+            return "관리자 계정은 회원 탈퇴할 수 없습니다.";
+        }
+        String normalizedDemo = (demoEmail == null || demoEmail.isBlank())
+                ? "demo@fileinnout.local"
+                : demoEmail.trim();
+        if (user.getEmail() != null && normalizedDemo.equalsIgnoreCase(user.getEmail().trim())) {
+            return "체험 계정은 회원 탈퇴할 수 없습니다.";
+        }
+        return null;
     }
 
     private String normalizeDisplayName(String value) {
@@ -365,5 +445,62 @@ public class FeaterService {
         return featerRepository.findByUser_Idx(userIdx)
                 .map(f -> resolveProfileImagePreview(f.getProfileImageUrl()))
                 .orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    public FeaterDto.UiLayoutRes getUiLayout(Long userIdx) {
+        if (userIdx == null) {
+            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
+        return featerRepository.findByUser_Idx(userIdx)
+                .map(settings -> new FeaterDto.UiLayoutRes(
+                        readUiLayoutMap(settings.getUiLayoutJson()),
+                        settings.getUpdatedAt()
+                ))
+                .orElseGet(FeaterDto.UiLayoutRes::empty);
+    }
+
+    @Transactional
+    public FeaterDto.UiLayoutRes updateUiLayout(Long userIdx, Map<String, Object> layoutPayload) {
+        User user = getUser(userIdx);
+        Feater settings = getOrCreateSettings(user);
+
+        Map<String, Object> safePayload = layoutPayload == null
+                ? Map.of()
+                : new LinkedHashMap<>(layoutPayload);
+        String serialized = writeUiLayoutJson(safePayload);
+        settings.updateUiLayoutJson(serialized);
+        Feater saved = featerRepository.saveAndFlush(settings);
+
+        return new FeaterDto.UiLayoutRes(
+                safePayload,
+                saved.getUpdatedAt() != null ? saved.getUpdatedAt() : LocalDateTime.now()
+        );
+    }
+
+    private Map<String, Object> readUiLayoutMap(String rawJson) {
+        if (rawJson == null || rawJson.isBlank()) {
+            return Map.of();
+        }
+        try {
+            Map<String, Object> parsed = objectMapper.readValue(rawJson, UI_LAYOUT_MAP_TYPE);
+            return parsed != null ? parsed : Map.of();
+        } catch (Exception ignored) {
+            return Map.of();
+        }
+    }
+
+    private String writeUiLayoutJson(Map<String, Object> map) {
+        try {
+            String serialized = objectMapper.writeValueAsString(map != null ? map : Map.of());
+            if (serialized.getBytes(StandardCharsets.UTF_8).length > MAX_UI_LAYOUT_JSON_BYTES) {
+                throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+            }
+            return serialized;
+        } catch (BaseException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
     }
 }

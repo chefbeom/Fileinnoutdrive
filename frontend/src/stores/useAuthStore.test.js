@@ -53,6 +53,7 @@ describe('useAuthStore', () => {
     store.login(accessToken)
 
     expect(store.isLogin).toBe(true)
+    expect(store.isAuthenticated).toBe(true)
     expect(store.token).toBe(accessToken)
     expect(store.user).toMatchObject({ idx: 7, email: 'user@example.com' })
     expect(localStorage.getItem('USERINFO')).toBeNull()
@@ -94,6 +95,7 @@ describe('useAuthStore', () => {
     expect(store.checkLogin()).toBe(false)
 
     expect(store.isLogin).toBe(false)
+    expect(store.isAuthenticated).toBe(false)
     expect(store.token).toBeNull()
     expect(store.user).toBeNull()
     expect(sseApi.closeSse).toHaveBeenCalledWith({ id: 'sse-connection' })
@@ -124,6 +126,7 @@ describe('useAuthStore', () => {
     expect(logoutSession).toHaveBeenCalledTimes(1)
     expect(sseApi.closeSse).toHaveBeenCalledWith({ id: 'sse-connection' })
     expect(store.isLogin).toBe(false)
+    expect(store.isAuthenticated).toBe(false)
     expect(store.token).toBeNull()
     expect(store.user).toBeNull()
   })
@@ -220,6 +223,36 @@ describe('useAuthStore', () => {
       vi.runAllTimers()
 
       expect(sseApi.connectWorkspaceSse).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('refreshes the session before reconnecting SSE when an auth error (401) occurs', async () => {
+    vi.useFakeTimers()
+
+    try {
+      const store = useAuthStore()
+      const initialToken = createToken({ idx: 27, email: 'sse401@example.com', exp: futureExp() })
+      const refreshedToken = createToken({ idx: 27, email: 'sse401@example.com', exp: futureExp(), refreshed: true })
+      refreshAccessToken.mockResolvedValueOnce({ accessToken: refreshedToken })
+
+      store.login(initialToken)
+      expect(sseApi.connectWorkspaceSse).toHaveBeenCalledTimes(1)
+
+      const firstOptions = sseApi.connectWorkspaceSse.mock.calls[0][0]
+      firstOptions.onError({ status: 401 })
+
+      await vi.advanceTimersByTimeAsync(5_000)
+
+      expect(refreshAccessToken).toHaveBeenCalledTimes(1)
+      expect(sseApi.connectWorkspaceSse).toHaveBeenCalledTimes(2)
+      expect(sseApi.connectWorkspaceSse).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          userId: 27,
+          accessToken: refreshedToken,
+        }),
+      )
     } finally {
       vi.useRealTimers()
     }

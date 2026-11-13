@@ -26,6 +26,10 @@ defineProps({
     type: String,
     default: "",
   },
+  overallProgress: {
+    type: Number,
+    default: 0,
+  },
   items: {
     type: Array,
     default: () => [],
@@ -89,6 +93,12 @@ function formatUploadSpeed(item) {
             >
               <i class="fa-solid fa-xmark"></i>
             </button>
+          </div>
+        </div>
+
+        <div v-if="!collapsed && overallProgress > 0 && overallProgress <= 100" class="upload-panel__overall-progress">
+          <div class="upload-panel__overall-bar">
+            <span class="upload-panel__overall-fill" :style="{ width: `${overallProgress}%` }"></span>
           </div>
         </div>
 

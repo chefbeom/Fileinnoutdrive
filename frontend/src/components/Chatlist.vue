@@ -20,10 +20,22 @@ const menuPos = ref({ x: 0, y: 0 })
 const selectedRoomForMenu = ref(null)
 
 // 우클릭 핸들러
+const clampContextPos = (x, y, menuWidth = 176, menuHeight = 104) => {
+  if (typeof window === 'undefined') return { x, y }
+  const margin = 12
+  return {
+    x: Math.max(margin, Math.min(x, window.innerWidth - menuWidth - margin)),
+    y: Math.max(margin, Math.min(y, window.innerHeight - menuHeight - margin)),
+  }
+}
+
 const handleContextMenu = (event, room) => {
   event.preventDefault() // 기본 메뉴 방지
   selectedRoomForMenu.value = room
-  menuPos.value = { x: event.clientX, y: event.clientY }
+  const rect = event.currentTarget?.getBoundingClientRect?.()
+  const rawX = event.clientX || (rect ? rect.right - 160 : 16)
+  const rawY = event.clientY || (rect ? rect.bottom : 120)
+  menuPos.value = clampContextPos(rawX, rawY)
   menuVisible.value = true
 }
 
@@ -54,21 +66,29 @@ onUnmounted(() => {
         <i :class="['fa-solid', room.icon]"></i>
       </div>
       <div class="flex-1 min-w-0">
-        <div class="flex justify-between items-center">
+        <div class="flex justify-between items-center gap-1">
           <p class="text-sm font-bold text-[var(--text-main)] truncate">{{ room.name }}</p>
           <!-- 안 읽은 메시지 뱃지 -->
-    <span
-      v-if="room.unreadCount > 0"
-      class="bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
-    >
-      {{ room.unreadCount > 99 ? '99+' : room.unreadCount }}
-    </span>
-          <span class="text-[10px] text-[var(--text-muted)] whitespace-nowrap ml-2">
-        {{ formatTime(room.time) }}
-      </span>
-          <span v-if="room.userCount > 0" class="participant-badge">
+          <span
+            v-if="room.unreadCount > 0"
+            class="bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center shrink-0"
+          >
+            {{ room.unreadCount > 99 ? '99+' : room.unreadCount }}
+          </span>
+          <span class="text-[10px] text-[var(--text-muted)] whitespace-nowrap ml-2 shrink-0">
+            {{ formatTime(room.time) }}
+          </span>
+          <span v-if="room.userCount > 0" class="participant-badge shrink-0">
             <i class="fa-solid fa-user"></i> {{ room.userCount }}
           </span>
+          <button
+            type="button"
+            aria-label="채팅방 메뉴"
+            class="md:hidden ml-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs text-[var(--text-muted)] hover:bg-[var(--bg-main)]"
+            @click.stop="handleContextMenu($event, room)"
+          >
+            <i class="fa-solid fa-ellipsis-vertical"></i>
+          </button>
         </div>
         <p class="text-xs text-[var(--text-muted)] truncate mt-0.5">{{ room.lastMsg }}</p>
       </div>

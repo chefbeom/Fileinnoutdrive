@@ -70,4 +70,21 @@ class UserDtoOAuthTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Unsupported OAuth2 provider");
     }
+
+    @Test
+    void rejectsUnverifiedEmailFlagsFromProvidersAndDoesNotStorePlaintextProviderAsPassword() {
+        UserDto.OAuth google = UserDto.OAuth.from(
+                Map.of("sub", "g1", "email", "u@example.com", "email_verified", false),
+                "google"
+        );
+        assertThat(google.isEmailVerified(Map.of("sub", "g1", "email", "u@example.com", "email_verified", false))).isFalse();
+        assertThat(google.toEntity().getPassword()).isNotEqualTo("google");
+
+        Map<String, Object> kakaoAttrs = Map.of(
+                "id", 123L,
+                "kakao_account", Map.of("email", "k@example.com", "is_email_verified", false)
+        );
+        UserDto.OAuth kakao = UserDto.OAuth.from(kakaoAttrs, "kakao");
+        assertThat(kakao.isEmailVerified(kakaoAttrs)).isFalse();
+    }
 }

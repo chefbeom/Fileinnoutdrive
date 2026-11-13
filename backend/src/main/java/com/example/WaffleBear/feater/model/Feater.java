@@ -56,6 +56,11 @@ public class Feater {
 
     private String profileImageUrl;
 
+    @Column(columnDefinition = "LONGTEXT")
+    private String uiLayoutJson;
+
+    private String vaultPinHash;
+
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
@@ -118,5 +123,17 @@ public class Feater {
 
     public void updateProfileImage(String profileImageUrl) {
         this.profileImageUrl = profileImageUrl;
+    }
+
+    public void updateUiLayoutJson(String uiLayoutJson) {
+        this.uiLayoutJson = uiLayoutJson;
+    }
+
+    public boolean hasVaultPin() {
+        return this.vaultPinHash != null && !this.vaultPinHash.isBlank();
+    }
+
+    public void updateVaultPinHash(String vaultPinHash) {
+        this.vaultPinHash = vaultPinHash;
     }
 }

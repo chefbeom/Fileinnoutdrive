@@ -21,4 +21,6 @@ public interface DataTransferLedgerRepository extends JpaRepository<DataTransfer
             group by ledger.user.idx, ledger.direction, ledger.source, ledger.status
             """)
     List<TransferAggregate> aggregateByUserAndTransfer(@Param("startedAt") LocalDateTime startedAt);
+
+    void deleteAllByUser_Idx(Long userIdx);
 }

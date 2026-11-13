@@ -1,6 +1,8 @@
 import { IMAGE_EXTENSIONS, VIDEO_EXTENSIONS } from "@/constants/fileTypes.js";
 import { formatBytes } from "@/utils/formatBytes.js";
 
+const MAX_MANAGED_IMAGE_THUMBNAIL_BYTES = 50 * 1024 * 1024;
+
 export function getCollectionGridClassName(viewMode) {
   if (viewMode === "icon") {
     return "file-icon-grid";
@@ -13,38 +15,64 @@ export function getCollectionGridClassName(viewMode) {
   return "";
 }
 
-export function buildCollectionStyle(viewMode, resolvedColumns) {
+export function buildCollectionStyle(viewMode, resolvedColumns, itemSize = "large") {
   if (viewMode === "table") {
     return undefined;
   }
 
-  const columns = Math.max(5, Number(resolvedColumns || 5));
-  const compactFactor = viewMode === "grid"
+  const baseColumns = Math.max(5, Number(resolvedColumns || 5));
+  let columnMultiplier = 1;
+  let scaleFactor = 1;
+
+  if (itemSize === "small") {
+    columnMultiplier = viewMode === "icon" ? 2.0 : 1.6;
+    scaleFactor = 0.58;
+  } else if (itemSize === "medium") {
+    columnMultiplier = viewMode === "icon" ? 1.4 : 1.2;
+    scaleFactor = 0.78;
+  } else {
+    columnMultiplier = 1;
+    scaleFactor = 1.0;
+  }
+
+  const columns = Math.max(5, Math.round(baseColumns * columnMultiplier));
+  const compactFactor = (viewMode === "grid"
     ? Math.max(0.34, Math.min(1, 6 / Math.max(columns, 5)))
-    : Math.max(0.3, Math.min(1, 10 / Math.max(columns, 5)));
+    : Math.max(0.25, Math.min(1, 10 / Math.max(columns, 5)))) * scaleFactor;
+
   const gapPx = viewMode === "grid"
-    ? Math.max(4, Math.min(16, Math.round(20 - (columns - 5) * 0.9)))
-    : Math.max(3, Math.min(12, Math.round(14 - (columns - 5) * 0.65)));
+    ? Math.max(4, Math.min(16, Math.round((20 - (baseColumns - 5) * 0.9) * (itemSize === "large" ? 1 : scaleFactor))))
+    : Math.max(3, Math.min(12, Math.round((14 - (baseColumns - 5) * 0.65) * (itemSize === "large" ? 1 : scaleFactor))));
+
+  const cardPreviewHeight = viewMode === "icon"
+    ? "auto"
+    : `${Math.max(64, Math.round(144 * compactFactor))}px`;
+  const previewIconSize = viewMode === "icon"
+    ? Math.max(28, Math.round(58 * compactFactor))
+    : Math.max(18, Math.round(40 * compactFactor));
+  const titleFontSize = viewMode === "icon"
+    ? Math.max(12, Math.round(15 * Math.max(0.78, scaleFactor) * 10) / 10)
+    : Math.max(11, 15 * compactFactor);
 
   return {
     "--collection-columns": String(columns),
     "--collection-gap": `${gapPx}px`,
-    "--card-padding": `${Math.max(10, Math.round(20 * compactFactor))}px`,
-    "--card-preview-height": `${Math.max(76, Math.round(144 * compactFactor))}px`,
-    "--card-preview-icon-size": `${Math.max(22, Math.round(40 * compactFactor))}px`,
-    "--card-title-size": `${Math.max(11, 15 * compactFactor)}px`,
-    "--card-meta-size": `${Math.max(9.5, 12 * compactFactor)}px`,
-    "--card-detail-size": `${Math.max(9.5, 12 * compactFactor)}px`,
-    "--card-button-font-size": `${Math.max(9.5, 12.5 * compactFactor)}px`,
-    "--card-button-padding-y": `${Math.max(5, Math.round(8 * compactFactor))}px`,
-    "--card-button-padding-x": `${Math.max(7, Math.round(12 * compactFactor))}px`,
-    "--card-button-radius": `${Math.max(10, Math.round(14 * compactFactor))}px`,
-    "--card-button-min-width": `${Math.max(56, Math.round(90 * compactFactor))}px`,
-    "--card-status-font-size": `${Math.max(9, 11.5 * compactFactor)}px`,
-    "--card-status-padding-y": `${Math.max(4, Math.round(6 * compactFactor))}px`,
-    "--card-status-padding-x": `${Math.max(7, Math.round(12 * compactFactor))}px`,
-    "--card-status-gap": `${Math.max(4, Math.round(6 * compactFactor))}px`,
-    "--card-status-icon-size": `${Math.max(10, Math.round(15 * compactFactor))}px`,
+    "--card-padding": `${Math.max(8, Math.round(20 * compactFactor))}px`,
+    "--card-preview-height": cardPreviewHeight,
+    "--card-preview-icon-size": `${previewIconSize}px`,
+    "--card-title-size": `${titleFontSize}px`,
+    "--card-meta-size": `${Math.max(9, 12 * compactFactor)}px`,
+    "--card-detail-size": `${Math.max(9, 12 * compactFactor)}px`,
+    "--card-button-font-size": `${Math.max(9, 12.5 * compactFactor)}px`,
+    "--card-button-padding-y": `${Math.max(4, Math.round(8 * compactFactor))}px`,
+    "--card-button-padding-x": `${Math.max(6, Math.round(12 * compactFactor))}px`,
+    "--card-button-radius": `${Math.max(8, Math.round(14 * compactFactor))}px`,
+    "--card-button-min-width": `${Math.max(48, Math.round(90 * compactFactor))}px`,
+    "--card-status-font-size": `${Math.max(8.5, 11.5 * compactFactor)}px`,
+    "--card-status-padding-y": `${Math.max(3, Math.round(6 * compactFactor))}px`,
+    "--card-status-padding-x": `${Math.max(6, Math.round(12 * compactFactor))}px`,
+    "--card-status-gap": `${Math.max(3, Math.round(6 * compactFactor))}px`,
+    "--card-status-icon-size": `${Math.max(9, Math.round(15 * compactFactor))}px`,
   };
 }
 
@@ -88,7 +116,7 @@ export function formatCollectionDisplaySize(file) {
   return formatBytes(bytes);
 }
 
-export const getCollectionFileName = (file) => file?.name || file?.fileOriginName || "\uC774\uB984 \uC5C6\uB294 \uD30C\uC77C";
+export const getCollectionFileName = (file) => file?.name || file?.fileOriginName || "이름 없는 파일";
 
 export const getCollectionFileExtension = (file) =>
   String(file?.extension || file?.fileFormat || extractCollectionExtension(getCollectionFileName(file))).toLowerCase();
@@ -97,13 +125,13 @@ export const getCollectionUpdatedAt = (file) =>
   file?.updatedAtLabel || formatCollectionDisplayDate(file?.updatedAt || file?.lastModified || file?.uploadDate);
 
 export const getCollectionSharedOwnerLabel = (file) =>
-  file?.ownerName || file?.ownerEmail || "\uC54C \uC218 \uC5C6\uB294 \uC0AC\uC6A9\uC790";
+  file?.ownerName || file?.ownerEmail || "알 수 없는 사용자";
 
 export const getCollectionSharedAtLabel = (file) =>
   file?.sharedAtLabel || formatCollectionDisplayDate(file?.sharedAt);
 
 export const getCollectionSharedOwnerText = (file) =>
-  `\uACF5\uC720\uC790: ${getCollectionSharedOwnerLabel(file)}`;
+  `공유자: ${getCollectionSharedOwnerLabel(file)}`;
 
 export function getCollectionSharedSourceLabel(file) {
   const sharedAtLabel = getCollectionSharedAtLabel(file);
@@ -119,8 +147,8 @@ export function getCollectionSentShareLabel(file) {
   const sharedAtLabel = getCollectionSharedAtLabel(file);
   const recipientLabel = file?.shareRecipientsLabel || (
     file?.recipientCount
-      ? `\uACF5\uC720 \uB300\uC0C1 ${file.recipientCount}\uBA85`
-      : "\uACF5\uC720 \uC911"
+      ? `공유 대상 ${file.recipientCount}명`
+      : "공유 중"
   );
 
   if (sharedAtLabel && sharedAtLabel !== "-") {
@@ -134,6 +162,18 @@ export const getCollectionPreviewUrl = (file) => file?.downloadUrl || file?.pres
 export const getCollectionThumbnailUrl = (file) => file?.thumbnailUrl || file?.thumbnailPresignedUrl || "";
 export const getCollectionContentType = (file) => String(file?.contentType || file?.raw?.contentType || "").toLowerCase();
 export const isCollectionLocked = (file) => Boolean(file?.lockedFile);
+export const isCollectionSharedFolder = (file) => {
+  if (!file || file?.type !== "folder") {
+    return false;
+  }
+  return Boolean(
+    file.isSharedFolder ||
+    file.sharedFile ||
+    file.isShared ||
+    file.sharedWithMe ||
+    String(file.fileSaveName || "").startsWith("shared-storage-")
+  );
+};
 
 export function isCollectionManagedThumbnailCandidate(file) {
   if (!file || file?.type === "folder" || isCollectionLocked(file)) {
@@ -142,12 +182,22 @@ export function isCollectionManagedThumbnailCandidate(file) {
 
   const extension = getCollectionFileExtension(file);
   const contentType = getCollectionContentType(file);
-  return (
-    contentType.startsWith("image/") ||
-    contentType.startsWith("video/") ||
-    IMAGE_EXTENSIONS.has(extension) ||
-    VIDEO_EXTENSIONS.has(extension)
-  );
+  const sizeBytes = Number(file?.sizeBytes ?? file?.fileSize ?? 0) || 0;
+  const isImageCandidate = contentType.startsWith("image/") || IMAGE_EXTENSIONS.has(extension);
+  const isVideoCandidate = contentType.startsWith("video/") || VIDEO_EXTENSIONS.has(extension);
+
+  if (isVideoCandidate) {
+    return true;
+  }
+
+  if (isImageCandidate) {
+    if (sizeBytes > MAX_MANAGED_IMAGE_THUMBNAIL_BYTES) {
+      return false;
+    }
+    return true;
+  }
+
+  return false;
 }
 
 export function isCollectionImage(file, hasBrokenPreview = false) {
@@ -166,6 +216,7 @@ export function isCollectionVideo(file) {
 
 export function getCollectionActionAvailability(file, options = {}) {
   const sharedLibrary = Boolean(options.sharedLibrary);
+  const vaultMode = Boolean(options.vaultMode);
   const deleteMode = options.deleteMode || "trash";
   const canCreateShares = Boolean(options.canCreateShares);
   const canCreateLocks = Boolean(options.canCreateLocks);
@@ -174,12 +225,20 @@ export function getCollectionActionAvailability(file, options = {}) {
   const isTrash = Boolean(file?.isTrash);
   const isFolder = file?.type === "folder";
 
+  const canDownloadFolder = isFolder && !locked && !isTrash && deleteMode !== "permanent";
+  const canDownloadFile = !isFolder && !locked && Boolean(getCollectionPreviewUrl(file) || (sharedWithMe && file?.downloadable));
+  const isVaultSpace = Boolean(file?.isVaultSpace || String(file?.spaceType || "").toUpperCase() === "VAULT");
+  const isSecretNode = Boolean(file?.hiddenFolder || isVaultSpace);
+  const isSharedOut = Boolean(file?.sharedFile || isCollectionSharedFolder(file));
+
   return {
-    canDownload: !isFolder && !locked && Boolean(getCollectionPreviewUrl(file) || (sharedWithMe && file?.downloadable)),
+    canDownload: canDownloadFolder || canDownloadFile,
     canDelete: !sharedLibrary && !sharedWithMe && !locked,
     canRestore: !sharedLibrary && deleteMode === "permanent" && isTrash,
     canManageFolder: !sharedLibrary && deleteMode !== "permanent" && isFolder && !isTrash,
-    canShare: !sharedLibrary && !sharedWithMe && !isTrash && !locked && (canCreateShares || file?.sharedFile),
+    canConfigureSecret: !sharedLibrary && deleteMode !== "permanent" && isFolder && !isTrash && !sharedWithMe && !isCollectionSharedFolder(file) && !isVaultSpace,
+    canMoveToVault: !sharedLibrary && !vaultMode && deleteMode !== "permanent" && !sharedWithMe && !isTrash && !locked && !isVaultSpace && !isSharedOut,
+    canShare: !sharedLibrary && !sharedWithMe && !isTrash && !locked && !isSecretNode && (canCreateShares || file?.sharedFile),
     canToggleLock: !sharedLibrary && !sharedWithMe && !isFolder && !isTrash && (canCreateLocks || file?.lockedFile),
     canSaveShared: sharedWithMe && !isFolder && !locked && Boolean(getCollectionPreviewUrl(file) || file?.downloadable),
     canManageSentShare: Boolean(sharedLibrary && file?.sharedFile && !sharedWithMe),
@@ -188,33 +247,56 @@ export function getCollectionActionAvailability(file, options = {}) {
 }
 
 export function getCollectionDeleteConfirmMessage(file, deleteMode = "trash") {
-  if (file?.sharedFile && !file?.sharedWithMe) {
-    return "\uACF5\uC720\uD55C \uD30C\uC77C\uC785\uB2C8\uB2E4. \uC0AD\uC81C\uD558\uC2DC\uACA0\uC2B5\uB2C8\uAE4C? \uACF5\uC720\uBC1B\uC740 \uC0AC\uB78C\uC5D0\uAC8C\uB3C4 \uC0AC\uB77C\uC9D1\uB2C8\uB2E4.";
+  if (isCollectionSharedFolder(file) && !file?.sharedWithMe) {
+    return deleteMode === "permanent"
+      ? `'${getCollectionFileName(file)}' 공유 폴더를 영구 삭제하시겠습니까?`
+      : `'${getCollectionFileName(file)}' 공유 폴더를 삭제하시겠습니까?\n(참여자가 2명 이상인 경우 전원 승인 투표가 진행됩니다.)`;
   }
 
-  const targetLabel = file?.type === "folder" ? "\uD3F4\uB354" : "\uD30C\uC77C";
+  if (file?.sharedFile && !file?.sharedWithMe) {
+    return "공유한 파일입니다. 삭제하시겠습니까? 공유받은 사람에게도 사라집니다.";
+  }
+
+  const targetLabel = file?.type === "folder" ? "폴더" : "파일";
   return deleteMode === "permanent"
-    ? `'${getCollectionFileName(file)}' ${targetLabel}\uC744 \uC601\uAD6C \uC0AD\uC81C\uD558\uC2DC\uACA0\uC2B5\uB2C8\uAE4C?`
-    : `'${getCollectionFileName(file)}' ${targetLabel}\uC744 \uD734\uC9C0\uD1B5\uC73C\uB85C \uC774\uB3D9\uD558\uC2DC\uACA0\uC2B5\uB2C8\uAE4C?`;
+    ? `'${getCollectionFileName(file)}' ${targetLabel}을 영구 삭제하시겠습니까?`
+    : `'${getCollectionFileName(file)}' ${targetLabel}을 휴지통으로 이동하시겠습니까?`;
 }
 
 export function getCollectionStatusChips(file) {
   const chips = [];
 
   if (file?.sharedWithMe) {
-    chips.push({ key: "shared-with-me", label: "\uACF5\uC720\uBC1B\uC74C", icon: "in", tone: "shared-in" });
+    chips.push({ key: "shared-with-me", label: "공유받음", icon: "in", tone: "shared-in" });
   }
 
-  if (file?.sharedFile && !file?.sharedWithMe) {
-    chips.push({ key: "shared-file", label: "\uACF5\uC720 \uC911", icon: "out", tone: "shared-out" });
+  if ((file?.sharedFile || isCollectionSharedFolder(file)) && !file?.sharedWithMe) {
+    chips.push({
+      key: "shared-file",
+      label: file?.type === "folder" ? "공유 폴더" : "공유 중",
+      icon: "out",
+      tone: "shared-out",
+    });
   }
 
   if (file?.lockedFile) {
-    chips.push({ key: "locked", label: "\uC7A0\uAE08", icon: "lock", tone: "locked" });
+    chips.push({ key: "locked", label: "잠금", icon: "lock", tone: "locked" });
+  }
+
+  if (file?.hiddenFolder) {
+    chips.push({ key: "hidden-folder", label: "숨긴 폴더", icon: "hidden", tone: "hidden" });
+    if (file?.pinEnabled) {
+      chips.push({
+        key: "folder-pin",
+        label: file?.pinRegistered ? "PIN 잠금" : "PIN 미등록",
+        icon: "lock",
+        tone: "locked",
+      });
+    }
   }
 
   if (!chips.length) {
-    chips.push({ key: "normal", label: "\uC77C\uBC18", icon: "dot", tone: "normal" });
+    chips.push({ key: "normal", label: "일반", icon: "dot", tone: "normal" });
   }
 
   return chips;
@@ -252,4 +334,43 @@ export function readCollectionDraggedFileIds(payload, fallbackIds = []) {
   }
 
   return [...fallbackIds];
+}
+
+export function computeRangeSelectionIds(
+  files = [],
+  currentSelectedIds = [],
+  anchorId = null,
+  targetId = null,
+  shouldSelect = true,
+) {
+  const normalizedTargetId = String(targetId ?? "");
+  const normalizedCurrent = currentSelectedIds.map((id) => String(id)).filter(Boolean);
+  if (!normalizedTargetId) {
+    return normalizedCurrent;
+  }
+
+  const fileIds = (Array.isArray(files) ? files : [])
+    .map((file) => String(file?.id ?? file?.idx ?? ""))
+    .filter(Boolean);
+
+  const targetIndex = fileIds.indexOf(normalizedTargetId);
+  if (targetIndex < 0) {
+    if (shouldSelect) {
+      return [...new Set([...normalizedCurrent, normalizedTargetId])];
+    }
+    return normalizedCurrent.filter((id) => id !== normalizedTargetId);
+  }
+
+  const normalizedAnchorId = anchorId != null ? String(anchorId) : "";
+  const anchorIndex = normalizedAnchorId ? fileIds.indexOf(normalizedAnchorId) : -1;
+  const startIndex = anchorIndex >= 0 ? Math.min(anchorIndex, targetIndex) : targetIndex;
+  const endIndex = anchorIndex >= 0 ? Math.max(anchorIndex, targetIndex) : targetIndex;
+  const rangeIds = fileIds.slice(startIndex, endIndex + 1);
+
+  if (shouldSelect) {
+    return [...new Set([...normalizedCurrent, ...rangeIds])];
+  }
+
+  const rangeIdSet = new Set(rangeIds);
+  return normalizedCurrent.filter((id) => !rangeIdSet.has(id));
 }

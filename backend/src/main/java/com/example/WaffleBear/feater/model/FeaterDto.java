@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 public class FeaterDto {
 
@@ -52,5 +53,23 @@ public class FeaterDto {
         private Long storageAddonBytes;
         private LocalDateTime joinedAt;
         private LocalDateTime updatedAt;
+        private Boolean socialAccount;
+        private String socialProvider;
+        private Boolean withdrawAllowed;
+        private String withdrawBlockedReason;
+    }
+
+    public record UiLayoutReq(
+            Map<String, Object> layout
+    ) {
+    }
+
+    public record UiLayoutRes(
+            Map<String, Object> layout,
+            LocalDateTime updatedAt
+    ) {
+        public static UiLayoutRes empty() {
+            return new UiLayoutRes(Map.of(), null);
+        }
     }
 }

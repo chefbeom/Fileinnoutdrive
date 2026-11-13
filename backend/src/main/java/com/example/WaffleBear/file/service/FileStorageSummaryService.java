@@ -4,10 +4,12 @@ import com.example.WaffleBear.file.FileUpDownloadRepository;
 import com.example.WaffleBear.file.info.dto.FileInfoDto;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
+import com.example.WaffleBear.file.secret.SecretTreeRules;
 import com.example.WaffleBear.file.version.FileVersionLifecycleService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -25,6 +27,7 @@ public class FileStorageSummaryService {
 
     public FileInfoDto.StorageSummaryRes getStorageSummary(Long userIdx) {
         List<FileInfo> userFiles = fileUpDownloadRepository.findAllByUser_Idx(userIdx);
+        java.util.Set<Long> secretSubtreeIds = SecretTreeRules.collectHiddenOrVaultSubtreeIds(userFiles);
         List<FileInfo> allFileNodes = userFiles.stream()
                 .filter(file -> FileTreeRules.resolveNodeType(file) == FileNodeType.FILE)
                 .toList();
@@ -42,6 +45,16 @@ public class FileStorageSummaryService {
                 .toList();
 
         StoragePlanService.StorageQuota storageQuota = storagePlanService.resolveQuota(userIdx);
+        StoragePlanService.StorageQuota ownQuota = storagePlanService.resolveOwnPlanQuota(userIdx);
+        StoragePlanService.CapacityAdjustment capacityAdjustment =
+                storagePlanService.resolveCapacityAdjustment(userIdx, LocalDateTime.now());
+        if (ownQuota == null) {
+            ownQuota = storageQuota;
+        }
+        if (capacityAdjustment == null) {
+            capacityAdjustment = StoragePlanService.CapacityAdjustment.ZERO;
+        }
+
         long quotaBytes = storageQuota.totalQuotaBytes();
         long versionUsedBytes = fileVersionLifecycleService.sumStoredVersionBytes(userIdx);
         long usedBytes = sumFileSizes(allFileNodes) + versionUsedBytes;
@@ -75,6 +88,7 @@ public class FileStorageSummaryService {
         );
 
         List<FileInfoDto.StorageTopFileRes> largestFiles = activeFileNodes.stream()
+                .filter(file -> file.getIdx() == null || !secretSubtreeIds.contains(file.getIdx()))
                 .sorted(Comparator.comparingLong(this::safeFileSize).reversed()
                         .thenComparing(FileInfo::getLastModifyDate, Comparator.nullsLast(Comparator.reverseOrder())))
                 .limit(7)
@@ -90,8 +104,12 @@ public class FileStorageSummaryService {
                 .maxUploadFileBytes(storageQuota.maxUploadFileBytes())
                 .maxUploadCount(storageQuota.maxUploadCount())
                 .quotaBytes(quotaBytes)
+                .ownQuotaBytes(ownQuota.totalQuotaBytes())
                 .baseQuotaBytes(storageQuota.baseQuotaBytes())
                 .addonQuotaBytes(storageQuota.addonQuotaBytes())
+                .grantedInBytes(capacityAdjustment.grantedInBytes())
+                .grantedOutBytes(capacityAdjustment.grantedOutBytes())
+                .sharedStorageContributionBytes(capacityAdjustment.sharedStorageContributionBytes())
                 .usedBytes(usedBytes)
                 .activeUsedBytes(activeUsedBytes)
                 .trashUsedBytes(trashUsedBytes)

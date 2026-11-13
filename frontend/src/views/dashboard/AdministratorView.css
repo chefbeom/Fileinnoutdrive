@@ -695,3 +695,64 @@
 .admin-toggle-btn:disabled {
   cursor: default;
 }
+
+.admin-panel--upload-setting {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-main) 92%, #ecfdf5 8%), var(--bg-main));
+}
+
+.admin-upload-setting {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.admin-upload-setting__controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.65rem;
+}
+
+.admin-upload-setting__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.admin-preset-btn {
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-main);
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.admin-preset-btn:hover:not(:disabled) {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.admin-upload-setting__input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.admin-upload-setting__number {
+  width: 7.5rem;
+}
+
+.admin-upload-setting__unit {
+  min-width: 5.5rem;
+}
+
+.admin-upload-setting__save {
+  padding: 0.7rem 1.15rem;
+}

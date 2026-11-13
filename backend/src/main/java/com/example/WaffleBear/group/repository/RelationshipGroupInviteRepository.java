@@ -4,6 +4,9 @@ import com.example.WaffleBear.group.model.entity.RelationshipGroupInvite;
 import com.example.WaffleBear.group.model.enums.InviteStatus;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -25,4 +28,8 @@ public interface RelationshipGroupInviteRepository extends JpaRepository<Relatio
     Optional<RelationshipGroupInvite> findByGroup_IdAndToUser_IdxAndStatus(Long groupId, Long toUserId, InviteStatus status);
 
     void deleteAllByGroup_Id(Long groupId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM RelationshipGroupInvite i WHERE i.group.user.idx = :userIdx OR i.fromUser.idx = :userIdx OR i.toUser.idx = :userIdx")
+    void deleteAllByParticipantUserIdx(@Param("userIdx") Long userIdx);
 }

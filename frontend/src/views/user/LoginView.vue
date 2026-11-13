@@ -138,7 +138,7 @@ const handleLogin = async () => {
 
     syncSavedEmail()
     authStore.login(accessToken)
-    router.push({ name: 'main' })
+    router.replace({ name: 'home' })
   } catch {
     loginErrorMessage.value = '이메일 또는 비밀번호가 올바르지 않습니다. 다시 확인해 주세요.'
   } finally {
@@ -290,10 +290,10 @@ onMounted(() => {
 
 <style scoped>
 .login-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: 36px 20px;
+  padding: 24px 16px;
   background: radial-gradient(circle at 15% 15%, #e0e7ff 0%, #f8fafc 45%, #f1f5f9 100%);
   color: #0f172a;
 }
@@ -651,6 +651,16 @@ h1 {
 
   .brand-panel {
     gap: 18px;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-page {
+    padding: 16px 12px;
+  }
+
+  .login-shell {
+    gap: 20px;
   }
 }
 </style>

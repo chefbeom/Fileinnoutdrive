@@ -19,10 +19,15 @@ public interface FileVersionRepository extends JpaRepository<FileVersion, Long> 
 
     List<FileVersion> findAllByFile_IdxIn(Collection<Long> fileIds);
 
+    List<FileVersion> findAllByUser_Idx(Long userIdx);
+
     void deleteAllByFile_IdxIn(Collection<Long> fileIds);
+
+    void deleteAllByUser_Idx(Long userIdx);
 
     @Query("select coalesce(sum(v.fileSize), 0) from FileVersion v where v.user.idx = :userIdx")
     Long sumStoredVersionBytesByUser(@Param("userIdx") Long userIdx);
+
     @Query("""
             select v.fileSavePath
             from FileVersion v

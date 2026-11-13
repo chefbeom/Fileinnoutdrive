@@ -38,6 +38,10 @@ public class SseEmitterStore {
         return fallback != null ? Set.of(fallback) : Collections.emptySet();
     }
 
+    public Set<Long> getConnectedUserIds() {
+        return Collections.unmodifiableSet(emitterSets.keySet());
+    }
+
     public void remove(Long userId, SseEmitter emitter) {
         if (userId == null || emitter == null) return;
         CopyOnWriteArraySet<SseEmitter> set = emitterSets.get(userId);

@@ -8,12 +8,14 @@ import com.example.WaffleBear.file.info.dto.FileInfoDto;
 import com.example.WaffleBear.file.manage.dto.FileManageDto;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
+import com.example.WaffleBear.file.secret.PinAttemptLimiter;
 import com.example.WaffleBear.file.share.model.FileShare;
 import com.example.WaffleBear.file.share.model.FileShareAuditAction;
 import com.example.WaffleBear.file.share.model.FileShareStatus;
 import com.example.WaffleBear.file.upload.UploadFolderService;
 import com.example.WaffleBear.user.model.User;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -42,6 +44,14 @@ class ShareFileAccessService {
     private final ShareResponseMapper shareResponseMapper;
     private final PasswordEncoder passwordEncoder;
     private final TransactionTemplate transactionTemplate;
+    private PinAttemptLimiter pinAttemptLimiter = new PinAttemptLimiter();
+
+    @Autowired(required = false)
+    public void setPinAttemptLimiter(PinAttemptLimiter pinAttemptLimiter) {
+        if (pinAttemptLimiter != null) {
+            this.pinAttemptLimiter = pinAttemptLimiter;
+        }
+    }
 
     private record SharedDriveCopyPlan(
             Long userIdx,
@@ -108,7 +118,7 @@ class ShareFileAccessService {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
         }
         SharePolicyRules.ensureSharePolicyActive(share);
-        SharePolicyRules.ensureSharePasswordSatisfied(share, sharePassword, passwordEncoder);
+        verifySharePassword(userIdx, share, sharePassword);
         FileInfo file = share.getFile();
         ensureAccessibleSharedFile(file);
 
@@ -136,7 +146,7 @@ class ShareFileAccessService {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
         }
         SharePolicyRules.ensureShareDownloadAvailable(share);
-        SharePolicyRules.ensureSharePasswordSatisfied(share, sharePassword, passwordEncoder);
+        verifySharePassword(userIdx, share, sharePassword);
         FileInfo file = share.getFile();
         ensureAccessibleSharedFile(file);
 
@@ -167,7 +177,7 @@ class ShareFileAccessService {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
         }
         SharePolicyRules.ensureShareDownloadAvailable(share);
-        SharePolicyRules.ensureSharePasswordSatisfied(share, sharePassword, passwordEncoder);
+        verifySharePassword(userIdx, share, sharePassword);
         FileInfo file = share.getFile();
         ensureAccessibleSharedFile(file);
 
@@ -277,7 +287,7 @@ class ShareFileAccessService {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
         }
         SharePolicyRules.ensureShareDownloadAvailable(share);
-        SharePolicyRules.ensureSharePasswordSatisfied(share, sharePassword, passwordEncoder);
+        verifySharePassword(userIdx, share, sharePassword);
         FileInfo original = share.getFile();
         ensureAccessibleSharedFile(original);
 
@@ -314,7 +324,7 @@ class ShareFileAccessService {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
         }
         SharePolicyRules.ensureShareDownloadAvailable(share);
-        SharePolicyRules.ensureSharePasswordSatisfied(share, sharePassword, passwordEncoder);
+        verifySharePassword(copyPlan.userIdx(), share, sharePassword);
 
         FileInfo parent = resolveParentFolder(copyPlan.userIdx(), copyPlan.parentId());
 
@@ -337,6 +347,21 @@ class ShareFileAccessService {
         recordSharedDownload(share);
         shareAuditService.record(share, copyPlan.userIdx(), FileShareAuditAction.SAVED_TO_DRIVE);
         return savedFile;
+    }
+
+    private void verifySharePassword(Long userIdx, FileShare share, String sharePassword) {
+        if (share == null || !share.isPasswordProtected()) {
+            return;
+        }
+        String scopeKey = "share:" + userIdx + ":" + share.getIdx();
+        pinAttemptLimiter.assertNotLocked(scopeKey);
+        try {
+            SharePolicyRules.ensureSharePasswordSatisfied(share, sharePassword, passwordEncoder);
+            pinAttemptLimiter.clearFailures(scopeKey);
+        } catch (RuntimeException exception) {
+            pinAttemptLimiter.recordFailure(scopeKey);
+            throw exception;
+        }
     }
 
     private SharedFolderUploadPlan prepareSharedFolderUpload(

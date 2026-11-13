@@ -1,6 +1,7 @@
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { defineStore } from "pinia";
 import { useAuthStore } from "@/stores/useAuthStore.js";
+import { useSecretFolderStore } from "@/stores/useSecretFolderStore.js";
 import {
   acceptSharedFile as acceptSharedFileApi,
   cancelAllFileShares as cancelAllFileSharesApi,
@@ -10,6 +11,7 @@ import {
   deleteFilePermanently as deleteFilePermanentlyApi,
   fetchFileList as fetchFileListApi,
   fetchFileListPage as fetchFileListPageApi,
+  fetchVaultFileList as fetchVaultFileListApi,
   fetchFileShareInfo as fetchFileShareInfoApi,
   fetchFolderProperties as fetchFolderPropertiesApi,
   fetchPendingSharedFileList as fetchPendingSharedFileListApi,
@@ -19,8 +21,10 @@ import {
   fetchStorageSummary as fetchStorageSummaryApi,
   fetchTextPreview as fetchTextPreviewApi,
   moveFileToFolder as moveFileToFolderApi,
+  moveFileToVault as moveFileToVaultApi,
   moveFileToTrash as moveFileToTrashApi,
   moveFilesToFolder as moveFilesToFolderApi,
+  moveFilesToVault as moveFilesToVaultApi,
   renameFolder as renameFolderApi,
   restoreFileFromTrash as restoreFileFromTrashApi,
   restoreFilesFromTrash as restoreFilesFromTrashApi,
@@ -31,6 +35,7 @@ import {
 } from "@/api/filesApi.js";
 import {
   ROOT_LOCATION_LABEL,
+  VAULT_ROOT_LOCATION_LABEL,
   areDriveQueriesEqual,
   decorateLocations,
   decorateSharedPaths,
@@ -50,9 +55,63 @@ const ADMIN_MAX_UPLOAD_FILE_BYTES = 20 * 1024 * 1024 * 1024;
 const ADMIN_MAX_UPLOAD_COUNT = 500;
 const DEFAULT_DRIVE_PAGE_SIZE = 10;
 const MAX_DRIVE_PAGE_SIZE = 30;
+const RECENT_ACCESSED_STORAGE_KEY = "fileinnout-recent-accessed-files";
+const MAX_RECENT_ACCESSED_COUNT = 50;
+
+function readSavedAccessedFiles() {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return [];
+  }
+  try {
+    const raw = window.localStorage.getItem(RECENT_ACCESSED_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((item) => item && item.id != null) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSavedAccessedFiles(items) {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return;
+  }
+  try {
+    window.localStorage.setItem(RECENT_ACCESSED_STORAGE_KEY, JSON.stringify(items));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+const getFolderSnapshotKey = (folderId) => (folderId == null ? "root" : String(folderId));
+
+const isDefaultFolderSnapshotQuery = (query) => (
+  !query?.vaultMode &&
+  !query?.includeHidden &&
+  !query?.trashedOnly &&
+  Number(query?.page ?? 0) === 0 &&
+  String(query?.searchQuery ?? "") === "" &&
+  String(query?.extensionFilter ?? "all") === "all" &&
+  String(query?.sizeFilter ?? "all") === "all" &&
+  String(query?.customMinSize ?? "") === "" &&
+  String(query?.customMaxSize ?? "") === "" &&
+  String(query?.statusFilter ?? "all") === "all"
+);
+
+const isRequestCanceledError = (error) => (
+  error?.name === "AbortError" ||
+  error?.name === "CanceledError" ||
+  error?.code === "ERR_CANCELED"
+);
+
 export const useFileStore = defineStore("file", () => {
   const authStore = useAuthStore();
+  const secretFolderStore = useSecretFolderStore();
   const allFiles = ref([]);
+  const vaultAllFiles = ref([]);
+  const vaultHasLoaded = ref(false);
+  const vaultLoading = ref(false);
+  const accessedFilesHistory = ref(readSavedAccessedFiles());
   const drivePageFiles = ref([]);
   const driveBreadcrumbs = ref([]);
   const driveAvailableExtensions = ref([]);
@@ -72,10 +131,20 @@ export const useFileStore = defineStore("file", () => {
   const hasLoaded = ref(false);
   const driveHasLoaded = ref(false);
   const lastDriveQuery = ref(null);
+  const inFlightDriveQuery = ref(null);
   const storageSummary = ref(null);
   const storageLoading = ref(false);
   const storageError = ref("");
   let storageSummaryRequest = null;
+  let drivePageRequestSeq = 0;
+  let drivePageAbortController = null;
+  let drivePageInFlightPromise = null;
+  const folderSnapshotCache = new Map();
+
+  const invalidateFolderSnapshots = () => {
+    folderSnapshotCache.clear();
+  };
+
   const isAdministrator = computed(() => {
     const currentUser = authStore.user;
     const role = String(currentUser?.role || "").toUpperCase();
@@ -100,7 +169,8 @@ export const useFileStore = defineStore("file", () => {
 
   const fileById = computed(() => {
     const map = new Map();
-    [...allFiles.value, ...knownFolders.value, ...drivePageFiles.value].forEach((file) => {
+    const vaultSources = secretFolderStore.vaultUnlocked ? vaultAllFiles.value : [];
+    [...allFiles.value, ...knownFolders.value, ...drivePageFiles.value, ...vaultSources].forEach((file) => {
       if (file?.id == null) {
         return;
       }
@@ -130,9 +200,17 @@ export const useFileStore = defineStore("file", () => {
     if (
       currentFolderId.value != null &&
       String(folderId) === String(currentFolderId.value) &&
-      driveBreadcrumbs.value.length > 0
+      driveBreadcrumbs.value.length > 0 &&
+      String(driveBreadcrumbs.value[driveBreadcrumbs.value.length - 1]?.id) === String(folderId)
     ) {
       return driveBreadcrumbs.value;
+    }
+
+    const breadcrumbIdx = driveBreadcrumbs.value.findIndex(
+      (crumb) => crumb?.id != null && String(crumb.id) === String(folderId),
+    );
+    if (breadcrumbIdx >= 0) {
+      return driveBreadcrumbs.value.slice(0, breadcrumbIdx + 1);
     }
 
     const path = [];
@@ -153,19 +231,64 @@ export const useFileStore = defineStore("file", () => {
 
   const currentFolderPath = computed(() => getFolderPath(currentFolderId.value));
 
+  const applyFolderTransitionState = (targetFolderId) => {
+    loadError.value = "";
+    const skipSnapshot = secretFolderStore.vaultMode || secretFolderStore.showHiddenFolders;
+    const snapshotKey = getFolderSnapshotKey(targetFolderId);
+    const cachedSnapshot = skipSnapshot ? null : folderSnapshotCache.get(snapshotKey);
+
+    if (targetFolderId == null) {
+      driveBreadcrumbs.value = [];
+    } else {
+      const existingBreadcrumbIndex = driveBreadcrumbs.value.findIndex(
+        (crumb) => crumb?.id != null && String(crumb.id) === String(targetFolderId),
+      );
+      if (existingBreadcrumbIndex >= 0) {
+        driveBreadcrumbs.value = driveBreadcrumbs.value.slice(0, existingBreadcrumbIndex + 1);
+      } else {
+        const computedPath = getFolderPath(targetFolderId);
+        if (computedPath.length > 0) {
+          driveBreadcrumbs.value = computedPath;
+        }
+      }
+    }
+
+    if (cachedSnapshot) {
+      drivePageFiles.value = cachedSnapshot.files;
+      if (targetFolderId == null || cachedSnapshot.breadcrumbs.length > 0) {
+        driveBreadcrumbs.value = cachedSnapshot.breadcrumbs;
+      }
+      driveAvailableExtensions.value = cachedSnapshot.availableExtensions;
+      drivePageInfo.value = { ...cachedSnapshot.pageInfo };
+      return;
+    }
+
+    drivePageFiles.value = [];
+    drivePageInfo.value = {
+      totalPage: 0,
+      totalCount: 0,
+      currentPage: 0,
+      currentSize: Number(lastDriveQuery.value?.size || DEFAULT_DRIVE_PAGE_SIZE),
+    };
+  };
+
   const syncCurrentFolder = () => {
     if (currentFolderId.value == null) {
       return;
     }
 
     const folder = fileById.value.get(String(currentFolderId.value));
-    if (!folder || folder.type !== "folder" || folder.isTrash) {
+    if (folder && (folder.type !== "folder" || folder.isTrash)) {
       currentFolderId.value = null;
+      applyFolderTransitionState(null);
     }
   };
 
   const rememberFolders = (records) => {
-    knownFolders.value = rememberFolderRecords(knownFolders.value, records);
+    const publicRecords = (records || []).filter(
+      (record) => record && !record.hiddenFolder && !record.isVaultSpace && record.spaceType !== "VAULT",
+    );
+    knownFolders.value = rememberFolderRecords(knownFolders.value, publicRecords);
   };
 
   const fetchSharedFiles = async () => {
@@ -218,9 +341,12 @@ export const useFileStore = defineStore("file", () => {
     return request;
   };
 
-  const fetchFiles = async () => {
-    isLoading.value = true;
-    loadError.value = "";
+  const fetchFiles = async (options = {}) => {
+    const isBackground = Boolean(options?.background);
+    if (!isBackground) {
+      isLoading.value = true;
+      loadError.value = "";
+    }
 
     try {
       const [fileList, sharedList, pendingSharedList, sentSharedList] = await Promise.all([
@@ -241,22 +367,76 @@ export const useFileStore = defineStore("file", () => {
       fetchStorageSummary().catch(() => {});
       return allFiles.value;
     } catch (error) {
-      loadError.value =
-        error?.response?.data?.message ||
-        error?.message ||
-        "파일 목록을 불러오지 못했습니다.";
+      if (!isBackground) {
+        loadError.value =
+          error?.response?.data?.message ||
+          error?.message ||
+          "파일 목록을 불러오지 못했습니다.";
+      }
       throw error;
     } finally {
-      isLoading.value = false;
+      if (!isBackground) {
+        isLoading.value = false;
+      }
+    }
+  };
+
+  const clearVaultFiles = () => {
+    vaultAllFiles.value = [];
+    vaultHasLoaded.value = false;
+    vaultLoading.value = false;
+    knownFolders.value = (knownFolders.value || []).filter(
+      (record) => !(record?.isVaultSpace || String(record?.spaceType || "").toUpperCase() === "VAULT"),
+    );
+  };
+
+  const fetchVaultFiles = async (options = {}) => {
+    if (!secretFolderStore.vaultUnlocked) {
+      clearVaultFiles();
+      return [];
+    }
+
+    const isBackground = Boolean(options?.background);
+    if (!isBackground) {
+      vaultLoading.value = true;
+    }
+
+    try {
+      const vaultList = await fetchVaultFileListApi();
+      if (!secretFolderStore.vaultUnlocked) {
+        clearVaultFiles();
+        return [];
+      }
+
+      const normalizedVault = decorateLocations(
+        vaultList.map((file) => normalizeFileRecord(file)),
+        VAULT_ROOT_LOCATION_LABEL,
+      );
+      vaultAllFiles.value = reuseCachedAssetUrls(vaultAllFiles.value, normalizedVault);
+      vaultHasLoaded.value = true;
+      return vaultAllFiles.value;
+    } catch (error) {
+      const status = error?.response?.status;
+      if (status === 401 || status === 403 || status === 423) {
+        clearVaultFiles();
+      }
+      throw error;
+    } finally {
+      vaultLoading.value = false;
     }
   };
 
   const fetchDrivePage = async (query = {}) => {
-    isLoading.value = true;
-    loadError.value = "";
+    const hasExplicitParentId = Object.prototype.hasOwnProperty.call(query, "parentId");
+    const resolvedParentId = hasExplicitParentId
+      ? (query.parentId ?? null)
+      : (currentFolderId.value ?? null);
+    const resolvedVaultMode = query.vaultMode ?? secretFolderStore.vaultMode ?? false;
+    const resolvedIncludeHidden = query.includeHidden ?? secretFolderStore.showHiddenFolders ?? false;
+    const resolvedTrashedOnly = resolvedVaultMode && (query.trashedOnly ?? secretFolderStore.vaultTrashView ?? false);
 
     const nextQuery = {
-      parentId: query.parentId ?? currentFolderId.value ?? null,
+      parentId: resolvedParentId,
       page: Math.max(0, Number(query.page ?? lastDriveQuery.value?.page ?? 0) || 0),
       size: Math.min(
         MAX_DRIVE_PAGE_SIZE,
@@ -269,69 +449,131 @@ export const useFileStore = defineStore("file", () => {
       customMinSize: query.customMinSize ?? lastDriveQuery.value?.customMinSize ?? "",
       customMaxSize: query.customMaxSize ?? lastDriveQuery.value?.customMaxSize ?? "",
       statusFilter: query.statusFilter ?? lastDriveQuery.value?.statusFilter ?? "all",
+      vaultMode: Boolean(resolvedVaultMode),
+      includeHidden: Boolean(resolvedIncludeHidden),
+      trashedOnly: Boolean(resolvedTrashedOnly),
     };
 
-    if (!query.forceRefresh && driveHasLoaded.value && areDriveQueriesEqual(lastDriveQuery.value, nextQuery)) {
+    if (!query.forceRefresh && inFlightDriveQuery.value && areDriveQueriesEqual(inFlightDriveQuery.value, nextQuery) && drivePageInFlightPromise) {
+      return drivePageInFlightPromise;
+    }
+
+    if (
+      !query.forceRefresh &&
+      driveHasLoaded.value &&
+      !inFlightDriveQuery.value &&
+      areDriveQueriesEqual(lastDriveQuery.value, nextQuery)
+    ) {
       isLoading.value = false;
       return drivePageFiles.value;
     }
 
-    try {
-      const result = await fetchFileListPageApi(nextQuery);
-      const breadcrumbs = Array.isArray(result?.breadcrumbs)
-        ? result.breadcrumbs.map((folder) => normalizeBreadcrumbRecord(folder))
-        : [];
-      const currentLocationLabel = breadcrumbs[breadcrumbs.length - 1]?.name || ROOT_LOCATION_LABEL;
-      const pageFiles = Array.isArray(result?.fileList)
-        ? result.fileList
-          .map((file) => normalizeFileRecord(file))
-          .map((file) => ({
-            ...file,
-            location: currentLocationLabel,
-          }))
-        : [];
+    if (drivePageAbortController) {
+      drivePageAbortController.abort();
+      drivePageAbortController = null;
+    }
 
-      drivePageFiles.value = reuseCachedAssetUrls(drivePageFiles.value, pageFiles);
-      driveBreadcrumbs.value = breadcrumbs;
-      driveAvailableExtensions.value = Array.isArray(result?.availableExtensions)
-        ? [...new Set(result.availableExtensions.map((extension) => String(extension || "").trim().toLowerCase()).filter(Boolean))]
-          .sort((left, right) => left.localeCompare(right))
-        : [];
-      drivePageInfo.value = {
-        totalPage: Number(result?.totalPage ?? 0) || 0,
-        totalCount: Number(result?.totalCount ?? 0) || 0,
-        currentPage: Number(result?.currentPage ?? nextQuery.page) || 0,
-        currentSize: Number(result?.currentSize ?? nextQuery.size) || nextQuery.size,
-      };
-      driveHasLoaded.value = true;
-      lastDriveQuery.value = nextQuery;
-      rememberFolders([
-        ...breadcrumbs,
-        ...pageFiles.filter((file) => file?.type === "folder"),
-      ]);
-      syncCurrentFolder();
-      if (!storageSummary.value && !storageLoading.value) {
-        fetchStorageSummary().catch(() => {});
+    const abortController = new AbortController();
+    drivePageAbortController = abortController;
+    const requestSeq = ++drivePageRequestSeq;
+    inFlightDriveQuery.value = nextQuery;
+    isLoading.value = true;
+    loadError.value = "";
+
+    const requestPromise = (async () => {
+      try {
+        const result = await fetchFileListPageApi(nextQuery, { signal: abortController.signal });
+        const breadcrumbs = Array.isArray(result?.breadcrumbs)
+          ? result.breadcrumbs.map((folder) => normalizeBreadcrumbRecord(folder))
+          : [];
+        const currentLocationLabel = breadcrumbs[breadcrumbs.length - 1]?.name || ROOT_LOCATION_LABEL;
+        const pageFiles = Array.isArray(result?.fileList)
+          ? result.fileList
+            .map((file) => normalizeFileRecord(file))
+            .map((file) => ({
+              ...file,
+              location: currentLocationLabel,
+            }))
+          : [];
+        const normalizedExtensions = Array.isArray(result?.availableExtensions)
+          ? [...new Set(result.availableExtensions.map((extension) => String(extension || "").trim().toLowerCase()).filter(Boolean))]
+            .sort((left, right) => left.localeCompare(right))
+          : [];
+        const normalizedPageInfo = {
+          totalPage: Number(result?.totalPage ?? 0) || 0,
+          totalCount: Number(result?.totalCount ?? 0) || 0,
+          currentPage: Number(result?.currentPage ?? nextQuery.page) || 0,
+          currentSize: Number(result?.currentSize ?? nextQuery.size) || nextQuery.size,
+        };
+
+        rememberFolders([
+          ...breadcrumbs,
+          ...pageFiles.filter((file) => file?.type === "folder"),
+        ]);
+
+        if (isDefaultFolderSnapshotQuery(nextQuery)) {
+          folderSnapshotCache.set(getFolderSnapshotKey(nextQuery.parentId), {
+            files: pageFiles,
+            breadcrumbs,
+            availableExtensions: normalizedExtensions,
+            pageInfo: normalizedPageInfo,
+          });
+        }
+
+        if (requestSeq !== drivePageRequestSeq) {
+          return drivePageFiles.value;
+        }
+
+        if (String(currentFolderId.value ?? null) !== String(nextQuery.parentId ?? null)) {
+          return drivePageFiles.value;
+        }
+
+        drivePageFiles.value = reuseCachedAssetUrls(drivePageFiles.value, pageFiles);
+        driveBreadcrumbs.value = breadcrumbs;
+        driveAvailableExtensions.value = normalizedExtensions;
+        drivePageInfo.value = normalizedPageInfo;
+        driveHasLoaded.value = true;
+        lastDriveQuery.value = nextQuery;
+        syncCurrentFolder();
+        if (!storageSummary.value && !storageLoading.value) {
+          fetchStorageSummary().catch(() => {});
+        }
+        return drivePageFiles.value;
+      } catch (error) {
+        if (isRequestCanceledError(error) || requestSeq !== drivePageRequestSeq) {
+          return drivePageFiles.value;
+        }
+
+        const status = error?.response?.status;
+        if (nextQuery.parentId != null && (status === 400 || status === 404)) {
+          currentFolderId.value = null;
+          applyFolderTransitionState(null);
+        }
+
+        loadError.value =
+          error?.response?.data?.message ||
+          error?.message ||
+          "파일 목록을 불러오지 못했습니다.";
+        throw error;
+      } finally {
+        if (requestSeq === drivePageRequestSeq) {
+          inFlightDriveQuery.value = null;
+          drivePageInFlightPromise = null;
+          drivePageAbortController = null;
+          isLoading.value = false;
+        }
       }
-      return drivePageFiles.value;
-    } catch (error) {
-      loadError.value =
-        error?.response?.data?.message ||
-        error?.message ||
-        "파일 목록을 불러오지 못했습니다.";
-      throw error;
-    } finally {
-      isLoading.value = false;
-    }
+    })();
+
+    drivePageInFlightPromise = requestPromise;
+    return requestPromise;
   };
 
   const refreshDrivePage = async () => {
-    if (!lastDriveQuery.value) {
-      return drivePageFiles.value;
-    }
-
+    const baseQuery = lastDriveQuery.value || {};
     return fetchDrivePage({
-      ...lastDriveQuery.value,
+      ...baseQuery,
+      parentId: currentFolderId.value ?? null,
       forceRefresh: true,
     });
   };
@@ -362,6 +604,149 @@ export const useFileStore = defineStore("file", () => {
       .sort((left, right) => (right.lastModifiedMs || 0) - (left.lastModifiedMs || 0)),
   );
 
+  const recentUploadedFiles = computed(() => {
+    const mergedMap = new Map();
+    const sources = (secretFolderStore.vaultMode || secretFolderStore.showHiddenFolders)
+      ? [...allFiles.value]
+      : [...drivePageFiles.value, ...allFiles.value];
+
+    sources.forEach((file) => {
+      if (
+        !file ||
+        file.id == null ||
+        file.isTrash ||
+        file.type === "folder" ||
+        file.hiddenFolder ||
+        file.isVaultSpace ||
+        file.spaceType === "VAULT"
+      ) {
+        return;
+      }
+      mergedMap.set(String(file.id), file);
+    });
+
+    return Array.from(mergedMap.values()).sort((left, right) => {
+      const rightTime = right.uploadedAtMs || right.lastModifiedMs || 0;
+      const leftTime = left.uploadedAtMs || left.lastModifiedMs || 0;
+      if (rightTime !== leftTime) {
+        return rightTime - leftTime;
+      }
+      return (Number(right.id) || 0) - (Number(left.id) || 0);
+    });
+  });
+
+  const isInsideHiddenOrVault = (file) => {
+    if (!file) {
+      return true;
+    }
+    if (
+      secretFolderStore.vaultMode ||
+      file.isVaultSpace ||
+      file.spaceType === "VAULT" ||
+      file.hiddenFolder
+    ) {
+      return true;
+    }
+    if (currentFolderId.value != null && !allFiles.value.some((item) => String(item?.id) === String(currentFolderId.value))) {
+      return true;
+    }
+    if (file.parentId != null) {
+      const parent = fileById.value.get(String(file.parentId));
+      if (parent?.hiddenFolder || parent?.isVaultSpace) {
+        return true;
+      }
+      if (hasLoaded.value && !allFiles.value.some((item) => String(item?.id) === String(file.id))) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const recordFileAccess = (file) => {
+    if (!file || file.id == null || file.type === "folder" || file.isTrash || isInsideHiddenOrVault(file)) {
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const nowMs = Date.now();
+    const fileId = String(file.id);
+
+    const entry = {
+      id: file.id,
+      idx: file.idx ?? file.id,
+      name: file.name || file.fileOriginName || "이름 없는 파일",
+      fileOriginName: file.fileOriginName || file.name || "이름 없는 파일",
+      extension: file.extension || file.fileFormat || "",
+      fileFormat: file.fileFormat || file.extension || "",
+      sizeBytes: Number(file.sizeBytes ?? 0) || 0,
+      sizeLabel: file.sizeLabel || file.size || "-",
+      size: file.size || file.sizeLabel || "-",
+      type: "file",
+      nodeType: "FILE",
+      parentId: file.parentId ?? null,
+      sharedWithMe: Boolean(file.sharedWithMe),
+      isShared: Boolean(file.isShared),
+      sharedFile: Boolean(file.sharedFile),
+      lockedFile: Boolean(file.lockedFile),
+      downloadUrl: file.downloadUrl || file.presignedDownloadUrl || "",
+      presignedDownloadUrl: file.presignedDownloadUrl || file.downloadUrl || "",
+      thumbnailUrl: file.thumbnailUrl || file.thumbnailPresignedUrl || "",
+      thumbnailPresignedUrl: file.thumbnailPresignedUrl || file.thumbnailUrl || "",
+      contentType: file.contentType || "",
+      uploadDate: file.uploadDate || file.uploadedAt || nowIso,
+      uploadedAt: file.uploadedAt || file.uploadDate || nowIso,
+      uploadDateLabel: file.uploadDateLabel || "-",
+      updatedAt: file.updatedAt || file.lastModified || nowIso,
+      updatedAtLabel: file.updatedAtLabel || "-",
+      lastModified: file.lastModified || file.updatedAt || nowIso,
+      lastModifiedMs: Number(file.lastModifiedMs || nowMs),
+      uploadedAtMs: Number(file.uploadedAtMs || nowMs),
+      location: file.location || ROOT_LOCATION_LABEL,
+      accessedAt: nowIso,
+      accessedAtMs: nowMs,
+    };
+
+    const nextHistory = [
+      entry,
+      ...accessedFilesHistory.value.filter((candidate) => String(candidate?.id) !== fileId),
+    ].slice(0, MAX_RECENT_ACCESSED_COUNT);
+
+    accessedFilesHistory.value = nextHistory;
+    writeSavedAccessedFiles(nextHistory);
+  };
+
+  const clearAccessedFiles = () => {
+    accessedFilesHistory.value = [];
+    writeSavedAccessedFiles([]);
+  };
+
+  const recentAccessedFiles = computed(() => {
+    const sharedMap = new Map(
+      sharedLibraryFiles.value
+        .filter((file) => file?.id != null)
+        .map((file) => [String(file.id), file]),
+    );
+
+    return accessedFilesHistory.value
+      .map((entry) => {
+        const key = String(entry.id);
+        const liveFile = fileById.value.get(key) || sharedMap.get(key) || null;
+        if (liveFile) {
+          if (liveFile.isTrash || liveFile.type === "folder") {
+            return null;
+          }
+          return {
+            ...liveFile,
+            accessedAt: entry.accessedAt,
+            accessedAtMs: entry.accessedAtMs || 0,
+          };
+        }
+        return entry;
+      })
+      .filter(Boolean)
+      .sort((left, right) => (right.accessedAtMs || 0) - (left.accessedAtMs || 0));
+  });
+
   const trashFiles = computed(() =>
     allFiles.value.filter((file) => {
       if (!file.isTrash) {
@@ -381,14 +766,19 @@ export const useFileStore = defineStore("file", () => {
   );
 
   const refreshAll = async () => {
-    if (driveHasLoaded.value && lastDriveQuery.value) {
+    invalidateFolderSnapshots();
+
+    if (driveHasLoaded.value) {
       await refreshDrivePage();
+      if (hasLoaded.value) {
+        fetchFiles({ background: true }).catch(() => {});
+      }
+    } else {
+      await fetchFiles();
     }
 
-    if (hasLoaded.value) {
-      await fetchFiles();
-    } else if (!driveHasLoaded.value) {
-      await fetchFiles();
+    if (secretFolderStore.vaultMode && secretFolderStore.vaultUnlocked && vaultHasLoaded.value) {
+      fetchVaultFiles({ background: true }).catch(() => {});
     }
 
     if (storageSummary.value) {
@@ -398,12 +788,24 @@ export const useFileStore = defineStore("file", () => {
     return true;
   };
 
-  const createFolder = async (folderName) => {
+  const createFolder = async (folderName, parentId = currentFolderId.value, options = undefined) => {
     if (!folderName?.trim()) {
       return null;
     }
 
-    await createFolderApi(folderName.trim(), currentFolderId.value);
+    const requestOptions = secretFolderStore.vaultMode
+      ? {
+          ...(options && typeof options === "object" ? options : {}),
+          vaultMode: true,
+          spaceType: "VAULT",
+        }
+      : options;
+
+    if (requestOptions !== undefined) {
+      await createFolderApi(folderName.trim(), parentId, requestOptions);
+    } else {
+      await createFolderApi(folderName.trim(), parentId);
+    }
     await refreshAll();
     return true;
   };
@@ -448,20 +850,79 @@ export const useFileStore = defineStore("file", () => {
   };
 
   const emptyTrash = async () => {
-    await clearTrashApi();
+    await clearTrashApi({ vaultMode: Boolean(secretFolderStore.vaultMode) });
     await refreshAll();
   };
 
-  const enterFolder = (folderId) => {
+  const applyEnterFolder = (folderId) => {
     const targetFolder = fileById.value.get(String(folderId));
-    if (targetFolder?.type === "folder" && !targetFolder.isTrash) {
-      currentFolderId.value = targetFolder.id;
+    if (targetFolder && (targetFolder.type !== "folder" || targetFolder.isTrash)) {
+      return;
     }
+
+    const numericId = Number(folderId);
+    const resolvedId = targetFolder?.id ?? (Number.isFinite(numericId) && numericId > 0 ? numericId : folderId);
+
+    if (String(currentFolderId.value ?? "") === String(resolvedId)) {
+      return;
+    }
+
+    currentFolderId.value = resolvedId;
+    applyFolderTransitionState(resolvedId);
+  };
+
+  const enterFolder = (folderId) => {
+    if (folderId == null || folderId === "") {
+      navigateToFolder(null);
+      return;
+    }
+
+    const targetFolder = fileById.value.get(String(folderId));
+    if (targetFolder && (targetFolder.type !== "folder" || targetFolder.isTrash)) {
+      return;
+    }
+
+    if (targetFolder?.hiddenFolder && targetFolder?.pinEnabled && !secretFolderStore.isFolderUnlocked(targetFolder.id)) {
+      void secretFolderStore.ensureFolderUnlocked(targetFolder).then((unlocked) => {
+        if (unlocked) {
+          applyEnterFolder(targetFolder.id ?? folderId);
+        }
+      });
+      return;
+    }
+
+    applyEnterFolder(folderId);
+  };
+
+  const exitHiddenSubtreeIfNeeded = () => {
+    if (currentFolderId.value == null || secretFolderStore.vaultMode) {
+      return false;
+    }
+    if (hasLoaded.value && allFiles.value.some((file) => String(file?.id) === String(currentFolderId.value))) {
+      return false;
+    }
+    const visibleMap = new Set(allFiles.value.map((file) => String(file?.id)));
+    let safeParentId = null;
+    for (const crumb of driveBreadcrumbs.value || []) {
+      if (crumb?.id != null && visibleMap.has(String(crumb.id))) {
+        safeParentId = crumb.id;
+      } else {
+        break;
+      }
+    }
+    currentFolderId.value = safeParentId;
+    applyFolderTransitionState(safeParentId);
+    return true;
   };
 
   const navigateToFolder = (folderId) => {
-    if (folderId == null) {
+    if (folderId == null || folderId === "") {
+      const wasAtRoot = currentFolderId.value == null;
       currentFolderId.value = null;
+      applyFolderTransitionState(null);
+      if (wasAtRoot && (inFlightDriveQuery.value?.parentId != null || lastDriveQuery.value?.parentId != null)) {
+        void fetchDrivePage({ parentId: null, page: 0, forceRefresh: true }).catch(() => {});
+      }
       return;
     }
 
@@ -534,7 +995,7 @@ export const useFileStore = defineStore("file", () => {
   const navigateToDesktopPath = async (pathValue) => {
     const segments = normalizePathSegments(pathValue);
     if (!segments.length) {
-      currentFolderId.value = null;
+      navigateToFolder(null);
       return { found: false, searchTerm: "" };
     }
 
@@ -549,11 +1010,11 @@ export const useFileStore = defineStore("file", () => {
     }
 
     if (target.type === "folder") {
-      currentFolderId.value = target.id;
+      navigateToFolder(target.id);
       return { found: true, searchTerm: "", target };
     }
 
-    currentFolderId.value = target.parentId ?? null;
+    navigateToFolder(target.parentId ?? null);
     return { found: true, searchTerm: target.name || searchTerm, target };
   };
 
@@ -581,12 +1042,28 @@ export const useFileStore = defineStore("file", () => {
   };
 
   const goBack = () => {
-    if (!currentFolderId.value) {
+    if (currentFolderId.value == null) {
       return;
     }
 
-    const folder = fileById.value.get(String(currentFolderId.value));
-    currentFolderId.value = folder?.parentId ?? null;
+    const currentIdStr = String(currentFolderId.value);
+    const breadcrumbIndex = driveBreadcrumbs.value.findIndex(
+      (crumb) => crumb?.id != null && String(crumb.id) === currentIdStr,
+    );
+
+    if (breadcrumbIndex > 0) {
+      const parentBreadcrumb = driveBreadcrumbs.value[breadcrumbIndex - 1];
+      navigateToFolder(parentBreadcrumb?.id ?? null);
+      return;
+    }
+
+    if (breadcrumbIndex === 0) {
+      navigateToFolder(null);
+      return;
+    }
+
+    const folder = fileById.value.get(currentIdStr);
+    navigateToFolder(folder?.parentId ?? null);
   };
 
   const moveFileToFolder = async (fileId, folderId) => {
@@ -602,6 +1079,53 @@ export const useFileStore = defineStore("file", () => {
 
     await moveFilesToFolderApi(normalizedIds, folderId);
     await refreshAll();
+  };
+
+  const pruneMovedAccessedHistory = (rootIds = []) => {
+    const movedTreeIdSet = new Set(rootIds.map((id) => String(id)));
+    const knownNodes = [...allFiles.value, ...drivePageFiles.value, ...knownFolders.value];
+    let added = true;
+    while (added) {
+      added = false;
+      for (const item of knownNodes) {
+        if (
+          item?.id != null &&
+          item.parentId != null &&
+          movedTreeIdSet.has(String(item.parentId)) &&
+          !movedTreeIdSet.has(String(item.id))
+        ) {
+          movedTreeIdSet.add(String(item.id));
+          added = true;
+        }
+      }
+    }
+    accessedFilesHistory.value = accessedFilesHistory.value.filter(
+      (entry) => !movedTreeIdSet.has(String(entry?.id)),
+    );
+    writeSavedAccessedFiles(accessedFilesHistory.value);
+  };
+
+  const moveFileToVault = async (fileId, targetParentId = null) => {
+    if (fileId == null) {
+      return null;
+    }
+
+    const result = await moveFileToVaultApi(fileId, targetParentId);
+    pruneMovedAccessedHistory([fileId]);
+    await refreshAll();
+    return result;
+  };
+
+  const moveFilesToVault = async (fileIds, targetParentId = null) => {
+    const normalizedIds = normalizeIdList(fileIds);
+    if (!normalizedIds.length) {
+      return null;
+    }
+
+    const result = await moveFilesToVaultApi(normalizedIds, targetParentId);
+    pruneMovedAccessedHistory(normalizedIds);
+    await refreshAll();
+    return result;
   };
 
   const renameFolder = async (folderId, folderName) => {
@@ -697,8 +1221,32 @@ export const useFileStore = defineStore("file", () => {
     return fetchTextPreviewApi(file?.id);
   };
 
+  watch(
+    () => Boolean(secretFolderStore.vaultUnlocked),
+    (unlocked) => {
+      if (!unlocked) {
+        clearVaultFiles();
+      }
+    },
+    { flush: "sync" },
+  );
+
+  watch(
+    () => authStore.user?.idx ?? null,
+    () => {
+      secretFolderStore.resetSecretSession();
+      clearVaultFiles();
+      invalidateFolderSnapshots();
+      currentFolderId.value = null;
+      applyFolderTransitionState(null);
+    },
+  );
+
   return {
     allFiles,
+    vaultAllFiles,
+    vaultHasLoaded,
+    vaultLoading,
     drivePageFiles,
     driveBreadcrumbs,
     driveAvailableExtensions,
@@ -722,15 +1270,21 @@ export const useFileStore = defineStore("file", () => {
     pendingSharedFiles,
     sentSharedFiles,
     recentFiles,
+    recentUploadedFiles,
+    recentAccessedFiles,
     trashFiles,
     allOnlyFiles,
     fetchFiles,
+    fetchVaultFiles,
+    clearVaultFiles,
     fetchDrivePage,
     refreshDrivePage,
     fetchSharedFiles,
     fetchPendingSharedFiles,
     fetchSentSharedFiles,
     refreshAll,
+    recordFileAccess,
+    clearAccessedFiles,
     createFolder,
     moveToTrash,
     trashFilesBatch,
@@ -741,11 +1295,15 @@ export const useFileStore = defineStore("file", () => {
     emptyTrash,
     enterFolder,
     navigateToFolder,
+    exitHiddenSubtreeIfNeeded,
+    invalidateFolderSnapshots,
     navigateToDesktopPath,
     navigateToSharedDesktopPath,
     goBack,
     moveFileToFolder,
     moveFilesToFolder,
+    moveFileToVault,
+    moveFilesToVault,
     renameFolder,
     setFilesLocked,
     shareFiles,

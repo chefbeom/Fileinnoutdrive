@@ -1,5 +1,7 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
+
+const isMobileControlsOpen = ref(false);
 
 const props = defineProps({
   title: { type: String, default: "" },
@@ -24,6 +26,7 @@ const props = defineProps({
   customLayoutRows: { type: [String, Number], default: "" },
   layoutGuideHint: { type: String, default: "" },
   viewMode: { type: String, default: "table" },
+  itemSize: { type: String, default: "medium" },
 });
 
 const emit = defineEmits([
@@ -36,6 +39,7 @@ const emit = defineEmits([
   "set-custom-layout-columns",
   "set-custom-layout-rows",
   "set-view-mode",
+  "set-item-size",
 ]);
 
 const sortOptionModel = computed({
@@ -59,6 +63,22 @@ const lastFolderSegmentId = computed(() => props.folderPathSegments[props.folder
               <slot name="header-left"></slot>
               <slot name="header-right"></slot>
             </div>
+          </div>
+          <div class="toolbar-mobile-quickbar md:hidden">
+            <div class="toolbar-mobile-view-group">
+              <button type="button" class="toolbar-mobile-view-btn" :class="{ 'is-active': viewMode === 'table' }" @click="emit('set-view-mode', 'table')">리스트</button>
+              <button type="button" class="toolbar-mobile-view-btn" :class="{ 'is-active': viewMode === 'grid' }" @click="emit('set-view-mode', 'grid')">카드</button>
+              <button type="button" class="toolbar-mobile-view-btn" :class="{ 'is-active': viewMode === 'icon' }" @click="emit('set-view-mode', 'icon')">아이콘</button>
+            </div>
+            <button
+              type="button"
+              class="toolbar-mobile-settings-btn"
+              :class="{ 'is-active': isMobileControlsOpen }"
+              @click="isMobileControlsOpen = !isMobileControlsOpen"
+            >
+              <i class="fa-solid fa-sliders text-xs"></i>
+              <span>{{ isMobileControlsOpen ? '설정 닫기' : '정렬·배치' }}</span>
+            </button>
           </div>
         </div>
         <div v-if="hasVisibleToolbarChips || hasActiveFilters" class="toolbar-copy__actions">
@@ -93,7 +113,7 @@ const lastFolderSegmentId = computed(() => props.folderPathSegments[props.folder
         </div>
       </div>
 
-      <div class="toolbar-controls">
+      <div class="toolbar-controls" :class="{ 'is-mobile-collapsed': !isMobileControlsOpen }">
         <label class="file-filter">
           <span class="file-filter__label">정렬</span>
           <select v-model="sortOptionModel" class="file-filter__input"><option v-for="option in sortOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select>
@@ -115,6 +135,14 @@ const lastFolderSegmentId = computed(() => props.folderPathSegments[props.folder
             <button type="button" class="view-toggle" :class="{ 'is-active': viewMode === 'table' }" @click="emit('set-view-mode', 'table')">리스트</button>
             <button type="button" class="view-toggle" :class="{ 'is-active': viewMode === 'grid' }" @click="emit('set-view-mode', 'grid')">카드</button>
             <button type="button" class="view-toggle" :class="{ 'is-active': viewMode === 'icon' }" @click="emit('set-view-mode', 'icon')">아이콘</button>
+          </div>
+        </div>
+        <div class="file-filter">
+          <span class="file-filter__label">크기</span>
+          <div class="toolbar-toggle-group">
+            <button type="button" class="view-toggle" :class="{ 'is-active': itemSize === 'small' }" @click="emit('set-item-size', 'small')">작게</button>
+            <button type="button" class="view-toggle" :class="{ 'is-active': itemSize === 'medium' }" @click="emit('set-item-size', 'medium')">보통</button>
+            <button type="button" class="view-toggle" :class="{ 'is-active': itemSize === 'large' }" @click="emit('set-item-size', 'large')">크게</button>
           </div>
         </div>
       </div>

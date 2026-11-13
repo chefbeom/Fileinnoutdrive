@@ -3,6 +3,8 @@ import { findMembershipProduct } from "@/constants/billingProducts.js";
 export const PROFILE_TABS = [
   { id: "group", label: "그룹", icon: "fa-solid fa-user-group" },
   { id: "profile", label: "프로필", icon: "fa-solid fa-circle-user" },
+  { id: "layout", label: "화면 · 버튼 배치", icon: "fa-solid fa-table-columns" },
+  { id: "mediaPhotos", label: "미디어 · 사진첩", icon: "fa-solid fa-clapperboard" },
   { id: "security", label: "보안", icon: "fa-solid fa-shield-halved" },
   { id: "notification", label: "알림", icon: "fa-solid fa-bell" },
   { id: "language", label: "언어", icon: "fa-solid fa-globe" },
@@ -29,6 +31,7 @@ export const REGION_OPTIONS = [
 ];
 
 export const ACCEPTED_PROFILE_IMAGE_TYPES = ["image/png", "image/jpeg", "image/jpg"];
+export const WITHDRAW_CONFIRMATION_PHRASE = "회원탈퇴";
 
 export function resolveMembershipLabel(membershipCode) {
   switch (String(membershipCode || "FREE").toUpperCase()) {
@@ -38,6 +41,19 @@ export function resolveMembershipLabel(membershipCode) {
       return "프리미엄 멤버십";
     default:
       return "기본 멤버십";
+  }
+}
+
+export function resolveSocialProviderLabel(provider) {
+  switch (String(provider || "").toLowerCase()) {
+    case "google":
+      return "Google";
+    case "kakao":
+      return "Kakao";
+    case "naver":
+      return "Naver";
+    default:
+      return "소셜";
   }
 }
 
@@ -62,6 +78,10 @@ export function createDefaultProfileForm() {
     joinedAt: null,
     updatedAt: null,
     emailVerified: false,
+    socialAccount: false,
+    socialProvider: null,
+    withdrawAllowed: true,
+    withdrawBlockedReason: null,
   };
 }
 
@@ -92,6 +112,10 @@ export function toProfileForm(profile = {}, authUser = {}) {
     joinedAt: profile.joinedAt || null,
     updatedAt: profile.updatedAt || null,
     emailVerified: Boolean(profile.emailVerified),
+    socialAccount: Boolean(profile.socialAccount),
+    socialProvider: profile.socialProvider || null,
+    withdrawAllowed: profile.withdrawAllowed !== undefined ? Boolean(profile.withdrawAllowed) : true,
+    withdrawBlockedReason: profile.withdrawBlockedReason || null,
   };
 }
 
@@ -175,4 +199,67 @@ export function getProfileErrorMessage(error, fallbackMessage) {
     error?.message ||
     fallbackMessage
   );
+}
+
+export function validateAccountWithdrawalInput(
+  profileForm = {},
+  { password = "", confirmationText = "", agreed = false } = {},
+) {
+  if (profileForm.withdrawAllowed === false) {
+    return {
+      valid: false,
+      message: profileForm.withdrawBlockedReason || "현재 계정은 회원 탈퇴할 수 없습니다.",
+    };
+  }
+
+  if (!agreed) {
+    return {
+      valid: false,
+      message: "안내 사항 확인 및 데이터 영구 삭제 동의에 체크해 주세요.",
+    };
+  }
+
+  if (profileForm.socialAccount) {
+    const normalizedText = String(confirmationText || "").trim();
+    const normalizedEmail = String(profileForm.email || "").trim();
+    const matchesPhrase =
+      normalizedText === WITHDRAW_CONFIRMATION_PHRASE || normalizedText === "회원 탈퇴";
+    const matchesEmail =
+      Boolean(normalizedEmail) && normalizedText.toLowerCase() === normalizedEmail.toLowerCase();
+
+    if (!matchesPhrase && !matchesEmail) {
+      return {
+        valid: false,
+        message: `'${WITHDRAW_CONFIRMATION_PHRASE}' 또는 계정 이메일을 정확히 입력해 주세요.`,
+      };
+    }
+
+    return { valid: true, message: "" };
+  }
+
+  if (!String(password || "").trim()) {
+    return {
+      valid: false,
+      message: "본인 확인을 위해 현재 비밀번호를 입력해 주세요.",
+    };
+  }
+
+  return { valid: true, message: "" };
+}
+
+export function buildAccountWithdrawalPayload(
+  profileForm = {},
+  { password = "", confirmationText = "" } = {},
+) {
+  if (profileForm.socialAccount) {
+    return {
+      password: null,
+      confirmationText: String(confirmationText || "").trim(),
+    };
+  }
+
+  return {
+    password: String(password || ""),
+    confirmationText: null,
+  };
 }

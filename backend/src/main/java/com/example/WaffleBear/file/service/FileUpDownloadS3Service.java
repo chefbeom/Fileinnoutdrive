@@ -27,6 +27,11 @@ public class FileUpDownloadS3Service implements FileUpDownloadService {
     }
 
     @Override
+    public List<FileCommonDto.FileListItemRes> vaultFileList(Long userIdx) {
+        return resolveDelegate().vaultFileList(userIdx);
+    }
+
+    @Override
     public FileCommonDto.FileListPageRes fileListPage(Long userIdx, FileManageDto.ListPageReq request) {
         return resolveDelegate().fileListPage(userIdx, request);
     }
@@ -57,8 +62,18 @@ public class FileUpDownloadS3Service implements FileUpDownloadService {
     }
 
     @Override
+    public FileCommonDto.FileActionRes clearTrash(Long userIdx, boolean vaultMode) {
+        return resolveDelegate().clearTrash(userIdx, vaultMode);
+    }
+
+    @Override
     public FileCommonDto.FileActionRes moveToFolder(Long userIdx, Long fileIdx, Long targetParentId) {
         return resolveDelegate().moveToFolder(userIdx, fileIdx, targetParentId);
+    }
+
+    @Override
+    public FileCommonDto.FileActionRes moveToVault(Long userIdx, Long fileIdx, Long targetParentId) {
+        return resolveDelegate().moveToVault(userIdx, fileIdx, targetParentId);
     }
 
     @Override
@@ -74,6 +89,11 @@ public class FileUpDownloadS3Service implements FileUpDownloadService {
     @Override
     public FileCommonDto.FileActionRes moveFilesToFolder(Long userIdx, List<Long> fileIdxList, Long targetParentId) {
         return resolveDelegate().moveFilesToFolder(userIdx, fileIdxList, targetParentId);
+    }
+
+    @Override
+    public FileCommonDto.FileActionRes moveFilesToVault(Long userIdx, List<Long> fileIdxList, Long targetParentId) {
+        return resolveDelegate().moveFilesToVault(userIdx, fileIdxList, targetParentId);
     }
 
     @Override
@@ -104,6 +124,11 @@ public class FileUpDownloadS3Service implements FileUpDownloadService {
     @Override
     public String getDownloadUrl(Long userIdx, Long fileIdx) {
         return resolveDelegate().getDownloadUrl(userIdx, fileIdx);
+    }
+
+    @Override
+    public FileCommonDto.FolderZipDownloadPayload downloadFolderZip(Long userIdx, Long folderIdx) {
+        return resolveDelegate().downloadFolderZip(userIdx, folderIdx);
     }
 
     private FileUpDownloadService resolveDelegate() {

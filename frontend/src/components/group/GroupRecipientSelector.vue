@@ -209,8 +209,8 @@ const isGroupSelected = (groupId) => normalizedGroupIds.value.includes(Number(gr
 <style scoped>
 .recipient-selector {
   border-radius: 1.2rem;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  background: rgba(248, 250, 252, 0.96);
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
   padding: 1rem;
 }
 
@@ -256,8 +256,8 @@ const isGroupSelected = (groupId) => normalizedGroupIds.value.includes(Number(gr
 
 .recipient-selector__card {
   border-radius: 1rem;
-  background: #ffffff;
-  border: 1px solid rgba(226, 232, 240, 0.9);
+  background: var(--bg-main);
+  border: 1px solid var(--border-color);
   padding: 0.9rem;
 }
 
@@ -271,12 +271,12 @@ const isGroupSelected = (groupId) => normalizedGroupIds.value.includes(Number(gr
 .recipient-selector__card-header p {
   font-size: 0.88rem;
   font-weight: 800;
-  color: #0f172a;
+  color: var(--text-main);
 }
 
 .recipient-selector__card-header span {
   font-size: 0.78rem;
-  color: #64748b;
+  color: var(--text-muted);
 }
 
 .recipient-selector__list {
@@ -300,8 +300,8 @@ const isGroupSelected = (groupId) => normalizedGroupIds.value.includes(Number(gr
   align-items: flex-start;
   gap: 0.75rem;
   border-radius: 0.95rem;
-  border: 1px solid rgba(226, 232, 240, 0.95);
-  background: #f8fafc;
+  border: 1px solid var(--border-color);
+  background: var(--bg-elevated);
   padding: 0.8rem 0.85rem;
   text-align: left;
   transition: transform 0.16s ease, border-color 0.16s ease, background-color 0.16s ease;
@@ -309,12 +309,12 @@ const isGroupSelected = (groupId) => normalizedGroupIds.value.includes(Number(gr
 
 .recipient-selector__item:hover:not(:disabled) {
   transform: translateY(-1px);
-  border-color: rgba(14, 165, 233, 0.55);
+  border-color: var(--accent);
 }
 
 .recipient-selector__item.is-selected {
-  border-color: rgba(2, 132, 199, 0.55);
-  background: rgba(224, 242, 254, 0.88);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .recipient-selector__item:disabled {
@@ -327,13 +327,13 @@ const isGroupSelected = (groupId) => normalizedGroupIds.value.includes(Number(gr
   height: 1.1rem;
   flex-shrink: 0;
   border-radius: 0.35rem;
-  border: 1px solid rgba(148, 163, 184, 0.85);
-  background: #fff;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-main);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   margin-top: 0.15rem;
-  color: #0284c7;
+  color: var(--accent);
   font-size: 0.68rem;
 }
 
@@ -345,13 +345,13 @@ const isGroupSelected = (groupId) => normalizedGroupIds.value.includes(Number(gr
 }
 
 .recipient-selector__copy strong {
-  color: #0f172a;
+  color: var(--text-main);
   font-size: 0.88rem;
   font-weight: 800;
 }
 
 .recipient-selector__copy span {
-  color: #475569;
+  color: var(--text-secondary);
   font-size: 0.78rem;
   word-break: break-all;
 }
@@ -359,8 +359,8 @@ const isGroupSelected = (groupId) => normalizedGroupIds.value.includes(Number(gr
 .recipient-selector__empty {
   margin-top: 0.9rem;
   border-radius: 1rem;
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px dashed rgba(148, 163, 184, 0.5);
+  background: var(--bg-main);
+  border: 1px dashed var(--border-strong);
   padding: 1.3rem 1rem;
   text-align: center;
   color: var(--text-muted);
@@ -380,7 +380,7 @@ const isGroupSelected = (groupId) => normalizedGroupIds.value.includes(Number(gr
 .recipient-selector__group-members-title {
   font-size: 0.72rem;
   font-weight: 800;
-  color: #64748b;
+  color: var(--text-muted);
 }
 
 .recipient-selector__group-member-chips {
@@ -392,10 +392,10 @@ const isGroupSelected = (groupId) => normalizedGroupIds.value.includes(Number(gr
 
 .recipient-selector__group-member-chip {
   border-radius: 999px;
-  background: rgba(226, 232, 240, 0.9);
+  background: var(--bg-input);
   padding: 0.24rem 0.55rem;
   font-size: 0.72rem;
   font-weight: 700;
-  color: #334155;
+  color: var(--text-secondary);
 }
 </style>

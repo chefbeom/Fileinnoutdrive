@@ -24,4 +24,6 @@ public interface RelationshipRepository extends JpaRepository<Relationship, Long
     Optional<Relationship> findById(Long id);
 
     Optional<Relationship> findByUser_IdxAndTargetUser_Idx(Long userId, Long targetUserId);
+
+    void deleteAllByUser_IdxOrTargetUser_Idx(Long userId, Long targetUserId);
 }

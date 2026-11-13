@@ -8,6 +8,9 @@ import io.minio.http.Method;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.Collection;
+import java.util.Objects;
+
 @Service
 @RequiredArgsConstructor
 class FileListItemUrlService {
@@ -15,6 +18,19 @@ class FileListItemUrlService {
     private final MinioPresignedUrlService minioPresignedUrlService;
     private final MinioProperties minioProperties;
     private final FileThumbnailService fileThumbnailService;
+
+    void prepareThumbnailUrls(Collection<FileCommonDto.FileListItemRes> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+
+        fileThumbnailService.warmThumbnailsForFiles(
+                items.stream()
+                        .filter(Objects::nonNull)
+                        .map(FileDownloadRules::toFileInfoUrlSnapshot)
+                        .toList()
+        );
+    }
 
     FileCommonDto.FileListItemRes attachUrls(FileCommonDto.FileListItemRes item) {
         if (item == null) {

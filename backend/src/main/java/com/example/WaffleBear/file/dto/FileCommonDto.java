@@ -28,6 +28,10 @@ public class FileCommonDto {
         private Boolean lockedFile;
         private Boolean sharedFile;
         private Boolean trashed;
+        private String spaceType;
+        private Boolean hiddenFolder;
+        private Boolean pinEnabled;
+        private Boolean pinRegistered;
         private LocalDateTime deletedAt;
         private LocalDateTime uploadDate;
         private LocalDateTime lastModifyDate;
@@ -83,6 +87,12 @@ public class FileCommonDto {
 
     public record FileDownloadUrlRes(
             String downloadUrl
+    ) {
+    }
+
+    public record FolderZipDownloadPayload(
+            String folderName,
+            org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody streamingBody
     ) {
     }
 }

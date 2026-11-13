@@ -487,7 +487,7 @@ onBeforeUnmount(() => {
           <h3 class="mt-2 text-2xl font-bold text-slate-900">그룹과 연결 관리</h3>
           <p class="mt-2 text-sm text-slate-500">연결된 사람을 분류 없이 보관하고, 필요한 그룹에만 나눠서 관리할 수 있습니다.</p>
         </div>
-        <div class="grid min-w-[240px] flex-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div class="grid min-w-0 sm:min-w-[240px] flex-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <article class="rounded-2xl bg-slate-50 px-4 py-3">
             <p class="text-xs font-semibold text-slate-400">연결</p>
             <p class="mt-2 text-2xl font-bold text-slate-900">{{ relationshipCount }}</p>

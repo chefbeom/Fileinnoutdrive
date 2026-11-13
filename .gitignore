@@ -39,3 +39,5 @@ deploy/two-vm/*.tar.gz
 desktop-client/dist/
 frontend/public/downloads/
 backend/src/main/resources/application-local.yml
+절대 업로드 금지/
+

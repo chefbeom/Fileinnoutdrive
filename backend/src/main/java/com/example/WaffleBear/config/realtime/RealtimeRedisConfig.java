@@ -1,9 +1,11 @@
 package com.example.WaffleBear.config.realtime;
 
+import com.example.WaffleBear.config.RedisConfig;
 import com.example.WaffleBear.config.sse.SseRedisSubscriber;
 import com.example.WaffleBear.config.sse.SseService;
 import com.example.WaffleBear.config.stomp.ClusteredStompPublisher;
 import com.example.WaffleBear.config.stomp.StompRedisSubscriber;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,12 +21,19 @@ public class RealtimeRedisConfig {
     public RedisMessageListenerContainer realtimeRedisMessageListenerContainer(
             RedisConnectionFactory connectionFactory,
             StompRedisSubscriber stompRedisSubscriber,
-            SseRedisSubscriber sseRedisSubscriber
+            SseRedisSubscriber sseRedisSubscriber,
+            @Value("${REDIS_KEY_PREFIX:}") String redisKeyPrefix
     ) {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(connectionFactory);
-        container.addMessageListener(stompRedisSubscriber, new ChannelTopic(ClusteredStompPublisher.CHANNEL));
-        container.addMessageListener(sseRedisSubscriber, new ChannelTopic(SseService.CHANNEL));
+        container.addMessageListener(
+                stompRedisSubscriber,
+                new ChannelTopic(RedisConfig.resolvePrefixedName(redisKeyPrefix, ClusteredStompPublisher.CHANNEL))
+        );
+        container.addMessageListener(
+                sseRedisSubscriber,
+                new ChannelTopic(RedisConfig.resolvePrefixedName(redisKeyPrefix, SseService.CHANNEL))
+        );
         return container;
     }
 }

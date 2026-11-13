@@ -13,4 +13,6 @@ public interface RelationshipGroupRepository extends JpaRepository<RelationshipG
     Optional<RelationshipGroup> findByIdAndUser_Idx(Long groupId, Long userId);
 
     boolean existsByUser_IdxAndNameIgnoreCase(Long userId, String name);
+
+    void deleteAllByUser_Idx(Long userId);
 }

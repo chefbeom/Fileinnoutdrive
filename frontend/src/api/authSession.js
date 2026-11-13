@@ -11,7 +11,7 @@ const parseBearerToken = (value) => {
 export const reissueAccessToken = async () => {
   const res = await axios.post(apiPath('/auth/reissue'), {}, {
     withCredentials: true,
-    timeout: 5000,
+    timeout: 15000,
   })
 
   const authHeader = res.headers['authorization'] || res.headers['Authorization']
@@ -38,6 +38,6 @@ export const refreshAccessToken = () => {
 export const logoutSession = async () => {
   return axios.post(apiPath('/auth/logout'), {}, {
     withCredentials: true,
-    timeout: 5000,
+    timeout: 10000,
   })
 }

@@ -2,6 +2,7 @@ import { IMAGE_EXTENSIONS, VIDEO_EXTENSIONS } from "@/constants/fileTypes.js";
 import { formatBytes as formatFileSize } from "@/utils/formatBytes.js";
 
 export const ROOT_LOCATION_LABEL = "홈";
+export const VAULT_ROOT_LOCATION_LABEL = "비밀 폴더";
 const SHARED_LOCATION_LABEL = "공유 문서함";
 const PRESIGNED_URL_SAFETY_MARGIN_MS = 30 * 1000;
 
@@ -67,7 +68,10 @@ export const areDriveQueriesEqual = (left, right) => {
     String(left.sizeFilter || "") === String(right.sizeFilter || "") &&
     String(left.customMinSize || "") === String(right.customMinSize || "") &&
     String(left.customMaxSize || "") === String(right.customMaxSize || "") &&
-    String(left.statusFilter || "") === String(right.statusFilter || "")
+    String(left.statusFilter || "") === String(right.statusFilter || "") &&
+    Boolean(left.vaultMode) === Boolean(right.vaultMode) &&
+    Boolean(left.includeHidden) === Boolean(right.includeHidden) &&
+    Boolean(left.trashedOnly) === Boolean(right.trashedOnly)
   );
 };
 
@@ -126,6 +130,11 @@ export const normalizeFileRecord = (rawFile, options = {}) => {
   const assetUrlExpiresAt = presignedUrlExpiresIn > 0
     ? Date.now() + (presignedUrlExpiresIn * 1000)
     : 0;
+  const fileSaveName = rawFile?.fileSaveName || "";
+  const sharedStorageMatch = /^shared-storage-(\d+)-/i.exec(String(fileSaveName));
+  const sharedStorageIdx = sharedStorageMatch ? Number(sharedStorageMatch[1]) : (rawFile?.sharedStorageIdx ?? null);
+  const isSharedFlag = Boolean(rawFile?.sharedFile ?? rawFile?.isShared ?? Boolean(sharedStorageIdx));
+  const isSharedFolder = type === "folder" && Boolean(isSharedFlag || sharedWithMe);
 
   return {
     id: rawFile?.idx ?? rawFile?.id ?? `${name}-${uploadDate || Date.now()}`,
@@ -153,11 +162,18 @@ export const normalizeFileRecord = (rawFile, options = {}) => {
     location: sharedWithMe ? SHARED_LOCATION_LABEL : (options.sentShared ? "내가 공유함" : ROOT_LOCATION_LABEL),
     reason:
       rawFile?.reason ||
-      (type === "folder" ? "폴더" : `${extension ? extension.toUpperCase() : "FILE"} · ${formatFileSize(sizeBytes)}`),
+      (type === "folder" ? (isSharedFolder ? "공유 폴더" : "폴더") : `${extension ? extension.toUpperCase() : "FILE"} · ${formatFileSize(sizeBytes)}`),
     isTrash: Boolean(rawFile?.trashed ?? rawFile?.isTrash),
-    isShared: Boolean(rawFile?.sharedFile ?? rawFile?.isShared),
-    sharedFile: Boolean(rawFile?.sharedFile ?? rawFile?.isShared),
+    isShared: isSharedFlag,
+    sharedFile: isSharedFlag,
+    isSharedFolder,
+    sharedStorageIdx,
     lockedFile: Boolean(rawFile?.lockedFile),
+    spaceType: String(rawFile?.spaceType || "DRIVE").toUpperCase(),
+    isVaultSpace: String(rawFile?.spaceType || "DRIVE").toUpperCase() === "VAULT",
+    hiddenFolder: Boolean(rawFile?.hiddenFolder),
+    pinEnabled: Boolean(rawFile?.pinEnabled),
+    pinRegistered: Boolean(rawFile?.pinRegistered),
     parentId: rawFile?.parentId ?? null,
     deletedAt: rawFile?.deletedAt || null,
     downloadUrl,
@@ -165,7 +181,7 @@ export const normalizeFileRecord = (rawFile, options = {}) => {
     thumbnailUrl,
     thumbnailPresignedUrl: rawFile?.thumbnailPresignedUrl || "",
     contentType: rawFile?.contentType || rawFile?.mimeType || rawFile?.fileContentType || "",
-    fileSaveName: rawFile?.fileSaveName || "",
+    fileSaveName,
     fileSavePath: rawFile?.fileSavePath || rawFile?.objectKey || "",
     presignedUrlExpiresIn,
     assetUrlExpiresAt,
@@ -227,15 +243,15 @@ export const decorateSharedPaths = (files) => {
   });
 };
 
-export const decorateLocations = (files) => {
+export const decorateLocations = (files, rootLabel = ROOT_LOCATION_LABEL) => {
   const fileById = new Map(files.map((file) => [String(file.id), file]));
 
   return files.map((file) => ({
     ...file,
     location:
       file.parentId != null
-        ? fileById.get(String(file.parentId))?.name || ROOT_LOCATION_LABEL
-        : ROOT_LOCATION_LABEL,
+        ? fileById.get(String(file.parentId))?.name || rootLabel
+        : rootLabel,
   }));
 };
 
@@ -245,6 +261,7 @@ export const normalizeBreadcrumbRecord = (rawFolder) => normalizeFileRecord({
   fileFormat: "folder",
   fileSize: 0,
   nodeType: "FOLDER",
+  spaceType: rawFolder?.spaceType || "DRIVE",
   parentId: rawFolder?.parentId ?? null,
   trashed: false,
 });

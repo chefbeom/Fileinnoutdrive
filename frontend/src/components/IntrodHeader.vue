@@ -38,7 +38,7 @@ const handleClickOutside = (event) => {
 onMounted(() => {
   document.documentElement.classList.remove('dark');
   document.addEventListener('click', handleClickOutside);
-  authStore.checkLogin();
+  if (!authStore.checkLogin()) authStore.ensureSession().catch(() => {});
 });
 
 onBeforeUnmount(() => {
@@ -47,24 +47,24 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <nav class="flex items-center justify-between px-10 py-5 sticky top-0 bg-white/90 backdrop-blur-md border-b border-gray-200 z-50">
-    <RouterLink :to="{ name: 'intro' }" class="flex items-center gap-3">
-      <div class="w-9 h-9 bg-blue-600 rounded-lg shadow-lg shadow-blue-200 flex items-center justify-center">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+  <nav class="flex items-center justify-between gap-3 px-4 py-3.5 sm:px-10 sm:py-5 sticky top-0 bg-white/90 backdrop-blur-md border-b border-gray-200 z-50">
+    <RouterLink :to="isLoggedIn ? { name: 'home' } : { name: 'intro' }" class="flex items-center gap-2 sm:gap-3 min-w-0">
+      <div class="w-8 h-8 sm:w-9 sm:h-9 bg-blue-600 rounded-lg shadow-lg shadow-blue-200 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
         </svg>
       </div>
-      <div class="font-bold text-2xl tracking-tight text-gray-900">FileInNOut</div>
+      <div class="font-bold text-lg sm:text-2xl tracking-tight text-gray-900 truncate">FileInNOut</div>
     </RouterLink>
 
-    <div class="flex items-center gap-8 text-sm font-semibold">
+    <div class="flex items-center gap-3 sm:gap-8 text-xs sm:text-sm font-semibold shrink-0">
       
       
       <template v-if="!isLoggedIn">
-        <RouterLink :to="{ name: 'payment' }" class="text-gray-500 hover:text-blue-600 transition">요금제</RouterLink>
+        <RouterLink :to="{ name: 'payment' }" class="text-gray-500 hover:text-blue-600 transition whitespace-nowrap">요금제</RouterLink>
         <RouterLink
           :to="{ name: 'login' }"
-          class="bg-blue-600 text-white px-6 py-2.5 rounded-full hover:bg-blue-700 transition shadow-md shadow-blue-100"
+          class="bg-blue-600 text-white px-4 py-2 sm:px-6 sm:py-2.5 rounded-full hover:bg-blue-700 transition shadow-md shadow-blue-100 whitespace-nowrap"
         >
           로그인
         </RouterLink>
@@ -89,7 +89,7 @@ onBeforeUnmount(() => {
             <p class="text-sm font-bold text-gray-800 truncate">{{ authStore.user?.email }}</p>
           </div>
           <div class="py-1">
-            <RouterLink :to="{ name: 'main' }" class="flex items-center gap-3 px-4 py-2.5 text-gray-600 hover:bg-gray-50 transition">
+            <RouterLink :to="{ name: 'home' }" class="flex items-center gap-3 px-4 py-2.5 text-gray-600 hover:bg-gray-50 transition">
               <i class="fa-solid fa-gauge-high text-xs"></i>
               <span class="text-xs font-bold">대시보드 가기</span>
             </RouterLink>

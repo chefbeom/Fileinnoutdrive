@@ -38,6 +38,13 @@ public class OAuth2UserService extends DefaultOAuth2UserService {
             );
         }
 
+        if (!dto.isEmailVerified(oAuth2User.getAttributes())) {
+            throw new OAuth2AuthenticationException(
+                    new OAuth2Error("oauth2_email_not_verified"),
+                    "OAuth2 email is not verified"
+            );
+        }
+
         Optional<User> result = userRepository.findByEmail(dto.email());
         User user = result.orElseGet(() -> userRepository.save(dto.toEntity()));
 

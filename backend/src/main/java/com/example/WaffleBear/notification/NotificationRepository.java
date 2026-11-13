@@ -13,4 +13,5 @@ public interface NotificationRepository extends JpaRepository<NotificationEntity
     Optional<NotificationEntity> findByEndpoint(String endpoint);
     // 로그아웃 시 해당 유저의 모든 구독 비활성화용
     List<NotificationEntity> findAllByUserIdx(Long userIdx);
+    void deleteAllByUserIdx(Long userIdx);
 }

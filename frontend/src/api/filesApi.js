@@ -15,10 +15,12 @@ const normalizeFileFormat = (file) => {
     .toLowerCase();
 };
 
-const toUploadRequestList = (files, parentId = null) => {
+const toUploadRequestList = (files, parentId = null, options = {}) => {
+  const vaultMode = Boolean(options?.vaultMode);
+  const spaceType = options?.spaceType || (vaultMode ? "VAULT" : undefined);
   return Array.from(files ?? []).map((file) => {
     const fileFormat = normalizeFileFormat(file);
-    return {
+    const payload = {
       fileOriginName: file?.name || "unnamed-file",
       fileFormat,
       fileSize: file?.size ?? 0,
@@ -27,6 +29,13 @@ const toUploadRequestList = (files, parentId = null) => {
       relativePath: file?.webkitRelativePath || file?.name || "unnamed-file",
       lastModified: Number(file?.lastModified ?? 0) || 0,
     };
+    if (vaultMode) {
+      payload.vaultMode = true;
+    }
+    if (spaceType) {
+      payload.spaceType = spaceType;
+    }
+    return payload;
   });
 };
 
@@ -93,7 +102,44 @@ const extractDownloadLink = (responseData) => {
   return objectResult?.downloadUrl || responseData?.downloadUrl || responseData?.result?.downloadUrl || "";
 };
 
+export async function downloadFolderZip(folderOrId, fallbackFolderName = "folder") {
+  const folderId = typeof folderOrId === "object" ? (folderOrId?.idx ?? folderOrId?.id) : folderOrId;
+  const rawName = typeof folderOrId === "object" ? (folderOrId?.name || folderOrId?.fileOriginName || fallbackFolderName) : fallbackFolderName;
+  const folderName = (typeof rawName === "string" && rawName.trim()) ? rawName.trim() : fallbackFolderName;
+  const zipFileName = folderName.endsWith(".zip") ? folderName : `${folderName}.zip`;
+
+  try {
+    const response = await api.get(`/file/${folderId}/download-folder`, {
+      responseType: "blob",
+      timeout: 300000,
+    });
+
+    const blob = new Blob([response.data], { type: "application/zip" });
+    const objectUrl = window.URL.createObjectURL(blob);
+    triggerDirectDownload(objectUrl, zipFileName);
+    window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 60000);
+  } catch (error) {
+    if (error?.response?.data instanceof Blob && error.response.data.type?.includes("json")) {
+      try {
+        const text = await error.response.data.text();
+        const json = JSON.parse(text);
+        if (json?.message) {
+          throw new Error(json.message);
+        }
+      } catch (parseErr) {
+        if (parseErr.message && parseErr !== error) throw parseErr;
+      }
+    }
+    throw error;
+  }
+}
+
 export async function downloadFileAsset(fileOrUrl, fallbackFileName = "file", options = {}) {
+  const isFolder = fileOrUrl?.type === "folder" || fileOrUrl?.nodeType === "FOLDER";
+  if (isFolder) {
+    return downloadFolderZip(fileOrUrl, fallbackFileName);
+  }
+
   const downloadUrl = resolveDownloadUrl(fileOrUrl);
   const fileName = resolveDownloadFileName(fileOrUrl, fallbackFileName);
   const downloadLinkPath = resolveDownloadLinkPath(fileOrUrl);
@@ -121,18 +167,20 @@ export async function downloadFileAsset(fileOrUrl, fallbackFileName = "file", op
 
   triggerDirectDownload(attachmentDownloadUrl, fileName);
 }
-export function initUploadFiles(files, parentId = null) {
-  const fileRequestList = toUploadRequestList(files, parentId);
-  return api.post("/file/upload", fileRequestList);
+export function initUploadFiles(files, parentId = null, options = {}) {
+  const fileRequestList = toUploadRequestList(files, parentId, options);
+  return api.post("/file/upload", fileRequestList, {
+    timeout: 120000,
+  });
 }
 
-export function uploadFiles(files, parentId = null) {
-  return initUploadFiles(files, parentId);
+export function uploadFiles(files, parentId = null, options = {}) {
+  return initUploadFiles(files, parentId, options);
 }
 
 export function completeUpload(payload) {
   return api.post("/file/upload/complete", payload, {
-    timeout: 600000,
+    timeout: 1800000,
   });
 }
 
@@ -147,9 +195,15 @@ export async function fetchFileList() {
   return extractArrayResult(response?.data);
 }
 
-export async function fetchFileListPage(params = {}) {
+export async function fetchVaultFileList() {
+  const response = await api.get("/file/list/vault");
+  return extractArrayResult(response?.data);
+}
+
+export async function fetchFileListPage(params = {}, options = {}) {
   const response = await api.get("/file/list/page", {
     params,
+    signal: options?.signal,
   });
   return extractObjectResult(response?.data);
 }
@@ -174,11 +228,32 @@ export async function fetchFileShareInfo(fileId) {
   return extractArrayResult(response?.data);
 }
 
-export async function createFolder(folderName, parentId = null) {
-  const response = await api.post("/file/folder", {
+export async function createFolder(folderName, parentId = null, options = {}) {
+  const payload = {
     folderName,
     parentId,
-  });
+  };
+  if (options && typeof options === "object") {
+    if (options.sharedFile !== undefined) {
+      payload.sharedFile = Boolean(options.sharedFile);
+    }
+    if (options.hidden !== undefined) {
+      payload.hidden = Boolean(options.hidden);
+    }
+    if (options.pinEnabled !== undefined) {
+      payload.pinEnabled = Boolean(options.pinEnabled);
+    }
+    if (typeof options.pin === "string" && options.pin.trim()) {
+      payload.pin = options.pin.trim();
+    }
+    if (typeof options.spaceType === "string" && options.spaceType.trim()) {
+      payload.spaceType = options.spaceType.trim();
+    }
+    if (options.vaultMode !== undefined) {
+      payload.vaultMode = Boolean(options.vaultMode);
+    }
+  }
+  const response = await api.post("/file/folder", payload);
   return extractObjectResult(response?.data);
 }
 
@@ -204,8 +279,10 @@ export async function deleteFilePermanently(fileId) {
   return extractObjectResult(response?.data);
 }
 
-export async function clearTrash() {
-  const response = await api.delete("/file/trash");
+export async function clearTrash(options = {}) {
+  const response = await api.delete("/file/trash", {
+    params: options?.vaultMode ? { vaultMode: true } : undefined,
+  });
   return extractObjectResult(response?.data);
 }
 
@@ -218,6 +295,21 @@ export async function moveFileToFolder(fileId, targetParentId) {
 
 export async function moveFilesToFolder(fileIdList, targetParentId) {
   const response = await api.patch("/file/move", {
+    fileIdxList: fileIdList,
+    targetParentId,
+  });
+  return extractObjectResult(response?.data);
+}
+
+export async function moveFileToVault(fileId, targetParentId = null) {
+  const response = await api.patch(`/file/${fileId}/move-to-vault`, {
+    targetParentId,
+  });
+  return extractObjectResult(response?.data);
+}
+
+export async function moveFilesToVault(fileIdList, targetParentId = null) {
+  const response = await api.patch("/file/move-to-vault", {
     fileIdxList: fileIdList,
     targetParentId,
   });
@@ -313,10 +405,12 @@ export async function restoreFileVersion(fileId, versionId) {
   const response = await api.post(`/file/${fileId}/versions/${versionId}/restore`);
   return extractObjectResult(response?.data);
 }
-export async function fetchFileThumbnailBlob(fileId, version = "") {
+export async function fetchFileThumbnailBlob(fileId, version = "", options = {}) {
   const response = await api.get(`/file/${fileId}/thumbnail`, {
     params: version ? { v: version } : undefined,
     responseType: "blob",
+    timeout: options?.timeout ?? 8000,
+    signal: options?.signal,
   });
 
   if (response?.status === 204) {
@@ -328,10 +422,12 @@ export async function fetchFileThumbnailBlob(fileId, version = "") {
     : null;
 }
 
-export async function fetchSharedFileThumbnailBlob(fileId, version = "") {
+export async function fetchSharedFileThumbnailBlob(fileId, version = "", options = {}) {
   const response = await api.get(`/file/share/shared/${fileId}/thumbnail`, {
     params: version ? { v: version } : undefined,
     responseType: "blob",
+    timeout: options?.timeout ?? 8000,
+    signal: options?.signal,
   });
 
   if (response?.status === 204) {
@@ -341,4 +437,54 @@ export async function fetchSharedFileThumbnailBlob(fileId, version = "") {
   return response?.data instanceof Blob && response.data.size > 0
     ? response.data
     : null;
+}
+
+export async function fetchVaultStatus() {
+  const response = await api.get("/file/secret/vault/status");
+  return extractObjectResult(response?.data);
+}
+
+export async function registerVaultPin(pin) {
+  const response = await api.post("/file/secret/vault/pin/register", { pin });
+  return extractObjectResult(response?.data);
+}
+
+export async function unlockVaultWithPin(pin) {
+  const response = await api.post("/file/secret/vault/unlock", { pin });
+  return extractObjectResult(response?.data);
+}
+
+export async function lockVaultSession() {
+  const response = await api.post("/file/secret/vault/lock");
+  return extractObjectResult(response?.data);
+}
+
+export async function changeVaultPin(currentPin, newPin) {
+  const response = await api.put("/file/secret/vault/pin", { currentPin, newPin });
+  return extractObjectResult(response?.data);
+}
+
+export async function fetchHiddenFolderStatus(folderId) {
+  const response = await api.get(`/file/secret/folder/${folderId}/status`);
+  return extractObjectResult(response?.data);
+}
+
+export async function unlockHiddenFolder(folderId, pin) {
+  const response = await api.post(`/file/secret/folder/${folderId}/unlock`, { pin });
+  return extractObjectResult(response?.data);
+}
+
+export async function lockHiddenFolderSession(folderId) {
+  const response = await api.post(`/file/secret/folder/${folderId}/lock`);
+  return extractObjectResult(response?.data);
+}
+
+export async function configureHiddenFolder(folderId, config = {}) {
+  const response = await api.patch(`/file/secret/folder/${folderId}/config`, {
+    hidden: config.hidden,
+    pinEnabled: config.pinEnabled,
+    pin: config.pin || null,
+    currentPin: config.currentPin || null,
+  });
+  return extractObjectResult(response?.data);
 }

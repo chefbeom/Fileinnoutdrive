@@ -12,4 +12,6 @@ public interface WorkspaceRevisionRepository extends JpaRepository<WorkspaceRevi
     Optional<WorkspaceRevision> findByIdxAndWorkspace_Idx(Long idx, Long workspaceIdx);
 
     Optional<WorkspaceRevision> findTopByWorkspace_IdxOrderByCreatedAtDescIdxDesc(Long workspaceIdx);
+
+    void deleteAllByActor_Idx(Long actorIdx);
 }

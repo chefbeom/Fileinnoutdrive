@@ -19,8 +19,10 @@ const REDIS_PORT = Number.parseInt(process.env.REDIS_PORT || '6379', 10)
 const REDIS_NAME = String(process.env.REDIS_NAME || '').trim()
 const REDIS_SENTINEL_MASTER = String(process.env.REDIS_SENTINEL_MASTER || '').trim()
 const REDIS_SENTINEL_NODES = String(process.env.REDIS_SENTINEL_NODES || '').trim()
+const REDIS_USERNAME = String(process.env.REDIS_USERNAME || '').trim()
 const REDIS_PASSWORD = String(process.env.REDIS_PASSWORD || '').trim()
 const REDIS_PREFIX = process.env.YJS_REDIS_PREFIX || 'wafflebear:yjs'
+let redisPubSubEnabled = String(process.env.YJS_REDIS_PUBSUB_ENABLED || 'true').trim().toLowerCase() !== 'false'
 const SNAPSHOT_SAVE_DELAY_MS = Number.parseInt(
   process.env.YJS_SNAPSHOT_SAVE_DELAY_MS || '150',
   10,
@@ -99,9 +101,14 @@ const buildRedisOptions = () => {
       sentinels,
       name: REDIS_SENTINEL_MASTER,
       role: 'master',
+      enableReadyCheck: false,
       maxRetriesPerRequest: null,
       retryStrategy: (times) => Math.min(times * 500, 5000),
       sentinelRetryStrategy: (times) => Math.min(times * 500, 5000),
+    }
+
+    if (REDIS_USERNAME) {
+      options.username = REDIS_USERNAME
     }
 
     if (REDIS_PASSWORD) {
@@ -114,8 +121,13 @@ const buildRedisOptions = () => {
   const options = {
     host: REDIS_HOST,
     port: REDIS_PORT,
+    enableReadyCheck: false,
     maxRetriesPerRequest: null,
     retryStrategy: (times) => Math.min(times * 500, 5000),
+  }
+
+  if (REDIS_USERNAME) {
+    options.username = REDIS_USERNAME
   }
 
   if (REDIS_PASSWORD) {
@@ -166,8 +178,7 @@ const snapshotKey = (docName) => `${REDIS_PREFIX}:snapshot:${encodeURIComponent(
 
 const isRedisReady = () =>
   redisPub.status === 'ready' &&
-  redisSub.status === 'ready' &&
-  redisChannelsSubscribed
+  (!redisPubSubEnabled || (redisSub.status === 'ready' && redisChannelsSubscribed))
 
 const redisDisplayName = () => {
   if (REDIS_NAME) {
@@ -370,6 +381,8 @@ const buildProxyHeaders = (req, { upgrade = false } = {}) => {
 }
 
 const proxyHttpRequest = (req, res, upstreamPath) => {
+  let clientClosed = false
+
   const proxyReq = BACKEND_CLIENT.request(
     {
       hostname: BACKEND_HOST,
@@ -384,7 +397,21 @@ const proxyHttpRequest = (req, res, upstreamPath) => {
     },
   )
 
+  const handleClientClose = () => {
+    clientClosed = true
+    proxyReq.destroy()
+  }
+
   proxyReq.on('error', (error) => {
+    if (
+      clientClosed ||
+      req.destroyed ||
+      res.destroyed ||
+      res.writableEnded ||
+      (error?.code === 'ECONNRESET' && upstreamPath.startsWith('/api/sse'))
+    ) {
+      return
+    }
     console.error('[REALTIME] HTTP proxy failed', error)
     if (!res.headersSent) {
       res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' })
@@ -392,8 +419,8 @@ const proxyHttpRequest = (req, res, upstreamPath) => {
     res.end('Realtime proxy upstream unavailable')
   })
 
-  req.on('aborted', () => proxyReq.destroy())
-  res.on('close', () => proxyReq.destroy())
+  req.on('aborted', handleClientClose)
+  res.on('close', handleClientClose)
 
   req.pipe(proxyReq)
 }
@@ -471,6 +498,9 @@ const serializeEnvelope = (docName, kind, data) => ({
 })
 
 const publishEnvelope = async (docName, kind, data) => {
+  if (!redisPubSubEnabled) {
+    return
+  }
   await redisPub.publish(
     kind === 'awareness' ? awarenessChannel(docName) : updateChannel(docName),
     JSON.stringify(serializeEnvelope(docName, kind, data)),
@@ -670,6 +700,11 @@ redisSub.on('pmessageBuffer', (pattern, channel, message) => {
 })
 
 const subscribeToRedisChannels = async () => {
+  if (!redisPubSubEnabled) {
+    redisChannelsSubscribed = true
+    console.log('[REDIS:sub] Pub/Sub disabled; running in single-node snapshot mode')
+    return
+  }
   while (true) {
     try {
       await redisSub.psubscribe(
@@ -680,6 +715,12 @@ const subscribeToRedisChannels = async () => {
       console.log('[REDIS:sub] subscribed to YJS channels')
       return
     } catch (error) {
+      if (String(error?.message || '').toUpperCase().includes('NOPERM')) {
+        redisPubSubEnabled = false
+        redisChannelsSubscribed = true
+        console.warn('[REDIS:sub] Pub/Sub not permitted by Redis ACL; falling back to single-node snapshot mode')
+        return
+      }
       console.error('[REDIS:sub] subscribe failed', error)
       await delay(REDIS_RETRY_DELAY_MS)
     }

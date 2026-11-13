@@ -5,10 +5,14 @@ import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.ConnectionPool;
+import okhttp3.OkHttpClient;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.util.StringUtils;
+
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Configuration
@@ -30,8 +34,17 @@ public class MinioConfig {
     }
 
     private MinioClient buildClient(String endpoint) {
+        OkHttpClient httpClient = new OkHttpClient.Builder()
+                .connectTimeout(5, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .writeTimeout(30, TimeUnit.SECONDS)
+                .retryOnConnectionFailure(true)
+                .connectionPool(new ConnectionPool(10, 2, TimeUnit.MINUTES))
+                .build();
+
         MinioClient.Builder builder = MinioClient.builder()
                 .endpoint(endpoint)
+                .httpClient(httpClient)
                 .credentials(minioProperties.getAccessKey(), minioProperties.getSecretKey());
 
         if (StringUtils.hasText(minioProperties.getRegion())) {

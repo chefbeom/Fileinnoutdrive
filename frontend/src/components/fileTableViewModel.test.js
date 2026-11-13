@@ -52,7 +52,9 @@ describe("fileTableViewModel", () => {
     expect(formatFileTableSize(file)).toBe("1.50 KB");
     expect(getFileTableUpdatedAt(file)).toBe("방금 전");
     expect(canDownloadFileTableFile(file)).toBe(true);
-    expect(canDownloadFileTableFile({ type: "folder", downloadUrl: "/folder" })).toBe(false);
+    expect(canDownloadFileTableFile({ type: "folder", downloadUrl: "/folder" })).toBe(true);
+    expect(canDownloadFileTableFile({ type: "folder", isTrash: true })).toBe(false);
+    expect(canDownloadFileTableFile({ type: "folder", lockedFile: true })).toBe(false);
     expect(canManageFileTableFolder({ type: "folder" }, "trash")).toBe(true);
     expect(canManageFileTableFolder({ type: "folder", isTrash: true }, "trash")).toBe(false);
     expect(isFileTableMovable({ isTrash: false }, "trash")).toBe(true);

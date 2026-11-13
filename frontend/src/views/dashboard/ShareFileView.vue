@@ -249,9 +249,9 @@ watch(() => [route.query.desktopPath, route.query.desktopTarget, route.query.dri
 
 .pending-share-panel {
   margin-bottom: 1rem;
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border-color) 78%);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border-color) 72%);
   border-radius: 1.5rem;
-  background: linear-gradient(180deg, color-mix(in srgb, #e0f2fe 66%, #ffffff 34%), #ffffff);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 52%, var(--bg-elevated) 48%), var(--bg-main));
   padding: 1rem;
   box-shadow: var(--shadow-sm);
 }
@@ -281,7 +281,7 @@ watch(() => [route.query.desktopPath, route.query.desktopTarget, route.query.dri
   min-width: 2.6rem;
   justify-content: center;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
   padding: 0.38rem 0.7rem;
   font-size: 0.78rem;
   font-weight: 850;
@@ -299,9 +299,9 @@ watch(() => [route.query.desktopPath, route.query.desktopTarget, route.query.dri
   align-items: center;
   justify-content: space-between;
   gap: 0.9rem;
-  border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) 86%, transparent);
   border-radius: 1.2rem;
-  background: rgba(255, 255, 255, 0.86);
+  background: var(--bg-elevated);
   padding: 0.85rem;
 }
 
@@ -315,11 +315,11 @@ watch(() => [route.query.desktopPath, route.query.desktopTarget, route.query.dri
 .pending-share-card__type {
   flex: 0 0 auto;
   border-radius: 999px;
-  background: color-mix(in srgb, #0ea5e9 12%, transparent);
+  background: var(--accent-soft);
   padding: 0.34rem 0.62rem;
   font-size: 0.72rem;
   font-weight: 850;
-  color: #0369a1;
+  color: var(--accent);
 }
 
 .pending-share-card__text {
@@ -379,12 +379,12 @@ watch(() => [route.query.desktopPath, route.query.desktopTarget, route.query.dri
 
 .pending-share-button--reject {
   border-color: color-mix(in srgb, var(--border-color) 86%, transparent);
-  background: white;
+  background: var(--bg-main);
   color: var(--text-secondary);
 }
 
 .pending-share-button--reject:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--bg-input) 86%, white 14%);
+  background: var(--bg-input);
 }
 
 @media (max-width: 640px) {

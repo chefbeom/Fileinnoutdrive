@@ -7,6 +7,7 @@ import com.example.WaffleBear.file.manage.dto.FileManageDto;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.dto.FileCommonDto;
 import com.example.WaffleBear.file.info.dto.FileInfoDto;
+import com.example.WaffleBear.file.secret.SecretTreeRules;
 import com.example.WaffleBear.file.share.model.FileShare;
 import com.example.WaffleBear.file.share.model.FileShareAuditAction;
 import com.example.WaffleBear.file.share.model.FileSharePermission;
@@ -558,7 +559,11 @@ public class ShareService {
     private FileInfo resolveShareRootForActor(Long actorUserIdx, Long fileIdx) {
         Optional<FileInfo> owned = fileUpDownloadRepository.findByIdxAndUser_Idx(fileIdx, actorUserIdx);
         if (owned != null && owned.isPresent()) {
-            return owned.get();
+            FileInfo file = owned.get();
+            if (SecretTreeRules.hasVaultAncestor(file) || SecretTreeRules.hasHiddenAncestor(file)) {
+                throw BaseException.from(BaseResponseStatus.SECRET_FOLDER_NOT_ALLOWED);
+            }
+            return file;
         }
 
         FileShare share = getSharedRecord(actorUserIdx, fileIdx);
@@ -567,6 +572,9 @@ public class ShareService {
         }
 
         FileInfo file = share.getFile();
+        if (SecretTreeRules.hasVaultAncestor(file) || SecretTreeRules.hasHiddenAncestor(file)) {
+            throw BaseException.from(BaseResponseStatus.SECRET_FOLDER_NOT_ALLOWED);
+        }
         ShareFileTree.ensureShareableNode(file);
         return file;
     }

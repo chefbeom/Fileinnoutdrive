@@ -8,7 +8,13 @@ const SSE_OPTIONS = {
 const getAuthHeaders = (accessToken) =>
   accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
 
-const isFatalError = (eventSource) => eventSource.readyState === EventSourcePolyfill.CLOSED
+const isAuthFailureStatus = (error) => {
+  const status = Number(error?.status || error?.statusCode || 0)
+  return status === 401 || status === 403
+}
+
+const isFatalError = (eventSource, error) =>
+  eventSource.readyState === EventSourcePolyfill.CLOSED || isAuthFailureStatus(error)
 
 const addJsonEventListener = (eventSource, eventName, callback) => {
   eventSource.addEventListener(eventName, (event) => {
@@ -49,7 +55,7 @@ const connectWorkspaceSse = ({
   addJsonEventListener(eventSource, 'chat-preview-update', onChatPreviewUpdated)
 
   eventSource.onerror = (error) => {
-    if (!isFatalError(eventSource)) return
+    if (!isFatalError(eventSource, error)) return
     console.error('[SSE] 워크스페이스 연결 오류 (fatal):', error)
     eventSource.close()
     if (onError) onError(error)

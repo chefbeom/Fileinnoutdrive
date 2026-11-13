@@ -10,4 +10,6 @@ public interface WorkspaceCommentRepository extends JpaRepository<WorkspaceComme
     List<WorkspaceComment> findAllByWorkspace_IdxOrderByResolvedAscCreatedAtDesc(Long workspaceIdx);
 
     Optional<WorkspaceComment> findByIdxAndWorkspace_Idx(Long idx, Long workspaceIdx);
+
+    void deleteAllByAuthor_Idx(Long authorIdx);
 }

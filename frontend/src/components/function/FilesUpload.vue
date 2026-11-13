@@ -8,8 +8,10 @@
       :is-uploading="isUploading"
       :max-upload-count="maxUploadCount"
       :max-upload-file-bytes="maxUploadFileBytes"
+      :vault-mode="secretFolderStore.vaultMode"
       @toggle="toggleDropdown"
       @create-folder="createNewFolder"
+      @create-hidden-folder="createHiddenFolder"
       @file-change="handleFileChange"
       @folder-change="handleFolderChange"
       @update-upload-concurrency="uploadConcurrency = $event"
@@ -52,6 +54,7 @@ import {
   uploadConcurrencyOptions,
 } from "@/constants/uploadOptions.js"
 import { useFileStore } from "@/stores/useFileStore.js"
+import { useSecretFolderStore } from "@/stores/useSecretFolderStore.js"
 import { formatBytes as formatUploadLimitBytes } from "@/utils/formatBytes.js"
 import {
   buildAbortPayload,
@@ -80,6 +83,7 @@ const mergingUploadCount = ref(0)
 const nowTick = ref(Date.now())
 const isCancelRequested = ref(false)
 const fileStore = useFileStore()
+const secretFolderStore = useSecretFolderStore()
 const planCapabilities = computed(() => fileStore.planCapabilities)
 const maxUploadCount = computed(() => Number(planCapabilities.value?.maxUploadCount || 30))
 const maxUploadFileBytes = computed(() => Number(planCapabilities.value?.maxUploadFileBytes || 5 * 1024 * 1024 * 1024))
@@ -305,6 +309,18 @@ const createNewFolder = () => {
   closeDropdown()
 }
 
+const createHiddenFolder = async () => {
+  closeDropdown()
+  const created = await secretFolderStore.openCreateHiddenFolderDialog(fileStore.currentFolderId ?? null)
+  if (created) {
+    fileStore.invalidateFolderSnapshots?.()
+    await Promise.all([
+      fileStore.refreshDrivePage?.().catch(() => {}),
+      fileStore.fetchFiles({ background: true }).catch(() => {}),
+    ])
+  }
+}
+
 const uploadToPresignedUrl = async (
   payload,
   uploadMeta,
@@ -426,7 +442,7 @@ const uploadFileByChunks = async (file, uploadMetas, uploadItemId) => {
   }
 }
 
-const completeUploadedFile = async (file, uploadMetas, partitioned, uploadItemId, parentId) => {
+const completeUploadedFile = async (file, uploadMetas, partitioned, uploadItemId, parentId, vaultMode = false) => {
   const firstMeta = uploadMetas?.[0]
   const finalObjectKey = firstMeta?.finalObjectKey || firstMeta?.objectKey
   const chunkObjectKeys = partitioned
@@ -456,6 +472,7 @@ const completeUploadedFile = async (file, uploadMetas, partitioned, uploadItemId
       finalObjectKey,
       chunkObjectKeys,
       parentId,
+      ...(vaultMode ? { vaultMode: true, spaceType: "VAULT" } : {}),
     })
   } catch (error) {
     await abortUploadedFile(uploadMetas)
@@ -470,7 +487,7 @@ const completeUploadedFile = async (file, uploadMetas, partitioned, uploadItemId
   })
 }
 
-const runUploadJobs = async (uploadJobs, concurrency, parentId) => {
+const runUploadJobs = async (uploadJobs, concurrency, parentId, vaultMode = false) => {
   const successList = new Array(uploadJobs.length)
   const workerCount = Math.min(concurrency, uploadJobs.length)
   let nextJobIndex = 0
@@ -507,6 +524,7 @@ const runUploadJobs = async (uploadJobs, concurrency, parentId) => {
             currentJob.partitioned,
             currentJob.uploadItemId,
             parentId,
+            vaultMode,
           )
         } finally {
           mergingUploadCount.value = Math.max(0, mergingUploadCount.value - 1)
@@ -667,7 +685,10 @@ const handleUpload = async (event, uploadTypeLabel) => {
       item.statusText = "업로드 정보 준비 중"
     })
 
-    const response = await initUploadFiles(selectedFiles, uploadParentId)
+    const uploadVaultMode = Boolean(secretFolderStore.vaultMode)
+    const response = await initUploadFiles(selectedFiles, uploadParentId, {
+      vaultMode: uploadVaultMode,
+    })
     const presignedResponses = parseUploadResponse(response?.data)
 
     if (!Array.isArray(presignedResponses) || presignedResponses.length === 0) {
@@ -694,6 +715,7 @@ const handleUpload = async (event, uploadTypeLabel) => {
       uploadJobs,
       normalizeUploadConcurrency(uploadConcurrency.value),
       uploadParentId,
+      uploadVaultMode,
     )
 
     if (isCancelRequested.value) {

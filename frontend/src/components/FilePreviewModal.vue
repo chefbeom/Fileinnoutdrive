@@ -1,7 +1,13 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useFileStore } from "@/stores/useFileStore.js";
+import { useMediaPhotoStore } from "@/stores/useMediaPhotoStore.js";
 import { downloadFileAsset, fetchFileVersions, restoreFileVersion } from "@/api/filesApi.js";
+import {
+  ModalBackHistoryManager,
+  safeExitFullscreen,
+  safePauseMedia,
+} from "@/utils/modalBackHistory.js";
 
 const props = defineProps({
   file: {
@@ -12,6 +18,50 @@ const props = defineProps({
 
 const emit = defineEmits(["close"]);
 const fileStore = useFileStore();
+const mediaPhotoStore = useMediaPhotoStore();
+
+const videoPreviewRef = ref(null);
+const audioPreviewRef = ref(null);
+
+const onBeforeCloseTeardown = () => {
+  safeExitFullscreen();
+  if (videoPreviewRef.value) {
+    safePauseMedia(videoPreviewRef.value);
+  }
+  if (audioPreviewRef.value) {
+    safePauseMedia(audioPreviewRef.value);
+  }
+};
+
+const historyManager = new ModalBackHistoryManager({
+  modalId: "file-preview",
+  onBeforeClose: onBeforeCloseTeardown,
+  onClose: () => {
+    emit("close");
+  },
+});
+
+const handleClose = () => {
+  historyManager.requestClose();
+};
+
+const handleOpenInMediaTheater = () => {
+  if (!props.file || isLockedFile.value) return;
+  const target = props.file;
+  onBeforeCloseTeardown();
+  historyManager.handoffTo("media-theater", target.id);
+  emit("close");
+  mediaPhotoStore.openTheater(target);
+};
+
+const handleOpenInPhotoLightbox = () => {
+  if (!props.file || isLockedFile.value) return;
+  const target = props.file;
+  onBeforeCloseTeardown();
+  historyManager.handoffTo("photo-lightbox", target.id);
+  emit("close");
+  mediaPhotoStore.openPhotoLightbox(target);
+};
 const textPreview = ref(null);
 const textPreviewError = ref("");
 const isTextPreviewLoading = ref(false);
@@ -137,7 +187,7 @@ const locationLabel = computed(() => {
 
 const closeOnEscape = (event) => {
   if (event.key === "Escape") {
-    emit("close");
+    handleClose();
   }
 };
 
@@ -208,10 +258,18 @@ const loadTextPreview = async () => {
 
 watch(
   () => props.file,
-  (file) => {
+  (file, prevFile) => {
     window.removeEventListener("keydown", closeOnEscape);
     if (file) {
+      fileStore.recordFileAccess?.(file);
       window.addEventListener("keydown", closeOnEscape);
+      if (prevFile?.id && file.id) {
+        historyManager.updateItem(file.id);
+      } else {
+        historyManager.open(file.id);
+      }
+    } else {
+      historyManager.destroy();
     }
     loadTextPreview();
     loadFileVersions();
@@ -221,13 +279,40 @@ watch(
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", closeOnEscape);
+  onBeforeCloseTeardown();
+  historyManager.destroy();
 });
 </script>
 
 <template>
-  <div v-if="file" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 px-4" @click.self="emit('close')">
-    <div class="flex h-[min(88vh,760px)] w-full max-w-6xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl lg:flex-row">
-      <section class="flex min-h-[320px] flex-1 items-center justify-center bg-slate-950/95 p-4">
+  <div v-if="file" class="fixed inset-0 z-[270] flex items-center justify-center bg-slate-900/60 px-2.5 py-3 sm:px-4" @click.self="handleClose">
+    <div class="flex h-[min(92dvh,780px)] w-full max-w-6xl flex-col overflow-y-auto rounded-3xl bg-white shadow-2xl dark:bg-slate-900 lg:flex-row lg:overflow-hidden">
+      <section class="relative flex min-h-[260px] shrink-0 flex-col items-center justify-center bg-slate-950 p-3 sm:min-h-[340px] sm:p-4 lg:h-full lg:min-h-0 lg:flex-1">
+        <!-- Mobile Top Left Back Button -->
+        <button
+          type="button"
+          class="absolute left-3 top-3 z-20 inline-flex items-center gap-1.5 rounded-full bg-slate-900/85 px-3 py-1.5 text-xs font-bold text-white shadow-lg ring-1 ring-white/20 backdrop-blur transition hover:bg-slate-800 active:scale-95 lg:hidden"
+          title="뒤로가기"
+          aria-label="뒤로가기"
+          @click="handleClose"
+        >
+          <i class="fa-solid fa-arrow-left text-xs"></i>
+          <span>뒤로</span>
+        </button>
+
+        <!-- Mobile Top Right Close Button -->
+        <button
+          type="button"
+          class="absolute right-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full bg-slate-900/80 text-white shadow-lg ring-1 ring-white/20 backdrop-blur transition hover:bg-slate-800 active:scale-95 lg:hidden"
+          title="닫기"
+          aria-label="닫기"
+          @click="handleClose"
+        >
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18 18 6M6 6l12 12" />
+          </svg>
+        </button>
+
         <div v-if="isLockedFile" class="flex h-full w-full flex-col items-center justify-center gap-3 rounded-3xl border border-amber-400/30 bg-amber-100/5 px-6 text-center text-amber-100">
           <div class="flex h-16 w-16 items-center justify-center rounded-full bg-amber-400/20">
             <svg class="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -238,29 +323,51 @@ onBeforeUnmount(() => {
           <p class="text-sm text-amber-200/80">조회, 다운로드, 공유 등 관련 기능이 제한됩니다.</p>
         </div>
 
-        <img v-else-if="previewKind === 'image' && previewUrl" :src="previewUrl" :alt="file.name" class="max-h-full max-w-full rounded-2xl object-contain" />
-        <video v-else-if="previewKind === 'video' && previewUrl" :src="previewUrl" controls preload="metadata" class="max-h-full max-w-full rounded-2xl bg-black"></video>
-        <audio v-else-if="previewKind === 'audio' && previewUrl" :src="previewUrl" controls class="w-full max-w-xl"></audio>
-        <iframe v-else-if="previewKind === 'pdf' && previewUrl" :src="previewUrl" class="h-full min-h-[70vh] w-full rounded-2xl bg-white" title="PDF 미리보기"></iframe>
+        <img v-else-if="previewKind === 'image' && previewUrl" :src="previewUrl" :alt="file.name" class="max-h-[44vh] sm:max-h-[50vh] max-w-full rounded-2xl object-contain lg:max-h-full" />
+        <video v-else-if="previewKind === 'video' && previewUrl" ref="videoPreviewRef" :src="previewUrl" controls playsinline preload="metadata" class="max-h-[44vh] sm:max-h-[50vh] max-w-full rounded-2xl bg-black lg:max-h-full"></video>
+        <audio v-else-if="previewKind === 'audio' && previewUrl" ref="audioPreviewRef" :src="previewUrl" controls class="w-full max-w-xl px-2"></audio>
+        <iframe v-else-if="previewKind === 'pdf' && previewUrl" :src="previewUrl" class="h-[46vh] sm:h-[55vh] w-full rounded-2xl bg-white lg:h-full" title="PDF 미리보기"></iframe>
 
-        <div v-else-if="previewKind === 'text'" class="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
+        <div v-else-if="previewKind === 'text'" class="flex h-[44vh] sm:h-[52vh] w-full flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 lg:h-full">
           <div v-if="isTextPreviewLoading" class="flex h-full items-center justify-center text-sm text-slate-300">텍스트 미리보기를 불러오는 중입니다.</div>
           <div v-else-if="textPreviewError" class="flex h-full items-center justify-center px-6 text-center text-sm text-rose-300">{{ textPreviewError }}</div>
           <div v-else class="flex h-full min-h-0 flex-col">
-            <div class="border-b border-slate-800 px-4 py-3 text-xs text-slate-400">{{ textPreview?.truncated ? '미리보기용으로 일부만 표시합니다.' : '전체 텍스트를 표시합니다.' }}</div>
-            <pre class="min-h-0 flex-1 overflow-auto px-4 py-4 text-sm leading-6 text-slate-100">{{ textPreview?.content || '' }}</pre>
+            <div class="border-b border-slate-800 px-4 py-2.5 text-xs text-slate-400">{{ textPreview?.truncated ? '미리보기용으로 일부만 표시합니다.' : '전체 텍스트를 표시합니다.' }}</div>
+            <pre class="min-h-0 flex-1 overflow-auto px-4 py-3.5 text-xs sm:text-sm font-mono leading-5 sm:leading-6 text-slate-100 overscroll-contain">{{ textPreview?.content || '' }}</pre>
           </div>
         </div>
 
         <div v-else class="rounded-3xl border border-dashed border-slate-700 px-8 py-14 text-center text-sm text-slate-300">현재 형식은 바로 미리보기를 지원하지 않습니다.</div>
+
+        <!-- Mobile Quick Bridge Bar -->
+        <div v-if="!isLockedFile && (previewKind === 'video' || previewKind === 'image')" class="mt-2.5 flex w-full justify-center lg:hidden">
+          <button
+            v-if="previewKind === 'video'"
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-full border border-purple-400/40 bg-purple-500/20 px-4 py-1.5 text-xs font-extrabold text-purple-200 shadow-lg backdrop-blur transition hover:bg-purple-500/30"
+            @click="handleOpenInMediaTheater"
+          >
+            <i class="fa-solid fa-clapperboard"></i>
+            <span>미디어 플레이어로 전체화면 감상</span>
+          </button>
+          <button
+            v-else-if="previewKind === 'image'"
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/40 bg-emerald-500/20 px-4 py-1.5 text-xs font-extrabold text-emerald-200 shadow-lg backdrop-blur transition hover:bg-emerald-500/30"
+            @click="handleOpenInPhotoLightbox"
+          >
+            <i class="fa-solid fa-images"></i>
+            <span>사진첩 라이트박스로 보기</span>
+          </button>
+        </div>
       </section>
 
-      <aside class="flex w-full flex-col border-l border-gray-200 bg-white lg:w-[360px]">
-        <div class="flex items-start justify-between gap-3 border-b border-gray-200 px-6 py-5">
+      <aside class="flex w-full flex-col border-t border-gray-200 bg-white dark:border-slate-800 dark:bg-slate-900 lg:w-[360px] lg:border-l lg:border-t-0">
+        <div class="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-4 dark:border-slate-800 sm:px-6 sm:py-5">
           <div class="min-w-0">
-            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">파일 정보</p>
-            <h3 class="mt-2 truncate text-xl font-bold text-gray-900">{{ file.name }}</h3>
-            <p class="mt-2 text-sm text-gray-500">{{ locationLabel }}</p>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400 dark:text-slate-400">파일 정보</p>
+            <h3 class="mt-2 truncate text-lg font-bold text-gray-900 dark:text-white sm:text-xl">{{ file.name }}</h3>
+            <p class="mt-2 text-sm text-gray-500 dark:text-slate-400">{{ locationLabel }}</p>
             <div class="mt-3 flex flex-wrap gap-2">
               <span
                 v-for="chip in statusChips"
@@ -274,17 +381,17 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <button type="button" class="rounded-full p-2 text-gray-400 transition hover:bg-slate-100 hover:text-gray-600" @click="emit('close')">
+          <button type="button" class="rounded-full p-2 text-gray-400 transition hover:bg-slate-100 hover:text-gray-600 active:scale-95" title="닫기" aria-label="닫기" @click="handleClose">
             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18 18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
-        <div class="flex-1 space-y-5 overflow-y-auto px-6 py-5">
-          <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-            <div class="rounded-2xl bg-slate-50 px-4 py-4"><p class="text-xs font-semibold uppercase tracking-wide text-gray-400">형식</p><p class="mt-2 text-sm font-bold text-gray-900">{{ (extension || '-').toUpperCase() }}</p></div>
-            <div class="rounded-2xl bg-slate-50 px-4 py-4"><p class="text-xs font-semibold uppercase tracking-wide text-gray-400">크기</p><p class="mt-2 text-sm font-bold text-gray-900">{{ formatBytes(file.sizeBytes) }}</p></div>
+        <div class="flex-1 space-y-5 px-5 py-4 sm:px-6 sm:py-5 lg:overflow-y-auto">
+          <div class="grid grid-cols-2 gap-3 lg:grid-cols-1">
+            <div class="rounded-2xl bg-slate-50 px-4 py-3.5"><p class="text-xs font-semibold uppercase tracking-wide text-gray-400">형식</p><p class="mt-1.5 text-sm font-bold text-gray-900">{{ (extension || '-').toUpperCase() }}</p></div>
+            <div class="rounded-2xl bg-slate-50 px-4 py-3.5"><p class="text-xs font-semibold uppercase tracking-wide text-gray-400">크기</p><p class="mt-1.5 text-sm font-bold text-gray-900">{{ formatBytes(file.sizeBytes) }}</p></div>
           </div>
 
           <div class="rounded-2xl border border-gray-200 px-4 py-4">
@@ -337,11 +444,31 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="border-t border-gray-200 px-6 py-5">
-          <button v-if="!canDownload" type="button" class="inline-flex w-full items-center justify-center rounded-2xl bg-slate-200 px-4 py-3 text-sm font-semibold text-slate-500" disabled>
+        <div class="sticky bottom-0 space-y-2 border-t border-gray-200 bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-900 sm:px-6 sm:py-5">
+          <button
+            v-if="previewKind === 'video' && !isLockedFile"
+            type="button"
+            class="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-purple-500/30 bg-purple-500/10 px-4 py-2.5 text-xs font-extrabold text-purple-600 transition hover:bg-purple-500/20 dark:text-purple-300"
+            @click="handleOpenInMediaTheater"
+          >
+            <i class="fa-solid fa-clapperboard"></i>
+            <span>미디어 시어터 플레이어로 열기 (이어보기·배속·자막)</span>
+          </button>
+
+          <button
+            v-else-if="previewKind === 'image' && !isLockedFile"
+            type="button"
+            class="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-xs font-extrabold text-emerald-600 transition hover:bg-emerald-500/20 dark:text-emerald-300"
+            @click="handleOpenInPhotoLightbox"
+          >
+            <i class="fa-solid fa-images"></i>
+            <span>사진첩 라이트박스로 열기 (확대·회전·슬라이드쇼)</span>
+          </button>
+
+          <button v-if="!canDownload" type="button" class="inline-flex w-full items-center justify-center rounded-2xl bg-slate-200 px-4 py-3 text-sm font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400" disabled>
             {{ isLockedFile ? '잠긴 파일은 다운로드할 수 없습니다.' : '다운로드 불가' }}
           </button>
-          <button v-else type="button" class="inline-flex w-full items-center justify-center rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300" :disabled="isDownloading" @click="handleDownload">{{ isDownloading ? "\uB2E4\uC6B4\uB85C\uB4DC \uC911..." : "\uB2E4\uC6B4\uB85C\uB4DC" }}</button>
+          <button v-else type="button" class="inline-flex w-full items-center justify-center rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300" :disabled="isDownloading" @click="handleDownload">{{ isDownloading ? "다운로드 중..." : "다운로드" }}</button>
         </div>
       </aside>
     </div>

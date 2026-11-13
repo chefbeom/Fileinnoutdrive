@@ -75,6 +75,8 @@ public class UploadService {
             validate(request, storageQuota.maxUploadFileBytes());
         }
 
+        uploadFolderService.ensureFolderHierarchies(userIdx, requests);
+
         // 업로드할 파일을 위한 리스트 생성
         List<UploadDto.ChunkRes> responses = new ArrayList<>();
         // 업로드 예정 파일들의 "용량 예약 목록"을 저장할 리스트

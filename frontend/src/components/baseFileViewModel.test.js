@@ -88,6 +88,15 @@ describe("baseFileViewModel", () => {
     expect(groups.lockCandidates.map((file) => file.id)).toEqual([1, 3]);
     expect(groups.lockedFiles.map((file) => file.id)).toEqual([4]);
 
+    const driveSelected = getSelectedBaseFiles([
+      ...files,
+      { id: 5, type: "folder", fileSaveName: "folder-5", sizeBytes: 0 },
+      { id: 6, type: "folder", isVaultSpace: true, sizeBytes: 0 },
+    ], [1, 2, 3, 4, 5, 6]);
+    const driveGroups = buildSelectedBaseFileGroups(driveSelected, { sharedLibrary: false, canCreateShares: true });
+    expect(driveGroups.vaultMovableFiles.map((file) => file.id)).toEqual([1, 5]);
+    expect(buildSelectedBaseFileGroups(driveSelected, { sharedLibrary: false, vaultMode: true }).vaultMovableFiles).toEqual([]);
+
     expect(buildBaseTotalSizeLabel(files)).toBe("4.00 MB");
     expect(buildBaseToolbarMetaLabel({ filteredFiles: files, totalSizeLabel: "4.00 MB" })).toBe("4개 항목 · 총 4.00 MB");
     expect(buildBaseToolbarMetaLabel({ useServerPaging: true, drivePageInfo: { totalCount: 10 }, filteredFiles: files, totalSizeLabel: "4.00 MB" }))
@@ -125,6 +134,19 @@ describe("baseFileViewModel", () => {
       customMinSize: "",
       customMaxSize: "",
       statusFilter: "locked",
+      vaultMode: false,
+      includeHidden: false,
+      trashedOnly: false,
+    });
+    expect(buildBaseServerListQuery({
+      useServerPaging: true,
+      vaultMode: true,
+      includeHidden: true,
+      trashedOnly: true,
+    })).toMatchObject({
+      vaultMode: true,
+      includeHidden: true,
+      trashedOnly: true,
     });
   });
   it("aggregates shared recipients and formats share policy labels", () => {

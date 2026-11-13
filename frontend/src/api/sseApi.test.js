@@ -94,4 +94,16 @@ describe('sseApi', () => {
     expect(connection.close).not.toHaveBeenCalled()
     expect(onError).not.toHaveBeenCalled()
   })
+
+  it('closes immediately and reports fatal error on 401/403 status even if readyState is connecting', () => {
+    const onError = vi.fn()
+    const connection = sseApi.connectWorkspaceSse({ onError })
+    connection.readyState = 0
+    const authError = Object.assign(new Error('Unauthorized'), { status: 401 })
+
+    connection.onerror(authError)
+
+    expect(connection.close).toHaveBeenCalledTimes(1)
+    expect(onError).toHaveBeenCalledWith(authError)
+  })
 })

@@ -4,6 +4,7 @@ import com.example.WaffleBear.administrator.model.AdministratorDto;
 import com.example.WaffleBear.common.exception.BaseException;
 import com.example.WaffleBear.common.model.BaseResponse;
 import com.example.WaffleBear.common.model.BaseResponseStatus;
+import com.example.WaffleBear.file.service.StoragePlanService;
 import com.example.WaffleBear.user.model.AuthUserDetails;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -30,12 +31,14 @@ public class AdministratorController {
     private final AdministratorService administratorService;
     private final StorageAnalyticsService storageAnalyticsService;
     private final SocialLoginSettingsService socialLoginSettingsService;
+    private final StoragePlanService storagePlanService;
 
     @GetMapping("/dashboard")
     @Operation(summary = "Get admin dashboard", description = "Returns administrator dashboard data.")
     public ResponseEntity<?> getDashboard(@AuthenticationPrincipal AuthUserDetails userDetails) {
         AdministratorDto.DashboardRes result = administratorService.getDashboard(userDetails);
         result.setSocialLoginVisible(socialLoginSettingsService.isSocialLoginVisible());
+        result.setMaxUploadFileBytes(storagePlanService.getConfiguredMaxUploadFileBytes());
         return ResponseEntity.ok(BaseResponse.success(result));
     }
 
@@ -64,6 +67,35 @@ public class AdministratorController {
         return ResponseEntity.ok(BaseResponse.success(
                 AdministratorDto.LoginSettingsRes.builder()
                         .socialLoginVisible(updated)
+                        .build()
+        ));
+    }
+
+    @GetMapping("/upload-settings")
+    @Operation(summary = "Get upload file size settings", description = "Returns the administrator-configured maximum upload file size.")
+    public ResponseEntity<?> getUploadSettings(@AuthenticationPrincipal AuthUserDetails userDetails) {
+        administratorService.validateAdministratorAccess(userDetails);
+        return ResponseEntity.ok(BaseResponse.success(
+                AdministratorDto.UploadSettingsRes.builder()
+                        .maxUploadFileBytes(storagePlanService.getConfiguredMaxUploadFileBytes())
+                        .build()
+        ));
+    }
+
+    @PatchMapping("/upload-settings")
+    @Operation(summary = "Update upload file size settings", description = "Updates the maximum upload file size allowed across the service.")
+    public ResponseEntity<?> updateUploadSettings(
+            @AuthenticationPrincipal AuthUserDetails userDetails,
+            @RequestBody AdministratorDto.UploadSettingsUpdateReq request
+    ) {
+        administratorService.validateAdministratorAccess(userDetails);
+        if (request == null || request.getMaxUploadFileBytes() == null || request.getMaxUploadFileBytes() <= 0L) {
+            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
+        long updatedBytes = storagePlanService.updateConfiguredMaxUploadFileBytes(request.getMaxUploadFileBytes());
+        return ResponseEntity.ok(BaseResponse.success(
+                AdministratorDto.UploadSettingsRes.builder()
+                        .maxUploadFileBytes(updatedBytes)
                         .build()
         ));
     }

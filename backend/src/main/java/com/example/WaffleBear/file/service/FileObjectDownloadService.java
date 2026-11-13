@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
@@ -27,6 +28,23 @@ class FileObjectDownloadService {
     private final MinioPresignedUrlService minioPresignedUrlService;
 
     private static final int MAX_TEXT_PREVIEW_BYTES = 64 * 1024;
+
+    InputStream openObjectStream(String objectKey) {
+        if (objectKey == null || objectKey.isBlank()) {
+            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
+
+        try {
+            return minioClient.getObject(
+                    GetObjectArgs.builder()
+                            .bucket(minioProperties.getBucket_cloud())
+                            .object(objectKey)
+                            .build()
+            );
+        } catch (Exception exception) {
+            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
+    }
 
     byte[] readObjectBytes(String objectKey) {
         if (objectKey == null || objectKey.isBlank()) {

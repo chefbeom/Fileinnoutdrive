@@ -7,4 +7,6 @@ import java.util.Optional;
 public interface WorkspacePreferenceRepository extends JpaRepository<WorkspacePreference, Long> {
 
     Optional<WorkspacePreference> findByUser_Idx(Long userIdx);
+
+    void deleteAllByUser_Idx(Long userIdx);
 }

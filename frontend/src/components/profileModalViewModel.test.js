@@ -6,6 +6,8 @@ import {
   LOCALE_OPTIONS,
   PROFILE_TABS,
   REGION_OPTIONS,
+  WITHDRAW_CONFIRMATION_PHRASE,
+  buildAccountWithdrawalPayload,
   buildProfileImageFeedback,
   buildProfileUpdatePayload,
   buildSavedAuthUser,
@@ -16,13 +18,15 @@ import {
   getProfileMembershipProduct,
   getStorageUsageWidth,
   resolveMembershipLabel,
+  resolveSocialProviderLabel,
   toProfileForm,
+  validateAccountWithdrawalInput,
   validateProfileImageFile,
 } from "./profileModalViewModel.js";
 
 describe("profileModalViewModel", () => {
   it("exports modal options and default form values", () => {
-    expect(PROFILE_TABS.map((tab) => tab.id)).toEqual(["group", "profile", "security", "notification", "language", "billing"]);
+    expect(PROFILE_TABS.map((tab) => tab.id)).toEqual(["group", "profile", "layout", "mediaPhotos", "security", "notification", "language", "billing"]);
     expect(GROUP_SECTIONS.map((section) => section.id)).toContain("manage");
     expect(LOCALE_OPTIONS.map((option) => option.code)).toEqual(["KO", "EN", "JA"]);
     expect(REGION_OPTIONS.map((option) => option.code)).toEqual(["KR", "US", "JP"]);
@@ -31,6 +35,8 @@ describe("profileModalViewModel", () => {
       localeCode: "KO",
       membershipCode: "FREE",
       storagePlanLabel: "기본 20GB",
+      socialAccount: false,
+      withdrawAllowed: true,
     });
   });
 
@@ -43,6 +49,10 @@ describe("profileModalViewModel", () => {
       securityNotification: 1,
       storageQuotaBytes: "1024",
       joinedAt: "2026-07-05T00:00:00",
+      socialAccount: true,
+      socialProvider: "google",
+      withdrawAllowed: false,
+      withdrawBlockedReason: "관리자 계정은 회원 탈퇴할 수 없습니다.",
     }, {
       name: "기본 사용자",
       email: "fallback@example.com",
@@ -50,6 +60,7 @@ describe("profileModalViewModel", () => {
     });
 
     expect(resolveMembershipLabel("PREMIUM")).toBe("프리미엄 멤버십");
+    expect(resolveSocialProviderLabel("google")).toBe("Google");
     expect(form).toMatchObject({
       displayName: "기본 사용자",
       email: "fallback@example.com",
@@ -59,6 +70,10 @@ describe("profileModalViewModel", () => {
       marketingOptIn: false,
       securityNotification: true,
       storageQuotaBytes: 1024,
+      socialAccount: true,
+      socialProvider: "google",
+      withdrawAllowed: false,
+      withdrawBlockedReason: "관리자 계정은 회원 탈퇴할 수 없습니다.",
     });
     expect(getProfileMembershipProduct(form).code).toBe("PLUS");
     expect(getProfileInitials({ displayName: "Kim Seo" })).toBe("KS");
@@ -113,5 +128,43 @@ describe("profileModalViewModel", () => {
     expect(buildProfileImageFeedback("prepared", "original")).toBe("프로필 이미지를 축소해 적용했습니다.");
     expect(getProfileErrorMessage({ response: { data: { message: "서버 오류" } } }, "fallback")).toBe("서버 오류");
     expect(getProfileErrorMessage({}, "fallback")).toBe("fallback");
+  });
+
+  it("validates account withdrawal inputs for local and social accounts", () => {
+    const localForm = { email: "user@example.com", socialAccount: false, withdrawAllowed: true };
+    expect(validateAccountWithdrawalInput(localForm, { password: "secret", agreed: false })).toEqual({
+      valid: false,
+      message: "안내 사항 확인 및 데이터 영구 삭제 동의에 체크해 주세요.",
+    });
+    expect(validateAccountWithdrawalInput(localForm, { password: "", agreed: true })).toEqual({
+      valid: false,
+      message: "본인 확인을 위해 현재 비밀번호를 입력해 주세요.",
+    });
+    expect(validateAccountWithdrawalInput(localForm, { password: "secret", agreed: true })).toEqual({
+      valid: true,
+      message: "",
+    });
+    expect(buildAccountWithdrawalPayload(localForm, { password: "secret" })).toEqual({
+      password: "secret",
+      confirmationText: null,
+    });
+
+    const socialForm = { email: "social@example.com", socialAccount: true, withdrawAllowed: true };
+    expect(validateAccountWithdrawalInput(socialForm, { confirmationText: "틀린문구", agreed: true })).toEqual({
+      valid: false,
+      message: `'${WITHDRAW_CONFIRMATION_PHRASE}' 또는 계정 이메일을 정확히 입력해 주세요.`,
+    });
+    expect(validateAccountWithdrawalInput(socialForm, { confirmationText: "회원탈퇴", agreed: true })).toEqual({
+      valid: true,
+      message: "",
+    });
+    expect(validateAccountWithdrawalInput(socialForm, { confirmationText: "SOCIAL@example.com", agreed: true })).toEqual({
+      valid: true,
+      message: "",
+    });
+    expect(buildAccountWithdrawalPayload(socialForm, { confirmationText: " 회원탈퇴 " })).toEqual({
+      password: null,
+      confirmationText: "회원탈퇴",
+    });
   });
 });

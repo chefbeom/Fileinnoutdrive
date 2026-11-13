@@ -21,6 +21,7 @@ public class AdministratorDto {
         private List<PlanStatRes> planStats;
         private List<UserRes> users;
         private Boolean socialLoginVisible;
+        private Long maxUploadFileBytes;
     }
 
     @Getter
@@ -39,6 +40,24 @@ public class AdministratorDto {
     @Builder
     public static class LoginSettingsUpdateReq {
         private Boolean socialLoginVisible;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class UploadSettingsRes {
+        private long maxUploadFileBytes;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class UploadSettingsUpdateReq {
+        private Long maxUploadFileBytes;
     }
 
     @Getter

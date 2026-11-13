@@ -27,7 +27,7 @@ const isLoggedIn = computed(() => !!authStore.token);
         <RouterLink v-if="!isLoggedIn" to="/login" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold text-lg hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200">
           시작하기 <i class="fa-solid fa-arrow-right ml-2 text-sm"></i>
         </RouterLink>
-        <RouterLink v-else to="/main" class="bg-indigo-600 text-white px-6 py-3 rounded-lg font-bold text-lg hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200">
+        <RouterLink v-else to="/main/home" class="bg-indigo-600 text-white px-6 py-3 rounded-lg font-bold text-lg hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200">
           대시보드로 가기 <i class="fa-solid fa-arrow-right ml-2 text-sm"></i>
         </RouterLink>
       </div>
@@ -122,7 +122,7 @@ const isLoggedIn = computed(() => !!authStore.token);
           <RouterLink v-if="!isLoggedIn" to="/login" class="bg-blue-500 text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-blue-400 transition-all shadow-lg shadow-blue-500/20 active:scale-95">
               무료로 시작하기
           </RouterLink>
-          <RouterLink v-else to="/main" class="bg-indigo-500 text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-indigo-400 transition-all shadow-lg shadow-indigo-500/20 active:scale-95">
+          <RouterLink v-else to="/main/home" class="bg-indigo-500 text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-indigo-400 transition-all shadow-lg shadow-indigo-500/20 active:scale-95">
               워크스페이스로 이동하기
           </RouterLink>
         </div>

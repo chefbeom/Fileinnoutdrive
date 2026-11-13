@@ -6,9 +6,11 @@ import com.example.WaffleBear.file.FileUpDownloadRepository;
 import com.example.WaffleBear.file.dto.FileCommonDto;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
+import com.example.WaffleBear.file.secret.SecretAccessGuard;
 import com.example.WaffleBear.file.version.model.FileVersion;
 import com.example.WaffleBear.user.model.User;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,9 +23,13 @@ public class FileVersionService {
     private final FileVersionRepository fileVersionRepository;
     private final FileUpDownloadRepository fileUpDownloadRepository;
 
+    @Autowired(required = false)
+    private SecretAccessGuard secretAccessGuard;
+
     @Transactional(readOnly = true)
     public List<FileVersionDto.VersionRes> listVersions(Long userIdx, Long fileIdx) {
         FileInfo file = getOwnedFile(userIdx, fileIdx);
+        assertSecretAccess(userIdx, file);
         ensureVersionable(file);
         return fileVersionRepository.findAllByFile_IdxAndUser_IdxOrderByVersionNumberDesc(file.getIdx(), userIdx)
                 .stream()
@@ -34,6 +40,7 @@ public class FileVersionService {
     @Transactional
     public FileCommonDto.FileListItemRes restoreVersion(Long userIdx, Long fileIdx, Long versionIdx) {
         FileInfo file = getOwnedFile(userIdx, fileIdx);
+        assertSecretAccess(userIdx, file);
         ensureVersionable(file);
         FileVersion version = fileVersionRepository.findByIdxAndFile_IdxAndUser_Idx(versionIdx, file.getIdx(), userIdx)
                 .orElseThrow(() -> BaseException.from(BaseResponseStatus.REQUEST_ERROR));
@@ -96,6 +103,12 @@ public class FileVersionService {
     private void ensureVersionable(FileInfo file) {
         if (!isSnapshotable(file)) {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
+    }
+
+    private void assertSecretAccess(Long userIdx, FileInfo file) {
+        if (secretAccessGuard != null && file != null) {
+            secretAccessGuard.assertNodeAccess(userIdx, file, true);
         }
     }
 

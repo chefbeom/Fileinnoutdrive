@@ -1,12 +1,22 @@
 package com.example.WaffleBear.file.service;
 
+import com.example.WaffleBear.administrator.storage.StorageAnalyticsConfig;
+import com.example.WaffleBear.administrator.storage.StorageAnalyticsConfigRepository;
 import com.example.WaffleBear.order.model.Order;
 import com.example.WaffleBear.order.repository.OrderRepository;
+import com.example.WaffleBear.storageshare.model.SharedStorageMember;
+import com.example.WaffleBear.storageshare.model.StorageGrant;
+import com.example.WaffleBear.storageshare.model.StorageShareEnums.MemberStatus;
+import com.example.WaffleBear.storageshare.model.StorageShareEnums.SharedStorageStatus;
+import com.example.WaffleBear.storageshare.repository.SharedStorageMemberRepository;
+import com.example.WaffleBear.storageshare.repository.StorageGrantRepository;
 import com.example.WaffleBear.user.model.AuthUserDetails;
 import com.example.WaffleBear.user.model.User;
 import com.example.WaffleBear.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -22,11 +32,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 @RequiredArgsConstructor
 public class StoragePlanService {
     private static final String DEFAULT_ADMIN_EMAIL = "administrator@administrator.adm";
+    private static final Long CONFIG_ID = 1L;
+    private static final String MAX_UPLOAD_FILE_BYTES_REDIS_KEY = "wafflebear:settings:max-upload-file-bytes";
 
     public static final long GIGABYTE = 1024L * 1024 * 1024;
     public static final long TERABYTE = 1024L * GIGABYTE;
@@ -37,7 +50,7 @@ public class StoragePlanService {
 
     private static final long STANDARD_MAX_UPLOAD_FILE_BYTES = 5L * GIGABYTE;
     private static final long PREMIUM_MAX_UPLOAD_FILE_BYTES = 20L * GIGABYTE;
-    private static final long ADMIN_MAX_UPLOAD_FILE_BYTES = 20L * GIGABYTE;
+    public static final long ADMIN_MAX_UPLOAD_FILE_BYTES = 20L * GIGABYTE;
     private static final int FREE_MAX_UPLOAD_COUNT = 30;
     private static final int STANDARD_MAX_UPLOAD_COUNT = 100;
     private static final int PREMIUM_MAX_UPLOAD_COUNT = 300;
@@ -184,6 +197,20 @@ public class StoragePlanService {
     private final OrderRepository orderRepository;
     private final UserRepository userRepository;
 
+    @Autowired(required = false)
+    private StorageAnalyticsConfigRepository storageAnalyticsConfigRepository;
+
+    @Autowired(required = false)
+    private StringRedisTemplate stringRedisTemplate;
+
+    @Autowired(required = false)
+    private StorageGrantRepository storageGrantRepository;
+
+    @Autowired(required = false)
+    private SharedStorageMemberRepository sharedStorageMemberRepository;
+
+    private final AtomicLong configuredMaxUploadFileBytes = new AtomicLong(-1L);
+
     @Value("${app.demo.enabled:true}")
     private boolean demoEnabled;
 
@@ -198,6 +225,69 @@ public class StoragePlanService {
 
     @Value("${app.demo.max-upload-count:20}")
     private int demoMaxUploadCount;
+
+    public long getConfiguredMaxUploadFileBytes() {
+        long cached = configuredMaxUploadFileBytes.get();
+        if (cached > 0L) {
+            return cached;
+        }
+
+        if (storageAnalyticsConfigRepository != null) {
+            try {
+                StorageAnalyticsConfig config = storageAnalyticsConfigRepository.findById(CONFIG_ID).orElse(null);
+                if (config != null && config.getMaxUploadFileBytes() != null && config.getMaxUploadFileBytes() > 0L) {
+                    long dbBytes = config.getMaxUploadFileBytes();
+                    configuredMaxUploadFileBytes.set(dbBytes);
+                    return dbBytes;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        if (stringRedisTemplate != null) {
+            try {
+                String raw = stringRedisTemplate.opsForValue().get(MAX_UPLOAD_FILE_BYTES_REDIS_KEY);
+                if (raw != null && !raw.isBlank()) {
+                    long parsed = Long.parseLong(raw.trim());
+                    if (parsed > 0L) {
+                        configuredMaxUploadFileBytes.set(parsed);
+                        return parsed;
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        return ADMIN_MAX_UPLOAD_FILE_BYTES;
+    }
+
+    public long updateConfiguredMaxUploadFileBytes(long maxUploadFileBytes) {
+        long safeBytes = Math.max(1L, maxUploadFileBytes);
+        configuredMaxUploadFileBytes.set(safeBytes);
+
+        if (storageAnalyticsConfigRepository != null) {
+            try {
+                StorageAnalyticsConfig config = storageAnalyticsConfigRepository.findById(CONFIG_ID)
+                        .orElseGet(() -> StorageAnalyticsConfig.builder()
+                                .id(CONFIG_ID)
+                                .providerCapacityBytes(StorageAnalyticsConfig.DEFAULT_PROVIDER_CAPACITY_BYTES)
+                                .maxUploadFileBytes(safeBytes)
+                                .build());
+                config.changeMaxUploadFileBytes(safeBytes);
+                storageAnalyticsConfigRepository.save(config);
+            } catch (Exception ignored) {
+            }
+        }
+
+        if (stringRedisTemplate != null) {
+            try {
+                stringRedisTemplate.opsForValue().set(MAX_UPLOAD_FILE_BYTES_REDIS_KEY, Long.toString(safeBytes));
+            } catch (Exception ignored) {
+            }
+        }
+
+        return safeBytes;
+    }
 
     public ProductDefinition requireProduct(String productCode) {
         ProductDefinition product = resolveProduct(productCode);
@@ -226,6 +316,24 @@ public class StoragePlanService {
     }
 
     public StorageQuota resolveQuota(User user) {
+        StorageQuota ownQuota = resolveOwnPlanQuota(user);
+        if (user == null || user.getIdx() == null || user.getIdx() <= 0L || isDemoAccount(user)) {
+            return ownQuota;
+        }
+
+        CapacityAdjustment adjustment = resolveCapacityAdjustment(user.getIdx(), LocalDateTime.now());
+        return applyCapacityAdjustment(ownQuota, adjustment);
+    }
+
+    public StorageQuota resolveOwnPlanQuota(Long userIdx) {
+        if (userIdx == null || userIdx <= 0) {
+            return toQuota(PRODUCT_DEFINITIONS.get("FREE"), 0L);
+        }
+        User user = userRepository.findById(userIdx).orElse(null);
+        return resolveOwnPlanQuota(user);
+    }
+
+    public StorageQuota resolveOwnPlanQuota(User user) {
         if (user == null) {
             return toQuota(PRODUCT_DEFINITIONS.get("FREE"), 0L);
         }
@@ -240,6 +348,82 @@ public class StoragePlanService {
 
         List<Order> orders = orderRepository.findAllByUser_Idx(user.getIdx());
         return resolveQuotaFromOrders(orders, LocalDateTime.now());
+    }
+
+    public CapacityAdjustment resolveCapacityAdjustment(Long userIdx, LocalDateTime now) {
+        if (userIdx == null || userIdx <= 0L) {
+            return CapacityAdjustment.ZERO;
+        }
+        LocalDateTime referenceTime = now == null ? LocalDateTime.now() : now;
+        long grantedOut = 0L;
+        long grantedIn = 0L;
+        long sharedContribution = 0L;
+
+        if (storageGrantRepository != null) {
+            try {
+                grantedOut = storageGrantRepository.findAllByGranter_IdxOrderByCreatedAtDesc(userIdx).stream()
+                        .filter(grant -> grant != null && grant.isOpenAt(referenceTime))
+                        .mapToLong(StorageGrant::safeBytes)
+                        .sum();
+                grantedIn = storageGrantRepository.findAllByRecipient_IdxOrderByCreatedAtDesc(userIdx).stream()
+                        .filter(grant -> grant != null && grant.isEffectiveAt(referenceTime))
+                        .mapToLong(StorageGrant::safeBytes)
+                        .sum();
+            } catch (Exception ignored) {
+            }
+        }
+
+        if (sharedStorageMemberRepository != null) {
+            try {
+                sharedContribution = sharedStorageMemberRepository.findAllByUser_IdxAndStatus(userIdx, MemberStatus.ACTIVE).stream()
+                        .filter(member -> member != null
+                                && member.getStorage() != null
+                                && member.getStorage().getStatus() == SharedStorageStatus.ACTIVE)
+                        .mapToLong(SharedStorageMember::safeContributionBytes)
+                        .sum();
+            } catch (Exception ignored) {
+            }
+        }
+
+        return new CapacityAdjustment(grantedIn, grantedOut, sharedContribution);
+    }
+
+    private StorageQuota applyCapacityAdjustment(StorageQuota ownQuota, CapacityAdjustment adjustment) {
+        if (ownQuota == null || adjustment == null || adjustment.isZero()) {
+            return ownQuota;
+        }
+
+        long adjustedTotal = Math.max(
+                0L,
+                ownQuota.totalQuotaBytes()
+                        + adjustment.grantedInBytes()
+                        - adjustment.grantedOutBytes()
+                        - adjustment.sharedStorageContributionBytes()
+        );
+
+        StringBuilder labelBuilder = new StringBuilder(ownQuota.planLabel());
+        if (adjustment.grantedInBytes() > 0L) {
+            labelBuilder.append(" + 공유받음 ").append(formatQuota(adjustment.grantedInBytes()));
+        }
+        if (adjustment.grantedOutBytes() > 0L) {
+            labelBuilder.append(" - 공유중 ").append(formatQuota(adjustment.grantedOutBytes()));
+        }
+        if (adjustment.sharedStorageContributionBytes() > 0L) {
+            labelBuilder.append(" - 공유저장소 ").append(formatQuota(adjustment.sharedStorageContributionBytes()));
+        }
+
+        return new StorageQuota(
+                ownQuota.planCode(),
+                ownQuota.membershipLabel(),
+                labelBuilder.toString(),
+                ownQuota.baseQuotaBytes(),
+                ownQuota.addonQuotaBytes(),
+                adjustedTotal,
+                ownQuota.shareEnabled(),
+                ownQuota.fileLockEnabled(),
+                ownQuota.maxUploadFileBytes(),
+                ownQuota.maxUploadCount()
+        );
     }
 
     public Map<Long, StorageQuota> resolveQuotas(List<User> users) {
@@ -277,16 +461,70 @@ public class StoragePlanService {
         }
 
         LocalDateTime now = LocalDateTime.now();
+        Map<Long, CapacityAdjustment> adjustmentsByUser = resolveBulkCapacityAdjustments(usersById.keySet(), now);
         Map<Long, StorageQuota> quotasByUser = new LinkedHashMap<>();
-        usersById.forEach((userIdx, user) -> quotasByUser.put(
-                userIdx,
-                isDemoAccount(user)
-                        ? demoQuota()
-                        : isAdministrator(user)
-                                ? toQuota(PRODUCT_DEFINITIONS.get("ADMIN"), 0L)
-                                : resolveQuotaFromOrders(ordersByUser.getOrDefault(userIdx, List.of()), now)
-        ));
+        usersById.forEach((userIdx, user) -> {
+            StorageQuota ownQuota = isDemoAccount(user)
+                    ? demoQuota()
+                    : isAdministrator(user)
+                            ? toQuota(PRODUCT_DEFINITIONS.get("ADMIN"), 0L)
+                            : resolveQuotaFromOrders(ordersByUser.getOrDefault(userIdx, List.of()), now);
+            StorageQuota effectiveQuota = isDemoAccount(user)
+                    ? ownQuota
+                    : applyCapacityAdjustment(ownQuota, adjustmentsByUser.getOrDefault(userIdx, CapacityAdjustment.ZERO));
+            quotasByUser.put(userIdx, effectiveQuota);
+        });
         return Map.copyOf(quotasByUser);
+    }
+
+    private Map<Long, CapacityAdjustment> resolveBulkCapacityAdjustments(java.util.Collection<Long> userIds, LocalDateTime now) {
+        if (userIds == null || userIds.isEmpty() || (storageGrantRepository == null && sharedStorageMemberRepository == null)) {
+            return Map.of();
+        }
+
+        Map<Long, Long> grantedOutByUser = new HashMap<>();
+        Map<Long, Long> grantedInByUser = new HashMap<>();
+        Map<Long, Long> sharedContributionByUser = new HashMap<>();
+
+        if (storageGrantRepository != null) {
+            try {
+                for (StorageGrant grant : storageGrantRepository.findAllByGranter_IdxIn(userIds)) {
+                    if (grant != null && grant.getGranter() != null && grant.isOpenAt(now)) {
+                        grantedOutByUser.merge(grant.getGranter().getIdx(), grant.safeBytes(), Long::sum);
+                    }
+                }
+                for (StorageGrant grant : storageGrantRepository.findAllByRecipient_IdxIn(userIds)) {
+                    if (grant != null && grant.getRecipient() != null && grant.isEffectiveAt(now)) {
+                        grantedInByUser.merge(grant.getRecipient().getIdx(), grant.safeBytes(), Long::sum);
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        if (sharedStorageMemberRepository != null) {
+            try {
+                for (SharedStorageMember member : sharedStorageMemberRepository.findAllByUser_IdxInAndStatus(userIds, MemberStatus.ACTIVE)) {
+                    if (member != null
+                            && member.getUser() != null
+                            && member.getStorage() != null
+                            && member.getStorage().getStatus() == SharedStorageStatus.ACTIVE) {
+                        sharedContributionByUser.merge(member.getUser().getIdx(), member.safeContributionBytes(), Long::sum);
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        Map<Long, CapacityAdjustment> result = new HashMap<>();
+        for (Long userId : userIds) {
+            result.put(userId, new CapacityAdjustment(
+                    grantedInByUser.getOrDefault(userId, 0L),
+                    grantedOutByUser.getOrDefault(userId, 0L),
+                    sharedContributionByUser.getOrDefault(userId, 0L)
+            ));
+        }
+        return result;
     }
 
     private StorageQuota resolveQuotaFromOrders(List<Order> orders, LocalDateTime now) {
@@ -333,6 +571,8 @@ public class StoragePlanService {
             planLabel = planLabel + " + 추가 " + formatQuota(extraBytes);
         }
 
+        long maxUploadFileBytes = getConfiguredMaxUploadFileBytes();
+
         return new StorageQuota(
                 safeProduct.code(),
                 safeProduct.membershipLabel(),
@@ -342,7 +582,7 @@ public class StoragePlanService {
                 totalQuotaBytes,
                 safeProduct.shareEnabled(),
                 safeProduct.fileLockEnabled(),
-                safeProduct.maxUploadFileBytes(),
+                maxUploadFileBytes,
                 safeProduct.maxUploadCount()
         );
     }
@@ -586,5 +826,17 @@ public class StoragePlanService {
             long maxUploadFileBytes,
             int maxUploadCount
     ) {
+    }
+
+    public record CapacityAdjustment(
+            long grantedInBytes,
+            long grantedOutBytes,
+            long sharedStorageContributionBytes
+    ) {
+        public static final CapacityAdjustment ZERO = new CapacityAdjustment(0L, 0L, 0L);
+
+        public boolean isZero() {
+            return grantedInBytes == 0L && grantedOutBytes == 0L && sharedStorageContributionBytes == 0L;
+        }
     }
 }

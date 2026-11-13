@@ -17,6 +17,11 @@ public class FileUpDownloadLocalService implements FileUpDownloadService {
     }
 
     @Override
+    public List<FileCommonDto.FileListItemRes> vaultFileList(Long userIdx) {
+        return List.of();
+    }
+
+    @Override
     public FileCommonDto.FileListPageRes fileListPage(Long userIdx, FileManageDto.ListPageReq request) {
         return FileCommonDto.FileListPageRes.builder()
                 .fileList(List.of())
@@ -102,5 +107,10 @@ public class FileUpDownloadLocalService implements FileUpDownloadService {
     @Override
     public String getDownloadUrl(Long userIdx, Long fileIdx) {
         throw new UnsupportedOperationException("Local service currently does not support download URLs.");
+    }
+
+    @Override
+    public FileCommonDto.FolderZipDownloadPayload downloadFolderZip(Long userIdx, Long folderIdx) {
+        throw new UnsupportedOperationException("Local service currently does not support folder download operations.");
     }
 }

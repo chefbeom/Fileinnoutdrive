@@ -13,9 +13,9 @@ public class FileAsyncConfig {
 
     @Bean(name = "videoThumbnailExecutor")
     public Executor thumbnailTaskExecutor(
-            @Value("${app.thumbnail.executor.core-pool-size:1}") int corePoolSize,
-            @Value("${app.thumbnail.executor.max-pool-size:2}") int maxPoolSize,
-            @Value("${app.thumbnail.executor.queue-capacity:50}") int queueCapacity
+            @Value("${app.thumbnail.executor.core-pool-size:2}") int corePoolSize,
+            @Value("${app.thumbnail.executor.max-pool-size:4}") int maxPoolSize,
+            @Value("${app.thumbnail.executor.queue-capacity:200}") int queueCapacity
     ) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         int normalizedCorePoolSize = Math.max(1, corePoolSize);

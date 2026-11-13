@@ -27,4 +27,9 @@ export const getOAuthProviders = async () => {
   return res
 }
 
-export default { signup, login, loginDemo, logout, getOAuthProviders }
+export const withdrawAccount = async (payload = {}) => {
+  const res = await api.post('/user/me/withdraw', payload)
+  return res
+}
+
+export default { signup, login, loginDemo, logout, getOAuthProviders, withdrawAccount }

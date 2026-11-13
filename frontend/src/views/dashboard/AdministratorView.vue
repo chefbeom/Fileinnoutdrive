@@ -5,13 +5,16 @@ import {
   fetchAdministratorLoginSettings,
   fetchAdministratorShareAudit,
   fetchAdministratorSessions,
+  fetchAdministratorUploadSettings,
   forceLogoutAdministratorSession,
   forceLogoutAdministratorUserSessions,
   fetchAdministratorStorageAnalytics,
   updateAdministratorLoginSettings,
   updateAdministratorStorageCapacity,
+  updateAdministratorUploadSettings,
   updateAdministratorUserStatus,
 } from "@/api/administratorApi.js";
+import { useFileStore } from "@/stores/useFileStore.js";
 import {
   ADMIN_SECTIONS,
   DISPLAY_UNITS,
@@ -41,17 +44,22 @@ import {
   filterAdminUsers,
 } from "./services/adminDashboardViewModels.js";
 
+const fileStore = useFileStore();
 const dashboard = ref(null);
 const storageAnalytics = ref(null);
 const shareAuditLogs = ref([]);
 const sessions = ref([]);
 const socialLoginVisible = ref(false);
+const maxUploadFileBytes = ref(20 * 1024 * 1024 * 1024);
+const maxUploadSizeValue = ref("20");
+const maxUploadSizeUnit = ref("GB");
 const isLoading = ref(false);
 const isStorageLoading = ref(false);
 const isShareAuditLoading = ref(false);
 const isSessionLoading = ref(false);
 const isUpdating = ref(false);
 const isLoginSettingsSaving = ref(false);
+const isUploadSettingsSaving = ref(false);
 const isCapacitySaving = ref(false);
 const isCapacityEditing = ref(false);
 const errorMessage = ref("");
@@ -65,12 +73,25 @@ const storageRangeCode = ref("24H");
 const providerCapacityValue = ref("50");
 const providerCapacityUnit = ref("TB");
 const activeSection = ref("users");
+const uploadSizeUnits = DISPLAY_UNITS.filter((unit) => ["MB", "GB", "TB"].includes(unit.value));
 const formatBytesByUnit = (bytes, unit = storageDisplayUnit.value) =>
   formatBytesBySelectedUnit(bytes, unit);
 const applyCapacityInputFromBytes = (bytes) => {
   const input = bytesToDisplayUnitInput(bytes);
   providerCapacityValue.value = input.value;
   providerCapacityUnit.value = input.unit;
+};
+const applyMaxUploadInputFromBytes = (bytes) => {
+  const safeBytes = Number(bytes) > 0 ? Number(bytes) : 20 * 1024 * 1024 * 1024;
+  maxUploadFileBytes.value = safeBytes;
+  const input = bytesToDisplayUnitInput(safeBytes);
+  if (["MB", "GB", "TB"].includes(input.unit)) {
+    maxUploadSizeValue.value = input.value;
+    maxUploadSizeUnit.value = input.unit;
+  } else {
+    maxUploadSizeValue.value = String(Math.max(1, Math.round((safeBytes / (1024 ** 3)) * 100) / 100));
+    maxUploadSizeUnit.value = "GB";
+  }
 };
 
 const summaryCards = computed(() => {
@@ -162,6 +183,13 @@ const loadDashboard = async () => {
       const loginSettings = await fetchAdministratorLoginSettings();
       socialLoginVisible.value = Boolean(loginSettings?.socialLoginVisible);
     }
+
+    if (Number(result?.maxUploadFileBytes) > 0) {
+      applyMaxUploadInputFromBytes(result.maxUploadFileBytes);
+    } else {
+      const uploadSettings = await fetchAdministratorUploadSettings();
+      applyMaxUploadInputFromBytes(uploadSettings?.maxUploadFileBytes);
+    }
   } catch (error) {
     errorMessage.value =
       error?.response?.data?.message ||
@@ -197,6 +225,50 @@ const handleSocialLoginVisibilityChange = async (nextVisible) => {
   } finally {
     isLoginSettingsSaving.value = false;
   }
+};
+
+const handleMaxUploadSizeSave = async () => {
+  const numericValue = Number(maxUploadSizeValue.value);
+  const unit = uploadSizeUnits.find((item) => item.value === maxUploadSizeUnit.value);
+  if (!Number.isFinite(numericValue) || numericValue <= 0 || !unit) {
+    errorMessage.value = "최대 업로드 파일 크기를 올바르게 입력해 주세요.";
+    return;
+  }
+
+  const nextBytes = Math.round(numericValue * unit.bytes);
+  if (nextBytes <= 0) {
+    errorMessage.value = "최대 업로드 파일 크기를 1B 이상으로 설정해 주세요.";
+    return;
+  }
+
+  isUploadSettingsSaving.value = true;
+  errorMessage.value = "";
+
+  try {
+    const result = await updateAdministratorUploadSettings(nextBytes);
+    const savedBytes = Number(result?.maxUploadFileBytes) || nextBytes;
+    applyMaxUploadInputFromBytes(savedBytes);
+    if (dashboard.value) {
+      dashboard.value = {
+        ...dashboard.value,
+        maxUploadFileBytes: savedBytes,
+      };
+    }
+    await fileStore.fetchStorageSummary().catch(() => {});
+  } catch (error) {
+    errorMessage.value =
+      error?.response?.data?.message ||
+      error?.message ||
+      "최대 업로드 파일 크기 설정을 저장하지 못했습니다.";
+  } finally {
+    isUploadSettingsSaving.value = false;
+  }
+};
+
+const applyQuickMaxUploadPreset = async (value, unitCode) => {
+  maxUploadSizeValue.value = String(value);
+  maxUploadSizeUnit.value = unitCode;
+  await handleMaxUploadSizeSave();
 };
 
 const loadStorageAnalytics = async () => {
@@ -417,14 +489,14 @@ onMounted(() => {
         <p class="admin-page__eyebrow">관리자</p>
         <h1 class="admin-page__title">관리자 페이지</h1>
         <p class="admin-page__description">
-          사용자 관리, 로그인 페이지 소셜 로그인 노출(ON/OFF), 스토리지 통계 및 분석, 플랜 및 결제 비중 통계를 관리합니다.
+          사용자 관리, 로그인 페이지 소셜 로그인 노출(ON/OFF), 최대 업로드 파일 크기 설정, 스토리지 통계 및 분석, 플랜 및 결제 비중 통계를 관리합니다.
         </p>
       </div>
 
       <button
         type="button"
         class="admin-page__refresh"
-        :disabled="isLoading || isStorageLoading || isShareAuditLoading || isSessionLoading || isUpdating || isCapacitySaving || isLoginSettingsSaving"
+        :disabled="isLoading || isStorageLoading || isShareAuditLoading || isSessionLoading || isUpdating || isCapacitySaving || isLoginSettingsSaving || isUploadSettingsSaving"
         @click="loadAll"
       >
         새로고침
@@ -467,6 +539,105 @@ onMounted(() => {
           >
             OFF (숨기기)
           </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="admin-panel admin-panel--upload-setting">
+      <div class="admin-upload-setting">
+        <div class="admin-login-setting__info">
+          <div class="admin-login-setting__title-row">
+            <h2 class="admin-panel__title">단일 파일 최대 업로드 크기 설정</h2>
+            <span class="admin-badge admin-badge--active">
+              현재 최대 크기: {{ formatBytesAuto(maxUploadFileBytes) }}
+            </span>
+          </div>
+          <p class="admin-panel__description">
+            업로드 가능한 단일 파일의 최대 용량을 원하는 크기로 설정합니다. 저장 즉시 드라이브 업로드 제한에 반영됩니다.
+          </p>
+        </div>
+
+        <div class="admin-upload-setting__controls">
+          <div class="admin-upload-setting__presets">
+            <button
+              type="button"
+              class="admin-preset-btn"
+              :disabled="isUploadSettingsSaving"
+              @click="applyQuickMaxUploadPreset(5, 'GB')"
+            >
+              5 GB
+            </button>
+            <button
+              type="button"
+              class="admin-preset-btn"
+              :disabled="isUploadSettingsSaving"
+              @click="applyQuickMaxUploadPreset(20, 'GB')"
+            >
+              20 GB
+            </button>
+            <button
+              type="button"
+              class="admin-preset-btn"
+              :disabled="isUploadSettingsSaving"
+              @click="applyQuickMaxUploadPreset(50, 'GB')"
+            >
+              50 GB
+            </button>
+            <button
+              type="button"
+              class="admin-preset-btn"
+              :disabled="isUploadSettingsSaving"
+              @click="applyQuickMaxUploadPreset(100, 'GB')"
+            >
+              100 GB
+            </button>
+            <button
+              type="button"
+              class="admin-preset-btn"
+              :disabled="isUploadSettingsSaving"
+              @click="applyQuickMaxUploadPreset(500, 'GB')"
+            >
+              500 GB
+            </button>
+            <button
+              type="button"
+              class="admin-preset-btn"
+              :disabled="isUploadSettingsSaving"
+              @click="applyQuickMaxUploadPreset(1, 'TB')"
+            >
+              1 TB
+            </button>
+          </div>
+
+          <div class="admin-upload-setting__input-row">
+            <input
+              v-model="maxUploadSizeValue"
+              type="number"
+              min="1"
+              step="any"
+              class="admin-input admin-upload-setting__number"
+              placeholder="크기 입력"
+              :disabled="isUploadSettingsSaving"
+              @keyup.enter="handleMaxUploadSizeSave"
+            />
+            <select
+              v-model="maxUploadSizeUnit"
+              class="admin-select admin-upload-setting__unit"
+              :disabled="isUploadSettingsSaving"
+            >
+              <option v-for="unit in uploadSizeUnits" :key="unit.value" :value="unit.value">
+                {{ unit.label }}
+              </option>
+            </select>
+            <button
+              type="button"
+              class="admin-action admin-action--active admin-upload-setting__save"
+              :disabled="isUploadSettingsSaving"
+              @click="handleMaxUploadSizeSave"
+            >
+              {{ isUploadSettingsSaving ? "저장 중..." : "크기 적용" }}
+            </button>
+          </div>
         </div>
       </div>
     </section>

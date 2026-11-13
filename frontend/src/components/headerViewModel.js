@@ -37,7 +37,7 @@ export function countActiveSearchFilters(searchState = {}, canUseFileSearch = fa
 export function getSearchPlaceholder(canUseFileSearch = false) {
   return canUseFileSearch
     ? "파일명, 확장자, 공유자 이메일을 검색하세요"
-    : "파일 검색은 드라이브 화면에서 사용할 수 있습니다.";
+    : "파일 검색은 드라이브·미디어·사진첩 화면에서 사용할 수 있습니다.";
 }
 
 export function getHeaderUserName(settingsProfile, authUser) {

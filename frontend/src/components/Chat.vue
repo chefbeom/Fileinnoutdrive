@@ -404,20 +404,22 @@ onMounted(() => {
   window.addEventListener('sse-chat-preview-update', handleSseChatPreviewUpdate)
   window.addEventListener('app-foreground-sync', handleAppForegroundSync)
 
-  navigator.serviceWorker.addEventListener('message', (e) => {
-    if (e.data.type === 'OPEN_CHAT_ROOM') {
-      // MainView의 패널 오픈까지 같이 되도록 동일 이벤트로 브로드캐스트
-      // (MainView → isChatOpen=true, Chat.vue → roomIdx로 방 선택)
-      window.dispatchEvent(new CustomEvent('open-chat-room', {
-        detail: { roomIdx: e.data.roomIdx }
-      }))
-      return
-    }
-    if (e.data.type === 'NEW_MESSAGE') {
-      applyNewMessageToChatList(e.data)
-    }
-  });
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && navigator.serviceWorker) {
+    navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage)
+  }
 });
+
+const handleServiceWorkerMessage = (e) => {
+  if (e.data?.type === 'OPEN_CHAT_ROOM') {
+    window.dispatchEvent(new CustomEvent('open-chat-room', {
+      detail: { roomIdx: e.data.roomIdx }
+    }))
+    return
+  }
+  if (e.data?.type === 'NEW_MESSAGE') {
+    applyNewMessageToChatList(e.data)
+  }
+}
 
 onUnmounted(() => {
   // 컴포넌트 해제 시 이벤트 제거
@@ -426,6 +428,9 @@ onUnmounted(() => {
   window.removeEventListener('sse-new-message', handleSseNewMessage)
   window.removeEventListener('sse-chat-preview-update', handleSseChatPreviewUpdate)
   window.removeEventListener('app-foreground-sync', handleAppForegroundSync)
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && navigator.serviceWorker) {
+    navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage)
+  }
 })
 </script>
 
@@ -534,6 +539,23 @@ onUnmounted(() => {
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
 }
 .chat-panel-closed { width: 0 !important; opacity: 0; pointer-events: none; }
+
+@media (max-width: 768px) {
+  .resizer {
+    display: none;
+  }
+
+  .chat-panel.chat-panel-open {
+    position: fixed;
+    inset: 0;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100dvh;
+    z-index: 160;
+    border-left: none;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
 .resizer {
   position: absolute;
   left: 0; top: 0; width: 6px; height: 100%;

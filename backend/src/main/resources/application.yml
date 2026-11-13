@@ -48,9 +48,9 @@ app:
     public-openapi: ${APP_DOCS_PUBLIC_OPENAPI:false}
   thumbnail:
     executor:
-      core-pool-size: ${THUMBNAIL_EXECUTOR_CORE_POOL_SIZE:1}
-      max-pool-size: ${THUMBNAIL_EXECUTOR_MAX_POOL_SIZE:2}
-      queue-capacity: ${THUMBNAIL_EXECUTOR_QUEUE_CAPACITY:50}
+      core-pool-size: ${THUMBNAIL_EXECUTOR_CORE_POOL_SIZE:2}
+      max-pool-size: ${THUMBNAIL_EXECUTOR_MAX_POOL_SIZE:4}
+      queue-capacity: ${THUMBNAIL_EXECUTOR_QUEUE_CAPACITY:200}
   storage:
     orphan-cleanup:
       enabled: ${APP_STORAGE_ORPHAN_CLEANUP_ENABLED:false}
@@ -74,8 +74,16 @@ management:
     health:
       probes:
         enabled: true
+  health:
+    redis:
+      enabled: ${MANAGEMENT_HEALTH_REDIS_ENABLED:false}
+    mail:
+      enabled: ${MANAGEMENT_HEALTH_MAIL_ENABLED:false}
 
 spring:
+  mvc:
+    async:
+      request-timeout: 3600000
   flyway:
     enabled: ${SPRING_FLYWAY_ENABLED:false}
     locations: classpath:db/migration
@@ -147,6 +155,14 @@ spring:
     url: ${DB_URL}
     username: ${DB_ID}
     password: ${DB_PASS}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:20}
+      minimum-idle: ${DB_POOL_MIN_IDLE:5}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:10000}
+      validation-timeout: ${DB_VALIDATION_TIMEOUT_MS:2500}
+      keepalive-time: ${DB_KEEPALIVE_TIME_MS:120000}
+      max-lifetime: ${DB_MAX_LIFETIME_MS:540000}
+      idle-timeout: ${DB_IDLE_TIMEOUT_MS:300000}
 
   jpa:
     database-platform: org.hibernate.dialect.MariaDBDialect
@@ -172,7 +188,7 @@ minio:
   s3-bucket-cloud: ${S3AMAZON_CLOUD_BUCKET}
   s3-bucket-work: ${S3AMAZON_WORKSPACE_BUCKET}
   s3-region: ${S3AMAZON_REGION}
-  presigned-url-expiry-seconds: 1800
+  presigned-url-expiry-seconds: ${MINIO_PRESIGNED_URL_EXPIRY_SECONDS:1800}
 
 logging:
   level:

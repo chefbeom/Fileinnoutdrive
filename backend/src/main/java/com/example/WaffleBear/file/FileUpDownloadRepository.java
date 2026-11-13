@@ -2,6 +2,7 @@ package com.example.WaffleBear.file;
 
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
+import com.example.WaffleBear.file.model.FileSpaceType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
@@ -25,6 +26,35 @@ public interface FileUpDownloadRepository extends JpaRepository<FileInfo, Long>,
     Optional<FileInfo> findByUser_IdxAndFileSavePath(Long userIdx, String fileSavePath);
     Optional<FileInfo> findByUser_IdxAndParentIsNullAndFileOriginNameAndTrashedFalse(Long userIdx, String fileOriginName);
     Optional<FileInfo> findByUser_IdxAndParent_IdxAndFileOriginNameAndTrashedFalse(Long userIdx, Long parentIdx, String fileOriginName);
+    Optional<FileInfo> findFirstByUser_IdxAndParentIsNullAndFileOriginNameAndTrashedFalseOrderByIdxAsc(Long userIdx, String fileOriginName);
+    Optional<FileInfo> findFirstByUser_IdxAndParent_IdxAndFileOriginNameAndTrashedFalseOrderByIdxAsc(Long userIdx, Long parentIdx, String fileOriginName);
+    Optional<FileInfo> findFirstByUser_IdxAndFileSaveNameStartingWithOrderByIdxAsc(Long userIdx, String fileSaveNamePrefix);
+    List<FileInfo> findAllByFileSaveNameStartingWith(String fileSaveNamePrefix);
+
+    @Query("""
+            select f
+            from FileInfo f
+            where f.user.idx = :userIdx
+              and f.parent is null
+              and f.fileOriginName = :folderName
+              and (f.trashed is null or f.trashed = false)
+              and (
+                    (:vaultOnly = true and f.spaceType = com.example.WaffleBear.file.model.FileSpaceType.VAULT)
+                    or (:vaultOnly = false and (f.spaceType is null or f.spaceType = com.example.WaffleBear.file.model.FileSpaceType.DRIVE))
+              )
+            order by f.idx asc
+            """)
+    List<FileInfo> findRootFoldersByNameAndSpace(
+            @Param("userIdx") Long userIdx,
+            @Param("folderName") String folderName,
+            @Param("vaultOnly") boolean vaultOnly
+    );
+
+    default Optional<FileInfo> findFirstRootFolderByNameAndSpace(Long userIdx, String folderName, FileSpaceType spaceType) {
+        return findRootFoldersByNameAndSpace(userIdx, folderName, spaceType == FileSpaceType.VAULT)
+                .stream()
+                .findFirst();
+    }
 
     @Query("""
             select coalesce(sum(coalesce(f.fileSize, 0)), 0)
@@ -73,6 +103,11 @@ public interface FileUpDownloadRepository extends JpaRepository<FileInfo, Long>,
               and (f.trashed is null or f.trashed = false)
               and (f.nodeType is null or f.nodeType = :fileNodeType)
               and (
+                    (:vaultOnly = true and f.spaceType = com.example.WaffleBear.file.model.FileSpaceType.VAULT)
+                    or (:vaultOnly = false and (f.spaceType is null or f.spaceType = com.example.WaffleBear.file.model.FileSpaceType.DRIVE))
+              )
+              and (:includeHidden = true or (f.hiddenFolder is null or f.hiddenFolder = false))
+              and (
                     (:parentId is null and f.parent is null)
                     or (:parentId is not null and f.parent.idx = :parentId)
               )
@@ -81,8 +116,19 @@ public interface FileUpDownloadRepository extends JpaRepository<FileInfo, Long>,
     List<String> findDistinctFileFormatsByUserAndParent(
             @Param("userIdx") Long userIdx,
             @Param("parentId") Long parentId,
-            @Param("fileNodeType") FileNodeType fileNodeType
+            @Param("fileNodeType") FileNodeType fileNodeType,
+            @Param("vaultOnly") boolean vaultOnly,
+            @Param("includeHidden") boolean includeHidden
     );
+
+    default List<String> findDistinctFileFormatsByUserAndParent(
+            Long userIdx,
+            Long parentId,
+            FileNodeType fileNodeType
+    ) {
+        return findDistinctFileFormatsByUserAndParent(userIdx, parentId, fileNodeType, false, false);
+    }
+
     @Query("""
             select f.fileSavePath
             from FileInfo f

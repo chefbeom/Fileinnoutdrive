@@ -29,6 +29,20 @@ export async function updateAdministratorLoginSettings(socialLoginVisible) {
   return extractObjectResult(response?.data);
 }
 
+export async function fetchAdministratorUploadSettings() {
+  const response = await api.get("/administrator/upload-settings", {
+    timeout: 15000,
+  });
+  return extractObjectResult(response?.data);
+}
+
+export async function updateAdministratorUploadSettings(maxUploadFileBytes) {
+  const response = await api.patch("/administrator/upload-settings", {
+    maxUploadFileBytes: Number(maxUploadFileBytes),
+  });
+  return extractObjectResult(response?.data);
+}
+
 export async function updateAdministratorUserStatus(userIdx, accountStatus) {
   const response = await api.patch(`/administrator/users/${userIdx}/status`, {
     accountStatus,

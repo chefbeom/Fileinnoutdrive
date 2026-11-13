@@ -1,13 +1,18 @@
 package com.example.WaffleBear.file.service;
 
+import com.example.WaffleBear.common.exception.BaseException;
+import com.example.WaffleBear.common.model.BaseResponseStatus;
 import com.example.WaffleBear.file.FileUpDownloadRepository;
 import com.example.WaffleBear.file.dto.FileCommonDto;
 import com.example.WaffleBear.file.info.dto.FileInfoDto;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.manage.dto.FileManageDto;
 import com.example.WaffleBear.file.model.FileNodeType;
+import com.example.WaffleBear.file.model.FileSpaceType;
+import com.example.WaffleBear.file.secret.SecretAccessGuard;
 import com.example.WaffleBear.file.share.ShareInheritanceService;
 import com.example.WaffleBear.file.share.ShareRepository;
+import com.example.WaffleBear.file.share.model.FileShare;
 import com.example.WaffleBear.file.version.FileVersionLifecycleService;
 import com.example.WaffleBear.user.model.User;
 import org.junit.jupiter.api.AfterEach;
@@ -21,21 +26,30 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -89,6 +103,7 @@ class FileUpDownloadMinioServiceTest {
 
     @AfterEach
     void clearTransactionSynchronization() {
+        ReflectionTestUtils.setField(fileService, "secretAccessGuard", null);
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.clearSynchronization();
         }
@@ -263,6 +278,392 @@ class FileUpDownloadMinioServiceTest {
         assertThat(url).isEqualTo("http://download.example/report.txt");
     }
 
+    @Test
+    void fileListExcludesVaultAndHiddenFolderSubtrees() {
+        FileInfo normalFile = file(1L, 7L, "7/public.txt", "txt");
+        FileInfo hiddenFolder = FileInfo.builder()
+                .idx(2L)
+                .user(User.builder().idx(7L).build())
+                .nodeType(FileNodeType.FOLDER)
+                .spaceType(com.example.WaffleBear.file.model.FileSpaceType.DRIVE)
+                .hiddenFolder(true)
+                .fileOriginName("Hidden")
+                .fileFormat("folder")
+                .fileSaveName("folder-hidden")
+                .trashed(false)
+                .build();
+        FileInfo hiddenChild = FileInfo.builder()
+                .idx(3L)
+                .parent(hiddenFolder)
+                .user(User.builder().idx(7L).build())
+                .nodeType(FileNodeType.FILE)
+                .spaceType(com.example.WaffleBear.file.model.FileSpaceType.DRIVE)
+                .fileOriginName("secret.txt")
+                .fileFormat("txt")
+                .fileSaveName("secret.txt")
+                .fileSavePath("7/secret.txt")
+                .fileSize(64L)
+                .trashed(false)
+                .build();
+        FileInfo vaultFile = FileInfo.builder()
+                .idx(4L)
+                .user(User.builder().idx(7L).build())
+                .nodeType(FileNodeType.FILE)
+                .spaceType(com.example.WaffleBear.file.model.FileSpaceType.VAULT)
+                .fileOriginName("vault.txt")
+                .fileFormat("txt")
+                .fileSaveName("vault.txt")
+                .fileSavePath("7/vault.txt")
+                .fileSize(64L)
+                .trashed(false)
+                .build();
+
+        when(fileUpDownloadRepository.findAllByUser_IdxOrderByLastModifyDateDescUploadDateDesc(7L))
+                .thenReturn(List.of(normalFile, hiddenFolder, hiddenChild, vaultFile));
+        when(fileListItemUrlService.attachUrls(any(FileCommonDto.FileListItemRes.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        List<FileCommonDto.FileListItemRes> visible = fileService.fileList(7L);
+
+        assertThat(visible)
+                .extracting(FileCommonDto.FileListItemRes::getIdx)
+                .containsExactly(1L);
+    }
+
+    @Test
+    void normalClearTrashDoesNotDeleteVaultTrashedFiles() {
+        FileInfo normalTrashed = trashedFile(11L, 7L, "7/normal-trash.txt", "txt");
+        FileInfo vaultTrashed = FileInfo.builder()
+                .idx(12L)
+                .user(User.builder().idx(7L).build())
+                .nodeType(FileNodeType.FILE)
+                .spaceType(com.example.WaffleBear.file.model.FileSpaceType.VAULT)
+                .fileOriginName("vault-trash.txt")
+                .fileFormat("txt")
+                .fileSaveName("vault-trash.txt")
+                .fileSavePath("7/vault-trash.txt")
+                .fileSize(64L)
+                .trashed(true)
+                .deletedAt(LocalDateTime.now())
+                .build();
+
+        when(fileUpDownloadRepository.findAllByUser_Idx(7L))
+                .thenReturn(List.of(normalTrashed, vaultTrashed));
+        when(fileVersionLifecycleService.findVersionObjectKeys(List.of(normalTrashed))).thenReturn(List.of());
+        when(shareRepository.findAllByFile_IdxIn(List.of(11L))).thenReturn(List.of());
+
+        FileCommonDto.FileActionRes result = fileService.clearTrash(7L, false);
+
+        assertThat(result.getAffectedCount()).isEqualTo(1);
+        verify(fileUpDownloadRepository).deleteAll(List.of(normalTrashed));
+    }
+
+    @Test
+    void downloadFolderZipSanitizesTraversalSegmentsInRelativeEntries() throws Exception {
+        User owner = User.builder().idx(7L).build();
+        FileInfo rootFolder = FileInfo.builder()
+                .idx(100L)
+                .user(owner)
+                .nodeType(FileNodeType.FOLDER)
+                .fileOriginName("docs")
+                .fileFormat("folder")
+                .fileSaveName("folder-100")
+                .trashed(false)
+                .build();
+        FileInfo maliciousChild = FileInfo.builder()
+                .idx(101L)
+                .user(owner)
+                .parent(rootFolder)
+                .nodeType(FileNodeType.FILE)
+                .fileOriginName("../../evil\\payload.txt")
+                .fileFormat("txt")
+                .fileSaveName("saved-101.txt")
+                .fileSavePath("7/saved-101.txt")
+                .fileSize(4L)
+                .lockedFile(false)
+                .sharedFile(false)
+                .trashed(false)
+                .build();
+
+        when(fileUpDownloadRepository.findByIdxAndUser_Idx(100L, 7L)).thenReturn(Optional.of(rootFolder));
+        when(fileUpDownloadRepository.findAllByUser_Idx(7L)).thenReturn(List.of(rootFolder, maliciousChild));
+        when(fileObjectDownloadService.openObjectStream("7/saved-101.txt"))
+                .thenReturn(new ByteArrayInputStream("safe".getBytes(StandardCharsets.UTF_8)));
+
+        FileCommonDto.FolderZipDownloadPayload payload = fileService.downloadFolderZip(7L, 100L);
+        ByteArrayOutputStream zipOut = new ByteArrayOutputStream();
+        payload.streamingBody().writeTo(zipOut);
+
+        List<String> entryNames = new ArrayList<>();
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipOut.toByteArray()))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                entryNames.add(entry.getName());
+            }
+        }
+
+        assertThat(entryNames).isNotEmpty();
+        assertThat(entryNames).noneMatch(name -> name.contains("..") || name.contains("\\"));
+    }
+
+    @Test
+    void moveToVaultMovesFolderAndNestedDescendantsAndDetachesTrashedChild() {
+        SecretAccessGuard guard = mock(SecretAccessGuard.class);
+        ReflectionTestUtils.setField(fileService, "secretAccessGuard", guard);
+        User owner = User.builder().idx(7L).build();
+        FileInfo oldParent = folder(5L, owner, null, FileSpaceType.DRIVE);
+        FileInfo rootFolder = folder(10L, owner, oldParent, FileSpaceType.DRIVE);
+        FileInfo subFolder = folder(11L, owner, rootFolder, FileSpaceType.DRIVE);
+        FileInfo nestedFile = fileWithParent(12L, owner, subFolder, FileSpaceType.DRIVE, false, false);
+        FileInfo trashedChild = fileWithParent(13L, owner, rootFolder, FileSpaceType.DRIVE, false, false);
+        trashedChild.markTrashed(LocalDateTime.now());
+
+        when(fileUpDownloadRepository.findAllByUser_Idx(7L))
+                .thenReturn(List.of(oldParent, rootFolder, subFolder, nestedFile, trashedChild));
+        when(shareRepository.findAllByFile_IdxIn(anyList())).thenReturn(List.of());
+
+        FileCommonDto.FileActionRes result = fileService.moveToVault(7L, 10L, null);
+
+        verify(guard).requireVaultUnlocked(7L);
+        assertThat(result.getAction()).isEqualTo("move-to-vault");
+        assertThat(result.getAffectedCount()).isEqualTo(1);
+        assertThat(rootFolder.getParent()).isNull();
+        assertThat(rootFolder.resolveSpaceType()).isEqualTo(FileSpaceType.VAULT);
+        assertThat(subFolder.resolveSpaceType()).isEqualTo(FileSpaceType.VAULT);
+        assertThat(nestedFile.resolveSpaceType()).isEqualTo(FileSpaceType.VAULT);
+        assertThat(trashedChild.isTrashed()).isTrue();
+        assertThat(trashedChild.resolveSpaceType()).isEqualTo(FileSpaceType.DRIVE);
+        assertThat(trashedChild.getParent()).isNull();
+        verify(fileUpDownloadRepository).saveAll(anyList());
+    }
+
+    @Test
+    void moveToVaultMovesDriveFileIntoExistingVaultFolder() {
+        SecretAccessGuard guard = mock(SecretAccessGuard.class);
+        ReflectionTestUtils.setField(fileService, "secretAccessGuard", guard);
+        User owner = User.builder().idx(7L).build();
+        FileInfo vaultFolder = folder(20L, owner, null, FileSpaceType.VAULT);
+        FileInfo driveFile = fileWithParent(30L, owner, null, FileSpaceType.DRIVE, false, false);
+
+        when(fileUpDownloadRepository.findByIdxAndUser_Idx(20L, 7L)).thenReturn(Optional.of(vaultFolder));
+        when(fileUpDownloadRepository.findAllByUser_Idx(7L)).thenReturn(List.of(vaultFolder, driveFile));
+        when(shareRepository.findAllByFile_IdxIn(anyList())).thenReturn(List.of());
+
+        FileCommonDto.FileActionRes result = fileService.moveToVault(7L, 30L, 20L);
+
+        verify(guard).requireVaultUnlocked(7L);
+        assertThat(result.getTargetIdx()).isEqualTo(20L);
+        assertThat(driveFile.getParent()).isSameAs(vaultFolder);
+        assertThat(driveFile.resolveSpaceType()).isEqualTo(FileSpaceType.VAULT);
+    }
+
+    @Test
+    void moveToVaultRejectsWhenVaultLocked() {
+        SecretAccessGuard guard = mock(SecretAccessGuard.class);
+        ReflectionTestUtils.setField(fileService, "secretAccessGuard", guard);
+        doThrow(BaseException.from(BaseResponseStatus.VAULT_UNLOCK_REQUIRED))
+                .when(guard).requireVaultUnlocked(7L);
+
+        assertThatThrownBy(() -> fileService.moveToVault(7L, 10L, null))
+                .isInstanceOf(BaseException.class)
+                .extracting("status")
+                .isEqualTo(BaseResponseStatus.VAULT_UNLOCK_REQUIRED);
+        verify(fileUpDownloadRepository, never()).saveAll(anyList());
+    }
+
+    @Test
+    void moveToVaultRejectsFolderContainingSharedDescendant() {
+        SecretAccessGuard guard = mock(SecretAccessGuard.class);
+        ReflectionTestUtils.setField(fileService, "secretAccessGuard", guard);
+        User owner = User.builder().idx(7L).build();
+        FileInfo sharedRootFolder = folder(10L, owner, null, FileSpaceType.DRIVE);
+        FileInfo sharedDescendant = fileWithParent(11L, owner, sharedRootFolder, FileSpaceType.DRIVE, false, false);
+
+        when(fileUpDownloadRepository.findAllByUser_Idx(7L))
+                .thenReturn(List.of(sharedRootFolder, sharedDescendant));
+        when(shareRepository.findAllByFile_IdxIn(anyList()))
+                .thenReturn(List.of(mock(FileShare.class)));
+
+        assertThatThrownBy(() -> fileService.moveToVault(7L, 10L, null))
+                .isInstanceOf(BaseException.class)
+                .extracting("status")
+                .isEqualTo(BaseResponseStatus.SECRET_FOLDER_NOT_ALLOWED);
+
+        verify(fileUpDownloadRepository, never()).saveAll(anyList());
+    }
+
+    @Test
+    void moveToVaultRejectsFolderContainingLockedDescendantAndNonVaultTargetParent() {
+        SecretAccessGuard guard = mock(SecretAccessGuard.class);
+        ReflectionTestUtils.setField(fileService, "secretAccessGuard", guard);
+        User owner = User.builder().idx(7L).build();
+        FileInfo lockedRootFolder = folder(20L, owner, null, FileSpaceType.DRIVE);
+        FileInfo lockedDescendant = fileWithParent(21L, owner, lockedRootFolder, FileSpaceType.DRIVE, true, false);
+        FileInfo driveParent = folder(99L, owner, null, FileSpaceType.DRIVE);
+
+        when(fileUpDownloadRepository.findAllByUser_Idx(7L))
+                .thenReturn(List.of(lockedRootFolder, lockedDescendant));
+
+        assertThatThrownBy(() -> fileService.moveToVault(7L, 20L, null))
+                .isInstanceOf(BaseException.class)
+                .extracting("status")
+                .isEqualTo(BaseResponseStatus.REQUEST_ERROR);
+
+        when(fileUpDownloadRepository.findByIdxAndUser_Idx(99L, 7L)).thenReturn(Optional.of(driveParent));
+        assertThatThrownBy(() -> fileService.moveToVault(7L, 20L, 99L))
+                .isInstanceOf(BaseException.class)
+                .extracting("status")
+                .isEqualTo(BaseResponseStatus.REQUEST_ERROR);
+
+        verify(fileUpDownloadRepository, never()).saveAll(anyList());
+    }
+
+    @Test
+    void moveToVaultPromotesUnlockedHiddenPinFolderTreeAndClearsDriveHiddenFlags() {
+        SecretAccessGuard guard = mock(SecretAccessGuard.class);
+        ReflectionTestUtils.setField(fileService, "secretAccessGuard", guard);
+        User owner = User.builder().idx(7L).build();
+        FileInfo targetVaultFolder = folder(20L, owner, null, FileSpaceType.VAULT);
+        FileInfo hiddenRoot = FileInfo.builder()
+                .idx(30L)
+                .user(owner)
+                .nodeType(FileNodeType.FOLDER)
+                .spaceType(FileSpaceType.DRIVE)
+                .hiddenFolder(true)
+                .folderPinEnabled(true)
+                .folderPinHash("$2a$10$encodedpin")
+                .fileOriginName("히미츠")
+                .fileFormat("folder")
+                .fileSaveName("folder-30")
+                .trashed(false)
+                .build();
+        FileInfo hiddenChildFolder = FileInfo.builder()
+                .idx(31L)
+                .user(owner)
+                .parent(hiddenRoot)
+                .nodeType(FileNodeType.FOLDER)
+                .spaceType(FileSpaceType.DRIVE)
+                .hiddenFolder(true)
+                .folderPinEnabled(false)
+                .fileOriginName("서브비밀")
+                .fileFormat("folder")
+                .fileSaveName("folder-31")
+                .trashed(false)
+                .build();
+        FileInfo secretDoc = fileWithParent(32L, owner, hiddenChildFolder, FileSpaceType.DRIVE, false, false);
+
+        when(fileUpDownloadRepository.findByIdxAndUser_Idx(20L, 7L)).thenReturn(Optional.of(targetVaultFolder));
+        when(fileUpDownloadRepository.findAllByUser_Idx(7L))
+                .thenReturn(List.of(targetVaultFolder, hiddenRoot, hiddenChildFolder, secretDoc));
+        when(shareRepository.findAllByFile_IdxIn(anyList())).thenReturn(List.of());
+
+        FileCommonDto.FileActionRes result = fileService.moveToVault(7L, 30L, 20L);
+
+        verify(guard).requireVaultUnlocked(7L);
+        verify(guard).assertNodeAccess(7L, hiddenRoot, true);
+        verify(guard).assertNodeAccess(7L, hiddenChildFolder, true);
+        assertThat(result.getTargetIdx()).isEqualTo(20L);
+        assertThat(hiddenRoot.getParent()).isSameAs(targetVaultFolder);
+        assertThat(hiddenRoot.resolveSpaceType()).isEqualTo(FileSpaceType.VAULT);
+        assertThat(hiddenRoot.isHiddenFolder()).isFalse();
+        assertThat(hiddenRoot.isFolderPinEnabled()).isFalse();
+        assertThat(hiddenRoot.hasFolderPin()).isFalse();
+        assertThat(hiddenChildFolder.resolveSpaceType()).isEqualTo(FileSpaceType.VAULT);
+        assertThat(hiddenChildFolder.isHiddenFolder()).isFalse();
+        assertThat(secretDoc.resolveSpaceType()).isEqualTo(FileSpaceType.VAULT);
+        verify(fileUpDownloadRepository).saveAll(anyList());
+    }
+
+    @Test
+    void moveToVaultRejectsLockedHiddenFolderWhenGuardDeniesAccess() {
+        SecretAccessGuard guard = mock(SecretAccessGuard.class);
+        ReflectionTestUtils.setField(fileService, "secretAccessGuard", guard);
+        User owner = User.builder().idx(7L).build();
+        FileInfo hiddenRoot = FileInfo.builder()
+                .idx(40L)
+                .user(owner)
+                .nodeType(FileNodeType.FOLDER)
+                .spaceType(FileSpaceType.DRIVE)
+                .hiddenFolder(true)
+                .folderPinEnabled(true)
+                .folderPinHash("$2a$10$encodedpin")
+                .fileOriginName("히미츠")
+                .fileFormat("folder")
+                .fileSaveName("folder-40")
+                .trashed(false)
+                .build();
+
+        when(fileUpDownloadRepository.findAllByUser_Idx(7L)).thenReturn(List.of(hiddenRoot));
+        doThrow(BaseException.from(BaseResponseStatus.SECRET_FOLDER_UNLOCK_REQUIRED))
+                .when(guard).assertNodeAccess(7L, hiddenRoot, true);
+
+        assertThatThrownBy(() -> fileService.moveToVault(7L, 40L, null))
+                .isInstanceOf(BaseException.class)
+                .extracting("status")
+                .isEqualTo(BaseResponseStatus.SECRET_FOLDER_UNLOCK_REQUIRED);
+
+        verify(fileUpDownloadRepository, never()).saveAll(anyList());
+    }
+
+    @Test
+    void vaultFileListRejectsWhenVaultIsLocked() {
+        SecretAccessGuard guard = mock(SecretAccessGuard.class);
+        ReflectionTestUtils.setField(fileService, "secretAccessGuard", guard);
+        doThrow(BaseException.from(BaseResponseStatus.VAULT_UNLOCK_REQUIRED))
+                .when(guard).requireVaultUnlocked(7L);
+
+        assertThatThrownBy(() -> fileService.vaultFileList(7L))
+                .isInstanceOf(BaseException.class)
+                .extracting("status")
+                .isEqualTo(BaseResponseStatus.VAULT_UNLOCK_REQUIRED);
+
+        verify(fileUpDownloadRepository, never()).findAllByUser_IdxOrderByLastModifyDateDescUploadDateDesc(7L);
+    }
+
+    @Test
+    void vaultFileListReturnsOnlyAccessibleNonTrashedVaultItems() {
+        SecretAccessGuard guard = mock(SecretAccessGuard.class);
+        ReflectionTestUtils.setField(fileService, "secretAccessGuard", guard);
+        User owner = User.builder().idx(7L).build();
+
+        FileInfo driveFile = fileWithParent(10L, owner, null, FileSpaceType.DRIVE, false, false);
+        FileInfo vaultFolder = folder(20L, owner, null, FileSpaceType.VAULT);
+        FileInfo vaultVideo = fileWithParent(21L, owner, vaultFolder, FileSpaceType.VAULT, false, false);
+        FileInfo trashedVaultFolder = folder(30L, owner, null, FileSpaceType.VAULT);
+        trashedVaultFolder.markTrashed(LocalDateTime.now());
+        FileInfo childOfTrashedVault = fileWithParent(31L, owner, trashedVaultFolder, FileSpaceType.VAULT, false, false);
+        FileInfo directTrashedVaultFile = fileWithParent(32L, owner, vaultFolder, FileSpaceType.VAULT, false, false);
+        directTrashedVaultFile.markTrashed(LocalDateTime.now());
+        FileInfo pinLockedVaultSubfolder = folder(40L, owner, vaultFolder, FileSpaceType.VAULT);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            FileInfo node = invocation.getArgument(1);
+            if (node != null && Long.valueOf(40L).equals(node.getIdx())) {
+                throw BaseException.from(BaseResponseStatus.SECRET_FOLDER_UNLOCK_REQUIRED);
+            }
+            return null;
+        }).when(guard).assertNodeAccess(eq(7L), any(FileInfo.class), eq(true));
+
+        when(fileUpDownloadRepository.findAllByUser_IdxOrderByLastModifyDateDescUploadDateDesc(7L))
+                .thenReturn(List.of(
+                        driveFile,
+                        vaultFolder,
+                        vaultVideo,
+                        trashedVaultFolder,
+                        childOfTrashedVault,
+                        directTrashedVaultFile,
+                        pinLockedVaultSubfolder
+                ));
+        when(fileListItemUrlService.attachUrls(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<FileCommonDto.FileListItemRes> result = fileService.vaultFileList(7L);
+
+        verify(guard).requireVaultUnlocked(7L);
+        verify(fileListItemUrlService).prepareThumbnailUrls(anyList());
+        assertThat(result)
+                .extracting(FileCommonDto.FileListItemRes::getIdx)
+                .containsExactlyInAnyOrder(20L, 21L);
+    }
+
     private void runTransactionTemplateCallbacksWithActiveTransaction() {
         doAnswer(invocation -> {
             TransactionCallback<?> callback = invocation.getArgument(0);
@@ -289,6 +690,45 @@ class FileUpDownloadMinioServiceTest {
         when(fileUpDownloadRepository.findAllByUser_Idx(file.getUser().getIdx())).thenReturn(List.of(file));
         when(fileVersionLifecycleService.findVersionObjectKeys(List.of(file))).thenReturn(List.of("7/versions/report-v1.txt"));
         when(shareRepository.findAllByFile_IdxIn(List.of(file.getIdx()))).thenReturn(List.of());
+    }
+
+    private static FileInfo folder(Long idx, User owner, FileInfo parent, FileSpaceType spaceType) {
+        return FileInfo.builder()
+                .idx(idx)
+                .user(owner)
+                .parent(parent)
+                .nodeType(FileNodeType.FOLDER)
+                .spaceType(spaceType)
+                .fileOriginName("folder-" + idx)
+                .fileFormat("folder")
+                .fileSaveName("folder-" + idx)
+                .trashed(false)
+                .build();
+    }
+
+    private static FileInfo fileWithParent(
+            Long idx,
+            User owner,
+            FileInfo parent,
+            FileSpaceType spaceType,
+            boolean lockedFile,
+            boolean sharedFile
+    ) {
+        return FileInfo.builder()
+                .idx(idx)
+                .user(owner)
+                .parent(parent)
+                .nodeType(FileNodeType.FILE)
+                .spaceType(spaceType)
+                .fileOriginName("file-" + idx + ".txt")
+                .fileFormat("txt")
+                .fileSaveName("saved-" + idx + ".txt")
+                .fileSavePath(owner.getIdx() + "/saved-" + idx + ".txt")
+                .fileSize(128L)
+                .lockedFile(lockedFile)
+                .sharedFile(sharedFile)
+                .trashed(false)
+                .build();
     }
 
     private static FileInfo trashedFile(Long idx, Long userIdx, String objectKey, String format) {

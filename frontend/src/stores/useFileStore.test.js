@@ -1,14 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
-import { fetchStorageSummary as fetchStorageSummaryApi } from '@/api/filesApi.js'
+import {
+  fetchFileListPage as fetchFileListPageApi,
+  fetchStorageSummary as fetchStorageSummaryApi,
+  moveFilesToVault as moveFilesToVaultApi,
+} from '@/api/filesApi.js'
 import { useFileStore } from './useFileStore.js'
 
 vi.mock('@/api/filesApi.js', async (importOriginal) => {
   const actual = await importOriginal()
   return {
     ...actual,
+    fetchFileListPage: vi.fn(),
     fetchStorageSummary: vi.fn(),
+    moveFilesToVault: vi.fn(),
   }
 })
 
@@ -64,5 +70,153 @@ describe('useFileStore storage summary', () => {
     expect(fetchStorageSummaryApi).toHaveBeenCalledTimes(2)
     expect(store.storageSummary).toEqual(summary)
     expect(store.storageError).toBe('')
+  })
+
+  it('tracks recently accessed files and sorts recently uploaded files', () => {
+    window.localStorage.clear()
+    const store = useFileStore()
+    store.clearAccessedFiles()
+
+    store.allFiles = [
+      { id: 1, name: 'old.txt', type: 'file', isTrash: false, uploadedAtMs: 1000, sizeLabel: '1 KB' },
+      { id: 2, name: 'new.png', type: 'file', isTrash: false, uploadedAtMs: 5000, sizeLabel: '2 KB' },
+      { id: 3, name: 'folderA', type: 'folder', isTrash: false, uploadedAtMs: 9000 },
+    ]
+
+    expect(store.recentUploadedFiles.map((f) => f.id)).toEqual([2, 1])
+
+    store.recordFileAccess(store.allFiles[0])
+    store.recordFileAccess(store.allFiles[1])
+    expect(store.recentAccessedFiles.map((f) => f.id)).toEqual([2, 1])
+
+    // Re-accessing file 1 moves it to the top
+    store.recordFileAccess(store.allFiles[0])
+    expect(store.recentAccessedFiles.map((f) => f.id)).toEqual([1, 2])
+
+    store.clearAccessedFiles()
+    expect(store.recentAccessedFiles).toEqual([])
+  })
+
+  it('restores cached root snapshot immediately on goBack and ignores stale subfolder responses', async () => {
+    fetchStorageSummaryApi.mockResolvedValue({ planCode: 'ADMIN', totalQuotaBytes: 1000 })
+    const store = useFileStore()
+
+    fetchFileListPageApi.mockResolvedValueOnce({
+      fileList: [
+        { idx: 486, fileOriginName: 'Videos', nodeType: 'FOLDER', parentId: null },
+        { idx: 10, fileOriginName: 'root-doc.pdf', nodeType: 'FILE', parentId: null },
+      ],
+      breadcrumbs: [],
+      availableExtensions: ['pdf'],
+      totalPage: 1,
+      totalCount: 2,
+      currentPage: 0,
+      currentSize: 10,
+    })
+
+    await store.fetchDrivePage({ parentId: null, page: 0, size: 10 })
+    expect(store.driveFiles.map((f) => f.id)).toEqual([486, 10])
+    expect(store.currentFolder).toBeNull()
+
+    // Enter subfolder 486; before its slow request resolves, navigate back to root
+    const subfolderDeferred = createDeferred()
+    const rootRefreshDeferred = createDeferred()
+    fetchFileListPageApi
+      .mockReturnValueOnce(subfolderDeferred.promise)
+      .mockReturnValueOnce(rootRefreshDeferred.promise)
+
+    store.enterFolder(486)
+    expect(store.currentFolderId).toBe(486)
+    expect(store.driveFiles).toEqual([])
+
+    const subfolderPromise = store.fetchDrivePage({ parentId: 486, page: 0, size: 10 })
+
+    // User clicks Back to Home while subfolder 486 request is still in flight
+    store.goBack()
+    expect(store.currentFolderId).toBeNull()
+    expect(store.currentFolder).toBeNull()
+    // Root snapshot is restored immediately!
+    expect(store.driveFiles.map((f) => f.id)).toEqual([486, 10])
+
+    const rootPromise = store.fetchDrivePage({ parentId: null, page: 0, size: 10 })
+
+    // Even if the stale subfolder request resolves afterwards, it must NOT overwrite root files
+    subfolderDeferred.resolve({
+      fileList: [{ idx: 506, fileOriginName: 'movie.mp4', nodeType: 'FILE', parentId: 486 }],
+      breadcrumbs: [{ idx: 486, fileOriginName: 'Videos', parentId: null }],
+      availableExtensions: ['mp4'],
+      totalPage: 1,
+      totalCount: 1,
+      currentPage: 0,
+      currentSize: 10,
+    })
+    await subfolderPromise
+
+    expect(store.currentFolderId).toBeNull()
+    expect(store.driveFiles.map((f) => f.id)).toEqual([486, 10])
+
+    rootRefreshDeferred.resolve({
+      fileList: [
+        { idx: 486, fileOriginName: 'Videos', nodeType: 'FOLDER', parentId: null },
+        { idx: 10, fileOriginName: 'root-doc.pdf', nodeType: 'FILE', parentId: null },
+      ],
+      breadcrumbs: [],
+      availableExtensions: ['pdf'],
+      totalPage: 1,
+      totalCount: 2,
+      currentPage: 0,
+      currentSize: 10,
+    })
+    await rootPromise
+    expect(store.driveFiles.map((f) => f.id)).toEqual([486, 10])
+  })
+
+  it('moves folders and files to secret vault, prunes recent accessed history, and refreshes drive view', async () => {
+    window.localStorage.clear()
+    fetchStorageSummaryApi.mockResolvedValue({ planCode: 'ADMIN', totalQuotaBytes: 1000 })
+    fetchFileListPageApi
+      .mockResolvedValueOnce({
+        fileList: [
+          { idx: 486, fileOriginName: 'SecretCandidate', nodeType: 'FOLDER', parentId: null },
+          { idx: 10, fileOriginName: 'public.pdf', nodeType: 'FILE', parentId: null },
+        ],
+        breadcrumbs: [],
+        availableExtensions: ['pdf'],
+        totalPage: 1,
+        totalCount: 2,
+        currentPage: 0,
+        currentSize: 10,
+      })
+      .mockResolvedValueOnce({
+        fileList: [
+          { idx: 10, fileOriginName: 'public.pdf', nodeType: 'FILE', parentId: null },
+        ],
+        breadcrumbs: [],
+        availableExtensions: ['pdf'],
+        totalPage: 1,
+        totalCount: 1,
+        currentPage: 0,
+        currentSize: 10,
+      })
+    moveFilesToVaultApi.mockResolvedValueOnce({ targetIdx: null, action: 'move-to-vault', affectedCount: 1 })
+
+    const store = useFileStore()
+    store.clearAccessedFiles()
+    store.allFiles = [
+      { id: 486, name: 'SecretCandidate', type: 'folder', isTrash: false, parentId: null },
+      { id: 506, name: 'nested.txt', type: 'file', isTrash: false, parentId: 486, sizeLabel: '1 KB' },
+      { id: 10, name: 'public.pdf', type: 'file', isTrash: false, parentId: null, sizeLabel: '2 KB' },
+    ]
+    store.recordFileAccess(store.allFiles[1])
+    store.recordFileAccess(store.allFiles[2])
+    expect(store.recentAccessedFiles.map((f) => f.id)).toEqual([10, 506])
+
+    await store.fetchDrivePage({ parentId: null, page: 0, size: 10 })
+    const result = await store.moveFilesToVault([486], null)
+
+    expect(moveFilesToVaultApi).toHaveBeenCalledWith([486], null)
+    expect(result).toEqual({ targetIdx: null, action: 'move-to-vault', affectedCount: 1 })
+    expect(store.recentAccessedFiles.map((f) => f.id)).toEqual([10])
+    expect(store.driveFiles.map((f) => f.id)).toEqual([10])
   })
 })

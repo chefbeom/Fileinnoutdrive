@@ -51,6 +51,10 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessages, Long>
     @Query("DELETE FROM ChatMessages m WHERE m.chatRooms.idx = :roomIdx")
     void deleteAllByChatRoomsIdx(Long roomIdx);
 
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM ChatMessages m WHERE m.sender.idx = :userIdx")
+    void deleteAllBySenderIdx(@Param("userIdx") Long userIdx);
+
     Page<ChatMessages> findAllByChatRoomsAndCreatedAtAfter(ChatRooms room, LocalDateTime joinedAt, Pageable pageable);
     long countByChatRoomsIdxAndIdxGreaterThanAndCreatedAtAfter(
             Long chatRoomsIdx, Long idx, LocalDateTime createdAt

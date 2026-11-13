@@ -10,4 +10,6 @@ public interface EmailVerifyRepository extends JpaRepository<EmailVerify, Long> 
     Optional<EmailVerify> findByEmail(String email);
 
     Optional<EmailVerify> deleteByToken(String uuid);
+
+    void deleteAllByEmailIgnoreCase(String email);
 }

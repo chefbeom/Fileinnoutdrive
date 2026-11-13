@@ -13,6 +13,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     Optional<Order> findByPaymentId(String paymentId);
     boolean existsByPaymentIdAndOrderIdNot(String paymentId, String orderId);
     List<Order> findAllByUser_Idx(Long userIdx);
+    void deleteAllByUser_Idx(Long userIdx);
 
     @EntityGraph(attributePaths = "user")
     List<Order> findAllByUser_IdxIn(Collection<Long> userIds);

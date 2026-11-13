@@ -130,7 +130,10 @@ export function getFileTableUpdatedAt(file = {}) {
 }
 
 export function canDownloadFileTableFile(file = {}) {
-  return file?.type !== "folder" && Boolean(
+  if (file?.type === "folder") {
+    return !file?.lockedFile && !file?.isTrash;
+  }
+  return Boolean(
     file?.downloadUrl ||
     file?.presignedDownloadUrl ||
     (file?.sharedWithMe && file?.downloadable),

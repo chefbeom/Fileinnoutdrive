@@ -30,3 +30,28 @@ export async function uploadSettingsProfileImage(file) {
 
   return extractObjectResult(response?.data);
 }
+
+export async function withdrawSettingsAccount(payload = {}) {
+  const response = await api.post("/feater/settings/me/withdraw", payload);
+  return extractObjectResult(response?.data);
+}
+
+export async function fetchUiLayoutPreferences() {
+  const response = await api.get("/feater/settings/me/ui-layout");
+  const payload = extractObjectResult(response?.data);
+  return {
+    layout: payload?.layout && typeof payload.layout === "object" ? payload.layout : null,
+    updatedAt: payload?.updatedAt || null,
+  };
+}
+
+export async function updateUiLayoutPreferences(layout = {}) {
+  const response = await api.put("/feater/settings/me/ui-layout", {
+    layout: layout && typeof layout === "object" ? layout : {},
+  });
+  const payload = extractObjectResult(response?.data);
+  return {
+    layout: payload?.layout && typeof payload.layout === "object" ? payload.layout : layout,
+    updatedAt: payload?.updatedAt || null,
+  };
+}

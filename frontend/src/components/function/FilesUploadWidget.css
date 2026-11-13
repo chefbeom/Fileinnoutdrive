@@ -146,6 +146,27 @@
   font-weight: 800;
 }
 
+.upload-panel__overall-progress {
+  margin-top: 0.75rem;
+  width: 100%;
+}
+
+.upload-panel__overall-bar {
+  width: 100%;
+  height: 0.35rem;
+  border-radius: 999px;
+  background: var(--bg-input);
+  overflow: hidden;
+}
+
+.upload-panel__overall-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+
 .upload-panel__heading p {
   margin-top: 0.3rem;
   color: var(--text-secondary);
@@ -363,12 +384,22 @@
   color: #dc2626;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 767px) {
   .upload-float {
-    right: 0.75rem;
-    left: 0.75rem;
+    right: 0.65rem;
+    left: 0.65rem;
+    bottom: calc(4.65rem + env(safe-area-inset-bottom, 0px));
     width: auto;
+    z-index: 126;
   }
+
+  .upload-panel {
+    max-height: 54dvh;
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 640px) {
 
   .upload-panel__header {
     align-items: stretch;

@@ -13,7 +13,7 @@ RUN ./gradlew bootJar --no-daemon -x test
 FROM eclipse-temurin:17-jre-alpine
 
 WORKDIR /app
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl ffmpeg
 COPY --from=builder /app/build/libs/*.jar app.jar
 
 EXPOSE 8080

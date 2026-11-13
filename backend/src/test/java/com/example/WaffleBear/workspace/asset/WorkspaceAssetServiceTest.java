@@ -1,10 +1,17 @@
 package com.example.WaffleBear.workspace.asset;
 
+import com.example.WaffleBear.common.exception.BaseException;
+import com.example.WaffleBear.common.model.BaseResponseStatus;
 import com.example.WaffleBear.file.FileUpDownloadRepository;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
+import com.example.WaffleBear.file.model.FileSpaceType;
+import com.example.WaffleBear.file.secret.SecretAccessGuard;
+import com.example.WaffleBear.file.secret.SecretRequestContext;
+import com.example.WaffleBear.file.secret.SecretTokenService;
 import com.example.WaffleBear.user.model.User;
 import com.example.WaffleBear.user.repository.UserRepository;
+import org.springframework.test.util.ReflectionTestUtils;
 import com.example.WaffleBear.workspace.asset.model.WorkspaceAsset;
 import com.example.WaffleBear.workspace.model.post.Post;
 import com.example.WaffleBear.workspace.model.relation.AccessRole;
@@ -325,6 +332,29 @@ class WorkspaceAssetServiceTest {
     private void startTransactionSynchronization() {
         TransactionSynchronizationManager.initSynchronization();
         TransactionSynchronizationManager.setActualTransactionActive(true);
+    }
+
+    @Test
+    void saveAssetToDriveEnforcesSecretAccessGuardAndInheritsVaultSpaceType() {
+        setupWorkspaceAssetReadAccess();
+        FileInfo vaultParent = FileInfo.builder()
+                .idx(55L)
+                .user(User.builder().idx(1L).build())
+                .nodeType(FileNodeType.FOLDER)
+                .spaceType(FileSpaceType.VAULT)
+                .trashed(false)
+                .build();
+        when(fileUpDownloadRepository.findByIdxAndUser_Idx(55L, 1L)).thenReturn(Optional.of(vaultParent));
+
+        String key = java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("wafflebear-asset-guard-test-key-32bytes!".getBytes(StandardCharsets.UTF_8));
+        SecretAccessGuard guard = new SecretAccessGuard(new SecretTokenService(key), new SecretRequestContext());
+        ReflectionTestUtils.setField(workspaceAssetService, "secretAccessGuard", guard);
+
+        assertThatThrownBy(() -> workspaceAssetService.saveAssetToDrive(1L, 10L, 77L, 55L))
+                .isInstanceOf(BaseException.class)
+                .extracting("status")
+                .isEqualTo(BaseResponseStatus.VAULT_UNLOCK_REQUIRED);
     }
 
     private void runTransactionTemplateCallbacksWithActiveTransaction() {

@@ -6,6 +6,8 @@ import com.example.WaffleBear.file.FileUpDownloadRepository;
 import com.example.WaffleBear.file.dto.FileCommonDto;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
+import com.example.WaffleBear.file.model.FileSpaceType;
+import com.example.WaffleBear.file.secret.SecretAccessGuard;
 import com.example.WaffleBear.user.model.User;
 import com.example.WaffleBear.user.repository.UserRepository;
 import com.example.WaffleBear.workspace.asset.model.WorkspaceAsset;
@@ -17,6 +19,7 @@ import com.example.WaffleBear.workspace.model.relation.UserPost;
 import com.example.WaffleBear.workspace.repository.UserPostRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -90,6 +93,7 @@ public class WorkspaceAssetService {
     private record DriveAssetCopyContext(
             Long userIdx,
             Long parentId,
+            FileSpaceType spaceType,
             String sourceObjectKey,
             String originalName,
             Long fileSize,
@@ -117,6 +121,9 @@ public class WorkspaceAssetService {
     private final WorkspaceAssetObjectStorageService workspaceAssetObjectStorageService;
     private final WorkspaceAssetEventPublisher workspaceAssetEventPublisher;
     private final TransactionTemplate transactionTemplate;
+
+    @Autowired(required = false)
+    private SecretAccessGuard secretAccessGuard;
 
     /**
      * 여러 파일을 한번에 업로드 (일반 에셋용)
@@ -364,12 +371,14 @@ public class WorkspaceAssetService {
                     .findByIdxAndWorkspace_Idx(assetIdx, permission.workspace().getIdx())
                     .orElseThrow(() -> BaseException.from(BaseResponseStatus.REQUEST_ERROR));
             FileInfo parentFolder = resolveParentFolder(userIdx, parentId);
+            FileSpaceType spaceType = parentFolder != null ? parentFolder.resolveSpaceType() : FileSpaceType.DRIVE;
             String fileFormat = WorkspaceAssetRules.resolveDriveFileFormat(asset);
             String savedFileName = WorkspaceAssetRules.buildDriveStoredFileName(fileFormat);
             String savedObjectKey = userIdx + "/" + savedFileName;
             return new DriveAssetCopyContext(
                     userIdx,
                     parentFolder == null ? null : parentFolder.getIdx(),
+                    spaceType,
                     asset.getObjectKey(),
                     asset.getOriginalName(),
                     asset.getFileSize(),
@@ -396,6 +405,7 @@ public class WorkspaceAssetService {
                             .user(User.builder().idx(context.userIdx()).build())
                             .parent(context.parentReference())
                             .nodeType(FileNodeType.FILE)
+                            .spaceType(context.spaceType())
                             .fileOriginName(context.originalName())
                             .fileFormat(context.fileFormat())
                             .fileSaveName(context.savedFileName())
@@ -442,6 +452,7 @@ public class WorkspaceAssetService {
             );
         });
     }
+
     @Transactional
     public void deleteAllWorkspaceAssets(Post workspace) {
         if (workspace == null || workspace.getIdx() == null) {
@@ -454,6 +465,26 @@ public class WorkspaceAssetService {
         }
 
         workspaceAssetRepository.deleteAllByWorkspaceIdx(workspace.getIdx());
+        WorkspaceAssetObjectCleanupScheduler.deleteAfterCommit(workspaceAssetObjectStorageService, objectKeys);
+    }
+
+    @Transactional
+    public void deleteAllUploaderAssets(Long uploaderIdx) {
+        if (uploaderIdx == null || uploaderIdx <= 0L) {
+            return;
+        }
+
+        List<WorkspaceAsset> assets = workspaceAssetRepository.findAllByUploader_Idx(uploaderIdx);
+        if (assets.isEmpty()) {
+            return;
+        }
+
+        List<String> objectKeys = assets.stream()
+                .map(WorkspaceAsset::getObjectKey)
+                .filter(Objects::nonNull)
+                .filter(key -> !key.isBlank())
+                .toList();
+        workspaceAssetRepository.deleteAllByUploader_Idx(uploaderIdx);
         WorkspaceAssetObjectCleanupScheduler.deleteAfterCommit(workspaceAssetObjectStorageService, objectKeys);
     }
 
@@ -538,6 +569,9 @@ public class WorkspaceAssetService {
 
         if (parent.isTrashed() || parent.getNodeType() != FileNodeType.FOLDER) {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
+        if (secretAccessGuard != null) {
+            secretAccessGuard.assertNodeAccess(userIdx, parent, true);
         }
 
         return parent;

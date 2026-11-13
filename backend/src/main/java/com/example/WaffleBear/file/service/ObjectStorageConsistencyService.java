@@ -3,12 +3,14 @@ package com.example.WaffleBear.file.service;
 import com.example.WaffleBear.config.MinioProperties;
 import com.example.WaffleBear.file.FileUpDownloadRepository;
 import com.example.WaffleBear.file.version.FileVersionRepository;
+import com.example.WaffleBear.storageshare.repository.SharedStorageNodeRepository;
 import com.example.WaffleBear.workspace.asset.WorkspaceAssetRepository;
 import io.minio.ListObjectsArgs;
 import io.minio.MinioClient;
 import io.minio.Result;
 import io.minio.messages.Item;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -31,6 +33,9 @@ public class ObjectStorageConsistencyService {
     private final FileVersionRepository fileVersionRepository;
     private final WorkspaceAssetRepository workspaceAssetRepository;
     private final FileObjectDeletionService fileObjectDeletionService;
+
+    @Autowired(required = false)
+    private SharedStorageNodeRepository sharedStorageNodeRepository;
 
     public StorageObjectCleanupReport findCloudOrphanObjects(int maxScan) {
         Set<String> referencedObjectKeys = loadReferencedCloudObjectKeys();
@@ -64,6 +69,9 @@ public class ObjectStorageConsistencyService {
         addNormalizedObjectKeys(referencedObjectKeys, fileUpDownloadRepository.findStoredObjectKeys());
         addNormalizedObjectKeys(referencedObjectKeys, fileVersionRepository.findStoredObjectKeys());
         addNormalizedObjectKeys(referencedObjectKeys, workspaceAssetRepository.findAllObjectKeys());
+        if (sharedStorageNodeRepository != null) {
+            addNormalizedObjectKeys(referencedObjectKeys, sharedStorageNodeRepository.findAllStoredObjectKeys());
+        }
         return referencedObjectKeys;
     }
 

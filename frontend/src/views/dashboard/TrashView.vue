@@ -1,16 +1,32 @@
-﻿<script setup>
+<script setup>
 import BaseFileView from "@/components/BaseFileView.vue";
 import { useFileStore } from "@/stores/useFileStore.js";
 
 const fileStore = useFileStore();
 
 const handlePermanentDelete = async (id) => {
-  await fileStore.permanentlyDelete(id);
+  try {
+    await fileStore.permanentlyDelete(id);
+  } catch (error) {
+    window.alert(
+      error?.response?.data?.message ||
+      error?.message ||
+      "항목을 영구 삭제하지 못했습니다.",
+    );
+  }
 };
 
 const handleClearTrash = async () => {
   if (window.confirm("휴지통의 모든 항목을 영구 삭제하시겠습니까?")) {
-    await fileStore.emptyTrash();
+    try {
+      await fileStore.emptyTrash();
+    } catch (error) {
+      window.alert(
+        error?.response?.data?.message ||
+        error?.message ||
+        "휴지통을 비우지 못했습니다.",
+      );
+    }
   }
 };
 </script>

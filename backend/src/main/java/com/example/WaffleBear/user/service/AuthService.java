@@ -1,5 +1,6 @@
 package com.example.WaffleBear.user.service;
 
+import com.example.WaffleBear.file.secret.SecretTokenService;
 import com.example.WaffleBear.user.model.AuthUserDetails;
 import com.example.WaffleBear.user.model.RefreshToken;
 import com.example.WaffleBear.user.model.TokenDto;
@@ -12,6 +13,7 @@ import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -28,6 +30,9 @@ public class AuthService {
     private final JwtUtil jwtUtil;
     private final RefreshTokenRepository refreshTokenRepository;
     private final UserRepository userRepository;
+
+    @Autowired(required = false)
+    private SecretTokenService secretTokenService;
 
     @Transactional
     public TokenDto.AuthTokenResponse issueTokens(Long userIdx, String userId, String email, String name, String role) {
@@ -161,7 +166,13 @@ public class AuthService {
     @Transactional
     public void logoutAllByEmail(String email) {
         if (email != null && !email.isBlank()) {
-            refreshTokenRepository.deleteByEmail(email.trim());
+            String trimmedEmail = email.trim();
+            refreshTokenRepository.deleteByEmail(trimmedEmail);
+            if (secretTokenService != null) {
+                userRepository.findByEmail(trimmedEmail)
+                        .map(User::getIdx)
+                        .ifPresent(secretTokenService::revokeVaultTokens);
+            }
         }
     }
 
@@ -169,6 +180,14 @@ public class AuthService {
     public void logout(String refreshToken) {
         if (refreshToken == null || refreshToken.isBlank()) {
             return;
+        }
+        if (secretTokenService != null) {
+            try {
+                Long userIdx = jwtUtil.getUserIdx(refreshToken);
+                secretTokenService.revokeVaultTokens(userIdx);
+            } catch (RuntimeException ignored) {
+                // Ignore malformed or expired token during logout cleanup.
+            }
         }
         refreshTokenRepository.deleteByTokenHash(hashRefreshToken(refreshToken));
     }

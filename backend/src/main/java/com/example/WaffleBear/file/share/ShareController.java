@@ -248,12 +248,12 @@ public class ShareController {
             FileThumbnailService.ThumbnailPayload payload,
             String ifNoneMatch
     ) {
-        CacheControl cacheControl = CacheControl.maxAge(Duration.ofDays(1)).cachePrivate().mustRevalidate();
         if (payload == null || payload.bytes() == null || payload.bytes().length == 0) {
             return ResponseEntity.noContent()
-                    .cacheControl(cacheControl)
+                    .cacheControl(CacheControl.noStore())
                     .build();
         }
+        CacheControl cacheControl = CacheControl.maxAge(Duration.ofDays(1)).cachePrivate().mustRevalidate();
 
         if (matchesEtag(ifNoneMatch, payload.eTag())) {
             return ResponseEntity.status(304)

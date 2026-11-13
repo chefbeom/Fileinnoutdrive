@@ -16,6 +16,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -42,6 +43,15 @@ public class FileManageController {
         return ResponseEntity.ok(fileManageService.list(userIdx));
     }
 
+    @GetMapping("/list/vault")
+    @Operation(summary = "List vault items", description = "Returns all non-trashed items in the current user's secret vault when unlocked.")
+    public ResponseEntity<List<FileCommonDto.FileListItemRes>> vaultFileList(
+            @AuthenticationPrincipal AuthUserDetails dto
+    ) {
+        Long userIdx = dto != null ? dto.getIdx() : 0L;
+        return ResponseEntity.ok(fileManageService.listVault(userIdx));
+    }
+
     @GetMapping("/list/page")
     @Operation(summary = "List drive items by page", description = "Returns paged drive items with filtering and sorting.")
     public ResponseEntity<FileCommonDto.FileListPageRes> fileListPage(
@@ -60,6 +70,28 @@ public class FileManageController {
     ) {
         Long userIdx = dto != null ? dto.getIdx() : 0L;
         return buildDownloadResponse(fileManageService.downloadFile(userIdx, fileIdx));
+    }
+
+    @GetMapping("/{fileIdx}/download-folder")
+    @Operation(summary = "Download folder as zip", description = "Downloads all files under the folder as a zip archive.")
+    public ResponseEntity<StreamingResponseBody> downloadFolder(
+            @AuthenticationPrincipal AuthUserDetails dto,
+            @PathVariable Long fileIdx
+    ) {
+        Long userIdx = dto != null ? dto.getIdx() : 0L;
+        FileCommonDto.FolderZipDownloadPayload payload = fileManageService.downloadFolderZip(userIdx, fileIdx);
+        String zipFileName = payload.folderName() + ".zip";
+
+        return ResponseEntity.ok()
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment()
+                                .filename(zipFileName, StandardCharsets.UTF_8)
+                                .build()
+                                .toString()
+                )
+                .contentType(MediaType.parseMediaType("application/zip"))
+                .body(payload.streamingBody());
     }
 
     @GetMapping("/{fileIdx}/download-link")
@@ -129,10 +161,26 @@ public class FileManageController {
     @DeleteMapping("/trash")
     @Operation(summary = "Clear trash", description = "Permanently deletes all items in the trash.")
     public ResponseEntity<FileCommonDto.FileActionRes> clearTrash(
-            @AuthenticationPrincipal AuthUserDetails dto
+            @AuthenticationPrincipal AuthUserDetails dto,
+            @RequestParam(required = false) Boolean vaultMode
     ) {
         Long userIdx = dto != null ? dto.getIdx() : 0L;
-        return ResponseEntity.ok(fileManageService.clearTrash(userIdx));
+        return ResponseEntity.ok(fileManageService.clearTrash(userIdx, Boolean.TRUE.equals(vaultMode)));
+    }
+
+    @PatchMapping("/{fileIdx}/move-to-vault")
+    @Operation(summary = "Move item to secret vault", description = "Moves a single file or folder into the personal secret vault.")
+    public ResponseEntity<FileCommonDto.FileActionRes> moveToVault(
+            @AuthenticationPrincipal AuthUserDetails dto,
+            @PathVariable Long fileIdx,
+            @RequestBody(required = false) FileManageDto.MoveReq request
+    ) {
+        Long userIdx = dto != null ? dto.getIdx() : 0L;
+        return ResponseEntity.ok(fileManageService.moveToVault(
+                userIdx,
+                fileIdx,
+                request != null ? request.getTargetParentId() : null
+        ));
     }
 
     @PatchMapping("/{fileIdx}/move")
@@ -143,10 +191,14 @@ public class FileManageController {
             @RequestBody FileManageDto.MoveReq request
     ) {
         Long userIdx = dto != null ? dto.getIdx() : 0L;
+        Long targetParentId = request != null ? request.getTargetParentId() : null;
+        if (isVaultMoveRequested(request != null ? request.getTargetSpaceType() : null, request != null ? request.getVaultMode() : null)) {
+            return ResponseEntity.ok(fileManageService.moveToVault(userIdx, fileIdx, targetParentId));
+        }
         return ResponseEntity.ok(fileManageService.moveToFolder(
                 userIdx,
                 fileIdx,
-                request != null ? request.getTargetParentId() : null
+                targetParentId
         ));
     }
 
@@ -165,6 +217,20 @@ public class FileManageController {
         ));
     }
 
+    @PatchMapping("/move-to-vault")
+    @Operation(summary = "Move items to secret vault in batch", description = "Moves multiple files or folders into the personal secret vault.")
+    public ResponseEntity<FileCommonDto.FileActionRes> moveFilesToVault(
+            @AuthenticationPrincipal AuthUserDetails dto,
+            @RequestBody FileManageDto.MoveBatchReq request
+    ) {
+        Long userIdx = dto != null ? dto.getIdx() : 0L;
+        return ResponseEntity.ok(fileManageService.moveFilesToVault(
+                userIdx,
+                request != null ? request.getFileIdxList() : null,
+                request != null ? request.getTargetParentId() : null
+        ));
+    }
+
     @PatchMapping("/move")
     @Operation(summary = "Move items in batch", description = "Moves multiple drive items to another folder.")
     public ResponseEntity<FileCommonDto.FileActionRes> moveFilesToFolder(
@@ -172,11 +238,20 @@ public class FileManageController {
             @RequestBody FileManageDto.MoveBatchReq request
     ) {
         Long userIdx = dto != null ? dto.getIdx() : 0L;
+        List<Long> fileIdxList = request != null ? request.getFileIdxList() : null;
+        Long targetParentId = request != null ? request.getTargetParentId() : null;
+        if (isVaultMoveRequested(request != null ? request.getTargetSpaceType() : null, request != null ? request.getVaultMode() : null)) {
+            return ResponseEntity.ok(fileManageService.moveFilesToVault(userIdx, fileIdxList, targetParentId));
+        }
         return ResponseEntity.ok(fileManageService.moveFilesToFolder(
                 userIdx,
-                request != null ? request.getFileIdxList() : null,
-                request != null ? request.getTargetParentId() : null
+                fileIdxList,
+                targetParentId
         ));
+    }
+
+    private boolean isVaultMoveRequested(String targetSpaceType, Boolean vaultMode) {
+        return Boolean.TRUE.equals(vaultMode) || "VAULT".equalsIgnoreCase(targetSpaceType);
     }
 
     @PatchMapping("/restore")
@@ -196,13 +271,13 @@ public class FileManageController {
             FileThumbnailService.ThumbnailPayload payload,
             String ifNoneMatch
     ) {
-        CacheControl cacheControl = CacheControl.maxAge(Duration.ofDays(1)).cachePrivate().mustRevalidate();
         if (payload == null || payload.bytes() == null || payload.bytes().length == 0) {
             return ResponseEntity.noContent()
-                    .cacheControl(cacheControl)
+                    .cacheControl(CacheControl.noStore())
                     .build();
         }
 
+        CacheControl cacheControl = CacheControl.maxAge(Duration.ofDays(1)).cachePrivate().mustRevalidate();
         if (matchesEtag(ifNoneMatch, payload.eTag())) {
             return ResponseEntity.status(304)
                     .cacheControl(cacheControl)

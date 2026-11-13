@@ -1,14 +1,32 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/useAuthStore.js' // 스토어 추가
 import Sidebar from '../components/Sidebar.vue'
 import Header from '../components/Header.vue'
 import Chat from '@/components/Chat.vue'
+import MediaTheaterModal from '@/components/media/MediaTheaterModal.vue'
+import MiniPlayerWidget from '@/components/media/MiniPlayerWidget.vue'
+import PhotoLightboxModal from '@/components/photos/PhotoLightboxModal.vue'
+import SecretPinModal from '@/components/file/SecretPinModal.vue'
+import SecretFolderDialog from '@/components/file/SecretFolderDialog.vue'
+import { useMediaPhotoStore } from '@/stores/useMediaPhotoStore.js'
 import { registerPushNotification } from '@/utils/pushNotification.js'
 import { api } from '@/plugins/axiosinterceptor.js'
 
 const isChatOpen = ref(false)
 const authStore = useAuthStore()
+const mediaPhotoStore = useMediaPhotoStore()
+const route = useRoute()
+
+watch(() => route.fullPath, () => {
+  if (mediaPhotoStore.activeTheaterVideoId) {
+    mediaPhotoStore.closeTheater()
+  }
+  if (mediaPhotoStore.activeLightboxPhotoId) {
+    mediaPhotoStore.closePhotoLightbox()
+  }
+})
 
 const handleOpenChatRoom = (event) => {
   const roomIdx = event?.detail?.roomIdx
@@ -61,6 +79,24 @@ const loadContent = async () => {
         <Chat :is-open="isChatOpen" @close="isChatOpen = false" />
       </div>
     </div>
+
+    <MediaTheaterModal
+      :video-id="mediaPhotoStore.activeTheaterVideoId"
+      :playlist-ids="mediaPhotoStore.activeTheaterPlaylistIds"
+      :collection-id="mediaPhotoStore.activeTheaterCollectionId"
+      @close="mediaPhotoStore.closeTheater()"
+    />
+
+    <PhotoLightboxModal
+      :photo-id="mediaPhotoStore.activeLightboxPhotoId"
+      :pool-ids="mediaPhotoStore.activeLightboxPoolIds"
+      :initial-slideshow="mediaPhotoStore.activeLightboxSlideshow"
+      @close="mediaPhotoStore.closePhotoLightbox()"
+    />
+
+    <MiniPlayerWidget />
+    <SecretPinModal />
+    <SecretFolderDialog />
   </div>
 </template>
 
@@ -68,6 +104,8 @@ const loadContent = async () => {
 .main-layout {
   display: flex;
   height: 100vh;
+  height: 100dvh;
+  overflow-x: hidden;
   background-color: var(--bg-secondary);
   transition: background-color 0.3s ease;
 }
@@ -88,9 +126,15 @@ const loadContent = async () => {
 .main-content {
   flex: 1;
   overflow-y: auto;
-  padding: clamp(1rem, 2vw, 2rem);
+  padding: clamp(0.75rem, 2vw, 2rem);
   background-color: var(--bg-secondary);
   transition: all 0.3s ease;
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    padding: 0.75rem 0.65rem calc(5.25rem + env(safe-area-inset-bottom, 0px));
+  }
 }
 
 /* 스크롤바 스타일 */

@@ -5,6 +5,7 @@ import com.example.WaffleBear.config.Filter.LoginFilter;
 import com.example.WaffleBear.config.oauth2.OAuth2AuthenticationSuccessHandler;
 import com.example.WaffleBear.config.oauth2.OAuth2AuthorizationRequestRepository;
 import com.example.WaffleBear.user.service.OAuth2UserService;
+import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -86,7 +87,8 @@ public class SecurityConfig {
         }
 
         http.authorizeHttpRequests(auth -> {
-            auth.requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+            auth.dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
+                    .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                     .requestMatchers("/login", "/error").permitAll()
                     .requestMatchers("/auth/demo-login", "/auth/reissue", "/auth/logout", "/auth/oauth2/providers").permitAll()
                     .requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()

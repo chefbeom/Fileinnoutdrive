@@ -330,7 +330,7 @@ const gridClassName = computed(() => getFileTableGridClassName(gridSize.value));
 
     <div
       v-if="viewMode === 'table'"
-      class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"
+      class="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm"
     >
       <table class="min-w-full divide-y divide-gray-200">
         <thead class="bg-slate-50">

@@ -1,4 +1,5 @@
 import { formatBytes } from "@/utils/formatBytes.js";
+import { getCollectionActionAvailability } from "@/components/file/fileCollectionViewModel.js";
 
 export function collectBaseFileExtensions({ useServerPaging = false, serverExtensions = [], files = [] } = {}) {
   if (useServerPaging) {
@@ -179,16 +180,23 @@ export const isOwnedSharedBaseFile = (file) => Boolean(file?.sharedFile && !file
 export function buildSelectedBaseFileGroups(selectedFiles = [], options = {}) {
   const sharedLibrary = Boolean(options.sharedLibrary);
   const canCreateShares = Boolean(options.canCreateShares);
+  const vaultMode = Boolean(options.vaultMode);
+  const deleteMode = options.deleteMode || "trash";
   const selectedLockableFiles = selectedFiles.filter((file) => !file?.sharedWithMe && file?.type !== "folder" && !file?.isTrash);
 
   return {
-    downloadableFiles: selectedFiles.filter((file) => file?.type !== "folder" && !file?.lockedFile && (file?.downloadUrl || file?.presignedDownloadUrl || (file?.sharedWithMe && file?.downloadable))),
+    downloadableFiles: selectedFiles.filter((file) => !file?.lockedFile && !file?.isTrash && (file?.type === "folder" || file?.downloadUrl || file?.presignedDownloadUrl || (file?.sharedWithMe && file?.downloadable))),
     sharedFiles: selectedFiles.filter((file) => file?.sharedWithMe && !file?.lockedFile),
     ownedShareableFiles: selectedFiles.filter((file) => !file?.sharedWithMe && !file?.lockedFile && !file?.isTrash && (canCreateShares || file?.sharedFile)),
     cancelableSentSharedFiles: selectedFiles.filter((file) => sharedLibrary && file?.sharedFile && !file?.sharedWithMe),
     lockableFiles: selectedLockableFiles,
     lockCandidates: selectedLockableFiles.filter((file) => !file?.lockedFile),
     lockedFiles: selectedLockableFiles.filter((file) => file?.lockedFile),
+    vaultMovableFiles: selectedFiles.filter((file) => getCollectionActionAvailability(file, {
+      sharedLibrary,
+      vaultMode,
+      deleteMode,
+    }).canMoveToVault),
   };
 }
 
@@ -214,7 +222,17 @@ export function buildBasePageNumbers(currentPage = 1, pageCount = 1) {
   return pages;
 }
 
-export function buildBaseServerListQuery({ useServerPaging = false, currentFolderId = null, currentPage = 1, pageSize = 1, sortOption = "updatedAt-desc", searchState = {} } = {}) {
+export function buildBaseServerListQuery({
+  useServerPaging = false,
+  currentFolderId = null,
+  currentPage = 1,
+  pageSize = 1,
+  sortOption = "updatedAt-desc",
+  searchState = {},
+  vaultMode = false,
+  includeHidden = false,
+  trashedOnly = false,
+} = {}) {
   if (!useServerPaging) {
     return null;
   }
@@ -230,6 +248,9 @@ export function buildBaseServerListQuery({ useServerPaging = false, currentFolde
     customMinSize: searchState.customMinSize,
     customMaxSize: searchState.customMaxSize,
     statusFilter: searchState.statusFilter,
+    vaultMode: Boolean(vaultMode),
+    includeHidden: Boolean(includeHidden),
+    trashedOnly: Boolean(vaultMode && trashedOnly),
   };
 }
 

@@ -1,10 +1,14 @@
 package com.example.WaffleBear.config.sse;
 
+import com.example.WaffleBear.config.RedisConfig;
 import com.example.WaffleBear.config.realtime.RealtimeNodeIdProvider;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -15,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class SseService {
@@ -25,13 +30,16 @@ public class SseService {
     private final ObjectMapper objectMapper;
     private final RealtimeNodeIdProvider nodeIdProvider;
 
+    @Value("${REDIS_KEY_PREFIX:}")
+    private String redisKeyPrefix;
+
     public void sendTitleUpdate(Long postId, String newTitle, List<Long> userIds) {
         Map<String, Object> data = new HashMap<>();
         data.put("postId", postId);
         data.put("title", newTitle);
 
         for (Long userId : userIds) {
-            sendEventToUser(userId, "title-updated", data);  // ✅ 통일
+            sendEventToUser(userId, "title-updated", data);
         }
     }
 
@@ -43,7 +51,6 @@ public class SseService {
         sendEventToUser(targetUserIdx, "role-changed", payload);
     }
 
-    // ✅ 공통 전송 헬퍼
     public void sendEventToUser(Long userId, String eventName, Object data) {
         if (userId == null || !StringUtils.hasText(eventName)) {
             return;
@@ -63,10 +70,32 @@ public class SseService {
                 emitter.send(SseEmitter.event()
                         .name(eventName)
                         .data(payloadJson));
-            } catch (IOException e) {
+            } catch (IOException | IllegalStateException e) {
                 emitterStore.remove(userId, emitter);
-                emitter.completeWithError(e);
+                completeQuietly(emitter);
             }
+        }
+    }
+
+    @Scheduled(fixedDelay = 30000)
+    public void sendHeartbeat() {
+        for (Long userId : emitterStore.getConnectedUserIds()) {
+            Set<SseEmitter> userEmitters = emitterStore.getAll(userId);
+            for (SseEmitter emitter : userEmitters) {
+                try {
+                    emitter.send(SseEmitter.event().comment("heartbeat"));
+                } catch (IOException | IllegalStateException e) {
+                    emitterStore.remove(userId, emitter);
+                    completeQuietly(emitter);
+                }
+            }
+        }
+    }
+
+    private void completeQuietly(SseEmitter emitter) {
+        try {
+            emitter.complete();
+        } catch (Exception ignored) {
         }
     }
 
@@ -82,9 +111,12 @@ public class SseService {
                     eventName,
                     payloadJson
             );
-            redisTemplate.convertAndSend(CHANNEL, objectMapper.writeValueAsString(message));
+            String channel = RedisConfig.resolvePrefixedName(redisKeyPrefix, CHANNEL);
+            redisTemplate.convertAndSend(channel, objectMapper.writeValueAsString(message));
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize SSE broadcast message", e);
+        } catch (Exception e) {
+            log.debug("Redis SSE broadcast skipped: {}", e.getMessage());
         }
     }
 

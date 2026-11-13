@@ -34,7 +34,7 @@ describe('authSession', () => {
     })
     expect(axios.post).toHaveBeenCalledWith('/api/auth/reissue', {}, {
       withCredentials: true,
-      timeout: 5000,
+      timeout: 15000,
     })
   })
 
@@ -71,7 +71,7 @@ describe('authSession', () => {
 
     expect(axios.post).toHaveBeenCalledWith('/api/auth/logout', {}, {
       withCredentials: true,
-      timeout: 5000,
+      timeout: 10000,
     })
   })
 })

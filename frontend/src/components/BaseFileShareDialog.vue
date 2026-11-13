@@ -85,8 +85,12 @@ const submitButtonLabel = computed(() => (props.isSharing ? "공유 중..." : "�
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 px-4" @click.self="emit('close')">
-    <div class="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl">
+  <div
+    v-if="targets && targets.length > 0"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 px-4"
+    @click.self="emit('close')"
+  >
+    <div class="w-full max-w-2xl max-h-[90dvh] overflow-y-auto rounded-3xl bg-white p-4 sm:p-6 shadow-2xl">
       <div class="flex items-start justify-between gap-3">
         <div>
           <p class="text-xs font-semibold uppercase tracking-wide text-gray-400">파일/폴더 공유</p>
