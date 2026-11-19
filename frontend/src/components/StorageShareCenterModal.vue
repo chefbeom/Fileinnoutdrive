@@ -1502,9 +1502,6 @@ watch(
               class="rounded-2xl border border-dashed border-gray-200 bg-slate-50 px-6 py-12 text-center"
             >
               <p class="text-sm font-black text-gray-800">참여 중인 공유 폴더가 없습니다</p>
-              <p class="mt-1 text-xs text-gray-500">
-                좌측 사이드바의 <strong>+ 업로드 / 폴더 만들기 → 공유 폴더 만들기</strong> 또는 아래 버튼으로 바로 생성할 수 있습니다.
-              </p>
               <button
                 type="button"
                 class="mt-4 rounded-full bg-blue-600 px-5 py-2 text-xs font-extrabold text-white shadow-sm hover:bg-blue-700"
@@ -1523,9 +1520,6 @@ watch(
                   현재 디렉터리 기준 공유 폴더 생성
                 </span>
                 <h3 class="mt-2 text-base font-black text-gray-900">새 공유 폴더 만들기</h3>
-                <p class="mt-0.5 text-xs text-gray-500">
-                  일반 폴더처럼 선택한 디렉터리에 공유 아이콘이 붙은 <strong>공유 폴더</strong>로 생성되며, 더블클릭하여 바로 들어가 사용할 수 있습니다.
-                </p>
               </div>
 
               <!-- 생성 위치 (디렉터리 선택) -->

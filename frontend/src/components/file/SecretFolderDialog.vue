@@ -17,10 +17,14 @@
             </span>
             <div class="min-w-0">
               <h3 class="text-sm font-bold text-[var(--text-main)] truncate">
-                {{ dialog.mode === "create" ? "비밀 폴더 생성 (숨김)" : "비밀 폴더 숨김 및 PIN 설정" }}
+                {{
+                  dialog.mode === "create"
+                    ? "비밀 폴더 생성 (숨김)"
+                    : (dialog.wasHidden ? "비밀 폴더 설정 · 해제" : "기존 폴더를 비밀 폴더로 전환")
+                }}
               </h3>
               <p class="text-[11px] text-[var(--text-muted)] truncate">
-                평소에는 보이지 않으며 H 키를 눌러 표시합니다.
+                평소에는 숨겨지며 H 키를 눌러 표시합니다.
               </p>
             </div>
           </div>
@@ -53,8 +57,10 @@
             class="flex items-center justify-between gap-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-main)] px-3.5 py-3"
           >
             <div>
-              <p class="text-xs font-semibold text-[var(--text-main)]">숨긴 폴더로 설정</p>
-              <p class="text-[11px] text-[var(--text-muted)]">해제하면 일반 폴더처럼 항상 보입니다.</p>
+              <p class="text-xs font-semibold text-[var(--text-main)]">
+                {{ dialog.wasHidden ? "비밀 폴더(숨김) 유지" : "비밀 폴더(숨김)로 전환" }}
+              </p>
+              <p class="text-[11px] text-[var(--text-muted)]">해제하면 일반 폴더처럼 항상 표시됩니다.</p>
             </div>
             <input v-model="hidden" type="checkbox" class="w-4 h-4 accent-indigo-500 cursor-pointer" />
           </div>
@@ -168,7 +174,15 @@
               class="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-semibold transition-colors disabled:opacity-50"
               :disabled="dialog.loading"
             >
-              {{ dialog.loading ? "저장 중..." : (dialog.mode === "create" ? "비밀 폴더 생성" : "설정 저장") }}
+              {{
+                dialog.loading
+                  ? "저장 중..."
+                  : (dialog.mode === "create"
+                    ? "비밀 폴더 생성"
+                    : (dialog.wasHidden
+                      ? (hidden ? "설정 저장" : "일반 폴더로 전환")
+                      : (hidden ? "비밀 폴더로 전환" : "설정 저장")))
+              }}
             </button>
           </div>
         </form>

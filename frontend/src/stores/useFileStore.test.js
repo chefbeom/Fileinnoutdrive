@@ -263,4 +263,33 @@ describe('useFileStore storage summary', () => {
     expect(store.driveFiles[0].location).toBe('홈 / 자료 / 2026')
     expect(store.driveAvailableExtensions).toEqual(['pdf', 'png'])
   })
+
+  it('clears and removes recent upload history without deleting Drive files', () => {
+    window.localStorage.clear()
+    const store = useFileStore()
+    store.allFiles = [
+      { id: 1, name: 'alpha.txt', type: 'file', isTrash: false, uploadedAtMs: 1000, lastModifiedMs: 1000 },
+      { id: 2, name: 'beta.txt', type: 'file', isTrash: false, uploadedAtMs: 2000, lastModifiedMs: 2000 },
+      { id: 3, name: 'gamma.txt', type: 'file', isTrash: false, uploadedAtMs: 3000, lastModifiedMs: 3000 },
+    ]
+    expect(store.recentUploadedFiles.map((f) => f.id)).toEqual([3, 2, 1])
+
+    // Individual item removal from upload history keeps Drive files untouched
+    store.removeUploadedFileHistory(2)
+    expect(store.recentUploadedFiles.map((f) => f.id)).toEqual([3, 1])
+    expect(store.allFiles).toHaveLength(3)
+
+    // Clear all upload history
+    store.clearUploadedFiles()
+    expect(store.recentUploadedFiles).toEqual([])
+    expect(store.allFiles).toHaveLength(3)
+
+    // Subsequent upload with newer timestamp appears cleanly
+    store.allFiles = [
+      ...store.allFiles,
+      { id: 4, name: 'delta.txt', type: 'file', isTrash: false, uploadedAtMs: 4000, lastModifiedMs: 4000 },
+    ]
+    store.markFilesRecentlyUploaded([4])
+    expect(store.recentUploadedFiles.map((f) => f.id)).toEqual([4])
+  })
 })

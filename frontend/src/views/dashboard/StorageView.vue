@@ -83,9 +83,6 @@ onMounted(() => {
     <div class="flex flex-wrap items-end justify-between gap-4">
       <div>
         <h2 class="text-2xl font-black text-gray-900">저장용량 현황</h2>
-        <p class="mt-1.5 text-sm text-gray-500">
-          내 드라이브 사용량과 공유 용량을 확인하고, 모달을 통해 간편하게 용량 공유 및 공유 폴더를 관리할 수 있습니다.
-        </p>
       </div>
 
       <div class="flex flex-wrap items-center gap-2">

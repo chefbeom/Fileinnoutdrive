@@ -40,7 +40,6 @@ const emit = defineEmits([
     <template v-if="selectedCount > 0">
       <div>
         <p class="text-sm font-semibold text-blue-900">{{ selectedCount }}개 선택됨</p>
-        <p class="text-xs text-blue-700">선택한 파일과 폴더에 같은 작업을 적용합니다.</p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <button v-if="downloadableCount > 0" type="button" class="batch-button bg-white text-blue-700 hover:bg-blue-100" @click="emit('download')">선택 다운로드</button>
@@ -66,7 +65,6 @@ const emit = defineEmits([
         </div>
         <div>
           <p class="text-sm font-semibold text-slate-500">선택된 항목 없음</p>
-          <p class="text-xs text-slate-400">파일이나 폴더를 선택하면 일괄 다운로드, 공유, 삭제 등의 작업을 진행할 수 있습니다.</p>
         </div>
       </div>
       <div class="flex items-center gap-2">

@@ -57,6 +57,7 @@ export const useSecretFolderStore = defineStore("secretFolder", () => {
     parentId: null,
     folder: null,
     initialName: "",
+    wasHidden: false,
     hidden: true,
     pinEnabled: false,
     hasExistingPin: false,
@@ -352,6 +353,7 @@ export const useSecretFolderStore = defineStore("secretFolder", () => {
         parentId,
         folder: null,
         initialName: "",
+        wasHidden: false,
         hidden: true,
         pinEnabled: false,
         hasExistingPin: false,
@@ -363,6 +365,7 @@ export const useSecretFolderStore = defineStore("secretFolder", () => {
 
   const openConfigureHiddenFolderDialog = (folder) => {
     resolvePendingDialog(null);
+    const wasHidden = Boolean(folder?.hiddenFolder);
     return new Promise((resolve) => {
       pendingDialogResolve = resolve;
       folderDialog.value = {
@@ -371,7 +374,8 @@ export const useSecretFolderStore = defineStore("secretFolder", () => {
         parentId: folder?.parentId ?? null,
         folder,
         initialName: folder?.name || folder?.fileOriginName || "",
-        hidden: Boolean(folder?.hiddenFolder),
+        wasHidden,
+        hidden: true,
         pinEnabled: Boolean(folder?.pinEnabled),
         hasExistingPin: Boolean(folder?.pinEnabled && folder?.pinRegistered),
         loading: false,

@@ -478,6 +478,18 @@ onBeforeUnmount(() => {
             <i :class="currentPhoto.isFavorite ? 'fa-solid fa-star text-amber-400' : 'fa-regular fa-star'"></i>
           </button>
 
+          <!-- Exclude from Photos Library -->
+          <button
+            type="button"
+            data-testid="lightbox-exclude-photo"
+            class="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-2.5 text-xs font-bold text-slate-300 transition hover:border-amber-500/40 hover:bg-amber-500/15 hover:text-amber-300"
+            title="사진첩에서 제외 (원본 파일은 유지)"
+            @click="mediaPhotoStore.excludePhotoFiles?.([currentPhoto.id])"
+          >
+            <i class="fa-solid fa-eye-slash"></i>
+            <span class="hidden lg:inline">사진첩 제외</span>
+          </button>
+
           <!-- Add to Album Button -->
           <div class="relative">
             <button

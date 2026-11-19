@@ -167,4 +167,32 @@ describe("FileCollectionView move-to-vault context menu", () => {
 
     wrapper.unmount();
   });
+
+  it("exposes right-click secret folder creation and conversion actions for Drive folders and background", async () => {
+    const normalFolder = { id: 40, name: "일반폴더", type: "folder", hiddenFolder: false };
+    const hiddenFolder = { id: 41, name: "숨김폴더", type: "folder", hiddenFolder: true };
+
+    const wrapper = mount(FileCollectionView, {
+      attachTo: document.body,
+      props: {
+        files: [normalFolder, hiddenFolder],
+        selectedIds: [],
+        deleteMode: "trash",
+        sharedLibrary: false,
+      },
+    });
+
+    const cards = wrapper.findAll("article.file-entry");
+    await cards[0].trigger("contextmenu", { clientX: 40, clientY: 50 });
+    expect(Array.from(document.body.querySelectorAll("button")).some((btn) => btn.textContent?.includes("비밀 폴더로 전환 (숨김)"))).toBe(true);
+    expect(Array.from(document.body.querySelectorAll("button")).some((btn) => btn.textContent?.includes("이 폴더 안에 비밀 폴더 만들기"))).toBe(true);
+
+    await cards[1].trigger("contextmenu", { clientX: 50, clientY: 60 });
+    expect(Array.from(document.body.querySelectorAll("button")).some((btn) => btn.textContent?.includes("비밀 폴더 설정 · 해제"))).toBe(true);
+
+    await wrapper.find(".file-collection-shell").trigger("contextmenu", { clientX: 80, clientY: 90 });
+    expect(Array.from(document.body.querySelectorAll("button")).some((btn) => btn.textContent?.includes("비밀 폴더 만들기 (숨김)"))).toBe(true);
+
+    wrapper.unmount();
+  });
 });

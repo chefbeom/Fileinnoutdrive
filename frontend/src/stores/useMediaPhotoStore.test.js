@@ -474,4 +474,44 @@ describe("useMediaPhotoStore & helper utilities", () => {
     expect(store.resolvedMediaSeries).toHaveLength(0);
     expect(mockAllFiles.value.some((f) => f.id === 1001)).toBe(true);
   });
+
+  it("excludes and restores individual media videos and photos across all and manual modes without deleting Drive files", () => {
+    const store = useMediaPhotoStore();
+    store.updatePreferences({ mediaSourceMode: "all", photoSourceMode: "all" });
+
+    expect(store.allVideos.map((v) => v.id)).toEqual([101]);
+    expect(store.allPhotos.map((p) => p.id)).toEqual([202, 201]);
+
+    // Exclude individual video from Media in 'all' mode
+    store.excludeMediaFiles([101]);
+    expect(store.allVideos).toEqual([]);
+    expect(store.excludedIndividualMediaVideos.map((v) => v.id)).toEqual([101]);
+    expect(store.candidateVideos.map((v) => v.id)).toEqual([101]);
+    expect(mockAllFiles.value.some((f) => f.id === 101 && !f.isTrash)).toBe(true);
+
+    store.restoreExcludedMediaFiles([101]);
+    expect(store.allVideos.map((v) => v.id)).toEqual([101]);
+    expect(store.excludedIndividualMediaVideos).toEqual([]);
+
+    // Exclude photo from Photos (even when added to an album/favorite & lightbox open)
+    const album = store.createPhotoAlbum({ name: "테스트", photoIds: [201, 202] });
+    store.togglePhotoFavorite(201);
+    store.openPhotoLightbox(201, { poolIds: ["201", "202"] });
+    store.excludePhotoFiles([201]);
+
+    expect(store.allPhotos.map((p) => p.id)).toEqual([202]);
+    expect(store.favoritePhotos).toEqual([]);
+    expect(store.resolvedPhotoAlbums.find((a) => a.id === album.id).photos.map((p) => p.id)).toEqual([202]);
+    expect(store.excludedPhotos.map((p) => p.id)).toEqual([201]);
+    expect(store.activeLightboxPhotoId).toBe("202");
+    expect(mockAllFiles.value.some((f) => f.id === 201 && !f.isTrash)).toBe(true);
+
+    // Works identically when switched to 'manual' mode
+    store.updatePreferences({ photoSourceMode: "manual" });
+    expect(store.allPhotos.map((p) => p.id)).toEqual([202]);
+    store.restoreExcludedPhotoFiles([201]);
+    expect(store.allPhotos.map((p) => p.id)).toEqual([202, 201]);
+    expect(store.favoritePhotos.map((p) => p.id)).toEqual([201]);
+    expect(store.resolvedPhotoAlbums.find((a) => a.id === album.id).photos.map((p) => p.id)).toEqual([201, 202]);
+  });
 });

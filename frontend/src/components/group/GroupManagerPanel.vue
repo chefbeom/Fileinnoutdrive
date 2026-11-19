@@ -485,7 +485,6 @@ onBeforeUnmount(() => {
         <div>
           <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">그룹 관리</p>
           <h3 class="mt-2 text-2xl font-bold text-slate-900">그룹과 연결 관리</h3>
-          <p class="mt-2 text-sm text-slate-500">연결된 사람을 분류 없이 보관하고, 필요한 그룹에만 나눠서 관리할 수 있습니다.</p>
         </div>
         <div class="grid min-w-0 sm:min-w-[240px] flex-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <article class="rounded-2xl bg-slate-50 px-4 py-3">
@@ -514,7 +513,6 @@ onBeforeUnmount(() => {
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h4 class="text-lg font-bold text-slate-900">요청 현황</h4>
-          <p class="mt-1 text-sm text-slate-500">대기 중인 요청만 표시됩니다. 수락하거나 거절되면 목록에서 바로 사라집니다.</p>
         </div>
         <span class="rounded-full bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-700">대기중 {{ pendingRequestCount }}</span>
       </div>
@@ -525,7 +523,6 @@ onBeforeUnmount(() => {
           <div class="flex items-center justify-between gap-3">
             <div>
               <h5 class="text-base font-semibold text-slate-900">받은 요청</h5>
-              <p class="mt-1 text-sm text-slate-500">연결 요청과 그룹 초대를 바로 처리할 수 있습니다.</p>
             </div>
             <span class="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-600">{{ incomingPendingRequestItems.length }}건</span>
           </div>
@@ -563,7 +560,6 @@ onBeforeUnmount(() => {
           <div class="flex items-center justify-between gap-3">
             <div>
               <h5 class="text-base font-semibold text-slate-900">보낸 요청</h5>
-              <p class="mt-1 text-sm text-slate-500">상대가 아직 처리하지 않은 요청만 표시됩니다.</p>
             </div>
             <span class="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-600">{{ outgoingPendingRequestItems.length }}건</span>
           </div>
@@ -630,7 +626,6 @@ onBeforeUnmount(() => {
           <div class="flex items-center justify-between gap-3">
             <div>
               <h5 class="text-base font-semibold text-slate-900">연결된 사람</h5>
-              <p class="mt-1 text-sm text-slate-500">현재 연결된 사람은 여기서 바로 연결 해제를 할 수 있습니다.</p>
             </div>
             <span class="rounded-full bg-white px-3 py-1 text-sm font-semibold text-slate-600">{{ allRelationships.length }}명</span>
           </div>

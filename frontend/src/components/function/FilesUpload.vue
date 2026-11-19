@@ -11,7 +11,6 @@
       :vault-mode="secretFolderStore.vaultMode"
       @toggle="toggleDropdown"
       @create-folder="createNewFolder"
-      @create-hidden-folder="createHiddenFolder"
       @file-change="handleFileChange"
       @folder-change="handleFolderChange"
       @update-upload-concurrency="uploadConcurrency = $event"
@@ -307,18 +306,6 @@ const createNewFolder = () => {
     })
   }
   closeDropdown()
-}
-
-const createHiddenFolder = async () => {
-  closeDropdown()
-  const created = await secretFolderStore.openCreateHiddenFolderDialog(fileStore.currentFolderId ?? null)
-  if (created) {
-    fileStore.invalidateFolderSnapshots?.()
-    await Promise.all([
-      fileStore.refreshDrivePage?.().catch(() => {}),
-      fileStore.fetchFiles({ background: true }).catch(() => {}),
-    ])
-  }
 }
 
 const uploadToPresignedUrl = async (

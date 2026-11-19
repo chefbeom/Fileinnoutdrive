@@ -801,8 +801,8 @@ const moveItemsToVault = async (targets = []) => {
     selectedIds.value = selectedIds.value.filter((id) => !movedIdSet.has(String(id)));
     window.alert(
       validTargets.length > 1
-        ? `${validTargets.length}개 항목을 자체 비밀구역으로 옮겼습니다.\n(홈 버튼을 빠르게 두 번 누르면 자체 비밀 폴더에서 확인할 수 있습니다.)`
-        : `'${firstName}'을(를) 자체 비밀구역으로 옮겼습니다.\n(홈 버튼을 빠르게 두 번 누르면 자체 비밀 폴더에서 확인할 수 있습니다.)`,
+        ? `${validTargets.length}개 항목을 자체 비밀구역으로 옮겼습니다. (홈 버튼을 두 번 누르면 열 수 있습니다)`
+        : `'${firstName}'을(를) 자체 비밀구역으로 옮겼습니다. (홈 버튼을 두 번 누르면 열 수 있습니다)`,
     );
   } catch (error) {
     const code = error?.response?.data?.code;
@@ -1018,6 +1018,49 @@ const handleEmptyCreateHiddenFolder = async () => {
     await Promise.all([
       fileStore.refreshDrivePage().catch(() => {}),
       fileStore.fetchFiles({ background: true }).catch(() => {}),
+    ]);
+  }
+};
+
+const emptyCurrentFolderForSecret = computed(() => {
+  if (!isSecretDriveContext.value || isVaultMode.value || effectiveDeleteMode.value === "permanent") {
+    return null;
+  }
+  const current = fileStore.currentFolder;
+  if (!current || current.id == null) {
+    return null;
+  }
+  const enriched =
+    fileStore.allFiles?.find?.((item) => String(item?.id) === String(current.id)) ||
+    current;
+  const saveName = String(enriched?.fileSaveName || "");
+  if (
+    enriched?.sharedFile ||
+    enriched?.isSharedFolder ||
+    enriched?.isShared ||
+    enriched?.sharedWithMe ||
+    enriched?.sharedStorageIdx ||
+    saveName.startsWith("shared-") ||
+    enriched?.isVaultSpace
+  ) {
+    return null;
+  }
+  return enriched;
+});
+
+const handleEmptyConfigureHiddenFolder = async () => {
+  const target = emptyCurrentFolderForSecret.value;
+  closeEmptyContextMenu();
+  if (!target) return;
+  const saved = await secretFolderStore.openConfigureHiddenFolderDialog(target);
+  if (saved) {
+    fileStore.invalidateFolderSnapshots?.();
+    if (saved.hidden && !secretFolderStore.showHiddenFolders) {
+      fileStore.navigateToFolder(target.parentId ?? null);
+    }
+    await Promise.all([
+      fileStore.refreshDrivePage?.().catch(() => {}),
+      fileStore.fetchFiles?.({ background: true }).catch(() => {}),
     ]);
   }
 };
@@ -1258,8 +1301,8 @@ onBeforeUnmount(() => {
         <span class="font-semibold">
           {{
             isVaultTrashView
-              ? "자체 비밀 폴더 휴지통입니다. 이곳의 항목은 일반 휴지통에 나타나지 않으며 영구 삭제 또는 복구할 수 있습니다."
-              : "자체 비밀 폴더 공간입니다. 일반 홈·최근 문서·미디어·사진첩에 노출되지 않습니다."
+              ? "비밀 공간 전용 휴지통 (일반 휴지통과 분리 보관)"
+              : "자체 비밀 공간 (일반 홈·최근 문서·미디어·사진첩에 노출되지 않음)"
           }}
         </span>
       </div>
@@ -1395,13 +1438,6 @@ onBeforeUnmount(() => {
         </template>
         <template v-else>
           <p class="text-sm font-semibold text-gray-600 dark:text-slate-300">표시할 파일이 없습니다.</p>
-          <p v-if="canDropUpload" class="mt-1 text-xs text-gray-400">
-            {{
-              isVaultMode
-                ? "파일이나 폴더를 드래그하여 놓거나, 우클릭하여 새 폴더 만들기 · 드라이브에서 파일 가져오기를 진행할 수 있습니다."
-                : "파일이나 폴더를 드래그하여 놓거나, 우클릭하여 새 폴더 · 공유 폴더를 만들 수 있습니다."
-            }}
-          </p>
           <div
             v-if="emptyFolderNavigation.canGoBack"
             data-testid="empty-folder-nav-actions"
@@ -1547,6 +1583,19 @@ onBeforeUnmount(() => {
             >
               <i class="fa-solid fa-pen-to-square w-4 text-center text-gray-500"></i>
               <span>현재 폴더 이름 변경</span>
+            </button>
+
+            <button
+              v-if="emptyCurrentFolderForSecret"
+              type="button"
+              class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-indigo-700 transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-slate-800"
+              @click="handleEmptyConfigureHiddenFolder"
+            >
+              <i
+                class="fa-solid w-4 text-center text-indigo-500"
+                :class="emptyCurrentFolderForSecret.hiddenFolder ? 'fa-key' : 'fa-eye-slash'"
+              ></i>
+              <span>{{ emptyCurrentFolderForSecret.hiddenFolder ? "현재 폴더 비밀 설정 · 해제" : "현재 폴더를 비밀 폴더로 전환" }}</span>
             </button>
           </template>
 

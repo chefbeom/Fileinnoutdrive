@@ -176,6 +176,8 @@ const createEmptyPersistedState = () => ({
   mediaLibraryAreas: [],
   photoIncludedFileIds: [],
   photoIncludedFolderIds: [],
+  photoExcludedFileIds: [],
+  photoExcludedFolderIds: [],
   mediaFavoriteIds: [],
   photoFavoriteIds: [],
   mediaCollections: [],
@@ -218,6 +220,8 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
   const mediaLibraryAreas = ref([]);
   const photoIncludedFileIds = ref([]);
   const photoIncludedFolderIds = ref([]);
+  const photoExcludedFileIds = ref([]);
+  const photoExcludedFolderIds = ref([]);
   const mediaFavoriteIds = ref([]);
   const photoFavoriteIds = ref([]);
   const mediaCollections = ref([]);
@@ -292,6 +296,12 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     photoIncludedFolderIds.value = Array.isArray(parsed.photoIncludedFolderIds)
       ? parsed.photoIncludedFolderIds.map((id) => String(id))
       : [];
+    photoExcludedFileIds.value = Array.isArray(parsed.photoExcludedFileIds)
+      ? parsed.photoExcludedFileIds.map((id) => String(id))
+      : [];
+    photoExcludedFolderIds.value = Array.isArray(parsed.photoExcludedFolderIds)
+      ? parsed.photoExcludedFolderIds.map((id) => String(id))
+      : [];
     mediaFavoriteIds.value = Array.isArray(parsed.mediaFavoriteIds)
       ? parsed.mediaFavoriteIds.map((id) => String(id))
       : [];
@@ -333,6 +343,8 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     mediaLibraryAreas: mediaLibraryAreas.value,
     photoIncludedFileIds: photoIncludedFileIds.value,
     photoIncludedFolderIds: photoIncludedFolderIds.value,
+    photoExcludedFileIds: photoExcludedFileIds.value,
+    photoExcludedFolderIds: photoExcludedFolderIds.value,
     mediaFavoriteIds: mediaFavoriteIds.value,
     photoFavoriteIds: photoFavoriteIds.value,
     mediaCollections: mediaCollections.value,
@@ -465,6 +477,8 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
           currentPayload.mediaLibraryAreas.length > 0 ||
           currentPayload.photoIncludedFolderIds.length > 0 ||
           currentPayload.photoIncludedFileIds.length > 0 ||
+          currentPayload.photoExcludedFolderIds.length > 0 ||
+          currentPayload.photoExcludedFileIds.length > 0 ||
           currentPayload.seriesOverrides.manualSeries.length > 0;
         if (hasLocalDesignations) {
           await saveMediaLibraryState(currentPayload);
@@ -704,6 +718,8 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
   const mediaAreaFolderSet = computed(() => new Set(mediaLibraryAreas.value.map((area) => String(area.folderId))));
   const photoIncludedFileSet = computed(() => new Set(photoIncludedFileIds.value.map((id) => String(id))));
   const photoIncludedFolderSet = computed(() => new Set(photoIncludedFolderIds.value.map((id) => String(id))));
+  const photoExcludedFileSet = computed(() => new Set(photoExcludedFileIds.value.map((id) => String(id))));
+  const photoExcludedFolderSet = computed(() => new Set(photoExcludedFolderIds.value.map((id) => String(id))));
 
   // Also include any item that was explicitly added to a Media Collection or Photo Album or Favorite
   const collectionMemberSet = computed(() => {
@@ -916,6 +932,15 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     return isFileInsideFolderSet(file, mediaExcludedFolderSet.value);
   };
 
+  const isPhotoExcludedFromPhotos = (file) => {
+    if (!file) return false;
+    const idKey = String(file.id ?? "");
+    if (photoExcludedFileSet.value.has(idKey)) {
+      return true;
+    }
+    return isFileInsideFolderSet(file, photoExcludedFolderSet.value);
+  };
+
   // Active Media Videos (respecting exclusions and preferences.mediaSourceMode: 'manual' vs 'all')
   const allVideos = computed(() => {
     const activeCandidates = candidateVideos.value.filter((video) => !isVideoExcludedFromMedia(video));
@@ -925,13 +950,45 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     return activeCandidates.filter((video) => video.isManuallyIncluded);
   });
 
-  // Active Photos (respecting preferences.photoSourceMode: 'manual' vs 'all')
+  // Active Photos (respecting exclusions and preferences.photoSourceMode: 'manual' vs 'all')
   const allPhotos = computed(() => {
+    const activeCandidates = candidatePhotos.value.filter((photo) => !isPhotoExcludedFromPhotos(photo));
     if (preferences.value.photoSourceMode === "all") {
-      return candidatePhotos.value;
+      return activeCandidates;
     }
-    return candidatePhotos.value.filter((photo) => photo.isManuallyIncluded);
+    return activeCandidates.filter((photo) => photo.isManuallyIncluded);
   });
+
+  const removedSeriesVirtualFileSet = computed(() => {
+    const set = new Set();
+    for (const entry of removedMediaSeries.value || []) {
+      const folderIds = Array.isArray(entry?.folderIds) ? entry.folderIds : [];
+      const virtualIds = Array.isArray(entry?.virtualFileIds)
+        ? entry.virtualFileIds
+        : folderIds.length === 0
+          ? (entry?.fileIds || [])
+          : [];
+      for (const id of virtualIds) {
+        if (id != null) set.add(String(id));
+      }
+    }
+    return set;
+  });
+
+  const excludedIndividualMediaVideos = computed(() =>
+    candidateVideos.value.filter((video) => {
+      const idKey = String(video.id ?? "");
+      return mediaExcludedFileSet.value.has(idKey) && !removedSeriesVirtualFileSet.value.has(idKey);
+    }),
+  );
+
+  const excludedPhotos = computed(() =>
+    candidatePhotos.value.filter((photo) => isPhotoExcludedFromPhotos(photo)),
+  );
+
+  const excludedPhotoFolders = computed(() =>
+    allDriveFolders.value.filter((folder) => photoExcludedFolderSet.value.has(String(folder.id))),
+  );
 
   const candidateVideoById = computed(() => {
     const map = new Map();
@@ -1045,7 +1102,9 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
   const addPhotoFiles = (fileIds = []) => {
     const keys = fileIds.map((id) => String(id)).filter(Boolean);
     if (!keys.length) return;
+    const keySet = new Set(keys);
     photoIncludedFileIds.value = [...new Set([...keys, ...photoIncludedFileIds.value])];
+    photoExcludedFileIds.value = photoExcludedFileIds.value.filter((id) => !keySet.has(String(id)));
     savePersistedState();
   };
 
@@ -1063,13 +1122,123 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     photoIncludedFolderIds.value = exists
       ? photoIncludedFolderIds.value.filter((id) => String(id) !== key)
       : [key, ...photoIncludedFolderIds.value];
+    if (!exists) {
+      photoExcludedFolderIds.value = photoExcludedFolderIds.value.filter((id) => String(id) !== key);
+    }
     savePersistedState();
     return !exists;
   };
 
   const setPhotoIncludedFolders = (folderIds = []) => {
-    photoIncludedFolderIds.value = [...new Set(folderIds.map((id) => String(id)).filter(Boolean))];
+    const cleanIds = [...new Set(folderIds.map((id) => String(id)).filter(Boolean))];
+    const cleanSet = new Set(cleanIds);
+    photoIncludedFolderIds.value = cleanIds;
+    photoExcludedFolderIds.value = photoExcludedFolderIds.value.filter((id) => !cleanSet.has(String(id)));
     savePersistedState();
+  };
+
+  const excludeMediaFiles = (fileIds = []) => {
+    const keys = (Array.isArray(fileIds) ? fileIds : [fileIds])
+      .map((id) => String(id ?? "").trim())
+      .filter(Boolean);
+    if (!keys.length) return [];
+    const excludeSet = new Set(keys);
+    mediaExcludedFileIds.value = [...new Set([...keys, ...mediaExcludedFileIds.value])];
+    mediaIncludedFileIds.value = mediaIncludedFileIds.value.filter((id) => !excludeSet.has(String(id)));
+    savePersistedState({ immediate: true });
+    return keys;
+  };
+
+  const restoreExcludedMediaFiles = (fileIds = []) => {
+    const keys = (Array.isArray(fileIds) ? fileIds : [fileIds])
+      .map((id) => String(id ?? "").trim())
+      .filter(Boolean);
+    if (!keys.length) return 0;
+    const keySet = new Set(keys);
+    mediaExcludedFileIds.value = mediaExcludedFileIds.value.filter((id) => !keySet.has(String(id)));
+    if (preferences.value.mediaSourceMode === "manual") {
+      mediaIncludedFileIds.value = [...new Set([...keys, ...mediaIncludedFileIds.value])];
+    }
+    savePersistedState({ immediate: true });
+    return keys.length;
+  };
+
+  const toggleMediaFolderExclusion = (folderId) => {
+    const key = String(folderId ?? "").trim();
+    if (!key) return false;
+    const isExcluded = mediaExcludedFolderSet.value.has(key);
+    mediaExcludedFolderIds.value = isExcluded
+      ? mediaExcludedFolderIds.value.filter((id) => String(id) !== key)
+      : [key, ...mediaExcludedFolderIds.value];
+    if (!isExcluded) {
+      mediaIncludedFolderIds.value = mediaIncludedFolderIds.value.filter((id) => String(id) !== key);
+    }
+    savePersistedState({ immediate: true });
+    return !isExcluded;
+  };
+
+  const excludePhotoFiles = (fileIds = []) => {
+    const keys = (Array.isArray(fileIds) ? fileIds : [fileIds])
+      .map((id) => String(id ?? "").trim())
+      .filter(Boolean);
+    if (!keys.length) return [];
+    const excludeSet = new Set(keys);
+    photoExcludedFileIds.value = [...new Set([...keys, ...photoExcludedFileIds.value])];
+    photoIncludedFileIds.value = photoIncludedFileIds.value.filter((id) => !excludeSet.has(String(id)));
+
+    if (activeLightboxPhotoId.value && excludeSet.has(String(activeLightboxPhotoId.value))) {
+      const nextPool = activeLightboxPoolIds.value.filter((id) => !excludeSet.has(String(id)));
+      if (nextPool.length > 0) {
+        const oldIdx = activeLightboxPoolIds.value.indexOf(String(activeLightboxPhotoId.value));
+        const nextIdx = Math.min(Math.max(0, oldIdx), nextPool.length - 1);
+        activeLightboxPoolIds.value = nextPool;
+        activeLightboxPhotoId.value = nextPool[nextIdx];
+      } else {
+        closePhotoLightbox();
+      }
+    }
+
+    savePersistedState({ immediate: true });
+    return keys;
+  };
+
+  const restoreExcludedPhotoFiles = (fileIds = []) => {
+    const keys = (Array.isArray(fileIds) ? fileIds : [fileIds])
+      .map((id) => String(id ?? "").trim())
+      .filter(Boolean);
+    if (!keys.length) return 0;
+    const keySet = new Set(keys);
+    photoExcludedFileIds.value = photoExcludedFileIds.value.filter((id) => !keySet.has(String(id)));
+    if (preferences.value.photoSourceMode === "manual") {
+      photoIncludedFileIds.value = [...new Set([...keys, ...photoIncludedFileIds.value])];
+    }
+    savePersistedState({ immediate: true });
+    return keys.length;
+  };
+
+  const togglePhotoFolderExclusion = (folderId) => {
+    const key = String(folderId ?? "").trim();
+    if (!key) return false;
+    const isExcluded = photoExcludedFolderSet.value.has(key);
+    photoExcludedFolderIds.value = isExcluded
+      ? photoExcludedFolderIds.value.filter((id) => String(id) !== key)
+      : [key, ...photoExcludedFolderIds.value];
+    if (!isExcluded) {
+      photoIncludedFolderIds.value = photoIncludedFolderIds.value.filter((id) => String(id) !== key);
+    }
+    savePersistedState({ immediate: true });
+    return !isExcluded;
+  };
+
+  const restoreExcludedPhotoFolder = (folderId) => {
+    const key = String(folderId ?? "").trim();
+    if (!key) return false;
+    photoExcludedFolderIds.value = photoExcludedFolderIds.value.filter((id) => String(id) !== key);
+    if (preferences.value.photoSourceMode === "manual") {
+      photoIncludedFolderIds.value = [...new Set([key, ...photoIncludedFolderIds.value])];
+    }
+    savePersistedState({ immediate: true });
+    return true;
   };
 
   // Continue watching list: watched >= 5s or >= 2%, not completed, not dismissed
@@ -1103,7 +1272,7 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     const items = [];
     for (const id of mediaFavoriteIds.value) {
       const item = getMediaItemById(id);
-      if (item) {
+      if (item && !isVideoExcludedFromMedia(item)) {
         items.push(item);
       }
     }
@@ -1112,15 +1281,15 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
 
   // Favorite photos
   const favoritePhotos = computed(() => {
-    return candidatePhotos.value.filter((photo) => photo.isFavorite);
+    return candidatePhotos.value.filter((photo) => photo.isFavorite && !isPhotoExcludedFromPhotos(photo));
   });
 
-  // Enriched Media Collections (automatically filtering out trashed/missing files)
+  // Enriched Media Collections (automatically filtering out trashed/missing/excluded files)
   const resolvedMediaCollections = computed(() => {
     return mediaCollections.value.map((collection) => {
       const items = (collection.itemIds || [])
         .map((id) => getMediaItemById(id))
-        .filter(Boolean);
+        .filter((item) => item && !isVideoExcludedFromMedia(item));
       const videoCount = items.filter((item) => item.mediaKind === "video").length;
       const imageCount = items.filter((item) => item.mediaKind === "image").length;
       const totalDurationSeconds = items.reduce(
@@ -1128,7 +1297,7 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
         0,
       );
       const explicitCover = collection.coverFileId ? getMediaItemById(collection.coverFileId) : null;
-      const coverItem = explicitCover || items[0] || null;
+      const coverItem = (explicitCover && !isVideoExcludedFromMedia(explicitCover)) ? explicitCover : (items[0] || null);
 
       return {
         ...collection,
@@ -1143,14 +1312,14 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     });
   });
 
-  // Enriched Photo Albums (automatically filtering out trashed/missing files)
+  // Enriched Photo Albums (automatically filtering out trashed/missing/excluded files)
   const resolvedPhotoAlbums = computed(() => {
     return photoAlbums.value.map((album) => {
       const photos = (album.photoIds || [])
         .map((id) => candidatePhotoById.value.get(String(id)))
-        .filter(Boolean);
+        .filter((photo) => photo && !isPhotoExcludedFromPhotos(photo));
       const explicitCover = album.coverFileId ? candidatePhotoById.value.get(String(album.coverFileId)) : null;
-      const coverPhoto = explicitCover || photos[0] || null;
+      const coverPhoto = (explicitCover && !isPhotoExcludedFromPhotos(explicitCover)) ? explicitCover : (photos[0] || null);
 
       let dateRangeLabel = "";
       if (photos.length > 0) {
@@ -2604,6 +2773,8 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     mediaLibraryAreas,
     photoIncludedFileIds,
     photoIncludedFolderIds,
+    photoExcludedFileIds,
+    photoExcludedFolderIds,
     mediaFavoriteIds,
     photoFavoriteIds,
     mediaCollections,
@@ -2666,6 +2837,18 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     removePhotoFiles,
     togglePhotoFolderInclusion,
     setPhotoIncludedFolders,
+    isVideoExcludedFromMedia,
+    isPhotoExcludedFromPhotos,
+    excludedIndividualMediaVideos,
+    excludedPhotos,
+    excludedPhotoFolders,
+    excludeMediaFiles,
+    restoreExcludedMediaFiles,
+    toggleMediaFolderExclusion,
+    excludePhotoFiles,
+    restoreExcludedPhotoFiles,
+    togglePhotoFolderExclusion,
+    restoreExcludedPhotoFolder,
     recordWatchProgress,
     markVideoStarted,
     markVideoCompleted,

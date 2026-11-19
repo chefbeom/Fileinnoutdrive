@@ -65,6 +65,13 @@ const albumFormSelectedIds = ref([]);
 const isAddToAlbumModalOpen = ref(false);
 const addToAlbumTargetIds = ref([]);
 const isSettingsPopoverOpen = ref(false);
+const isExcludedPhotosModalOpen = ref(false);
+const photoContextMenu = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+  photo: null,
+});
 
 // Photo Source File / Folder Designation Modal ('manual' vs 'all')
 const isPhotoSourcePickerModalOpen = ref(false);
@@ -552,10 +559,47 @@ const savePhotoSourcePickerModal = () => {
   isPhotoSourcePickerModalOpen.value = false;
 };
 
+const totalExcludedPhotosCount = computed(() =>
+  (mediaPhotoStore.excludedPhotos?.length || 0) + (mediaPhotoStore.excludedPhotoFolders?.length || 0),
+);
+
 const handleBatchExcludeFromPhotos = () => {
   if (!selectedIds.value.length) return;
-  mediaPhotoStore.removePhotoFiles(selectedIds.value);
+  (mediaPhotoStore.excludePhotoFiles || mediaPhotoStore.removePhotoFiles)(selectedIds.value);
   clearSelection();
+};
+
+const handleExcludeSinglePhoto = (photo) => {
+  if (!photo || photo.id == null) return;
+  photoContextMenu.value = { visible: false, x: 0, y: 0, photo: null };
+  (mediaPhotoStore.excludePhotoFiles || mediaPhotoStore.removePhotoFiles)([photo.id]);
+  const excludedKey = String(photo.id);
+  selectedIds.value = selectedIds.value.filter((id) => String(id) !== excludedKey);
+};
+
+const openPhotoTileContextMenu = (event, photo) => {
+  if (!photo) return;
+  const menuWidth = 232;
+  const maxX = Math.max(16, (window.innerWidth || 1024) - menuWidth - 16);
+  const maxY = Math.max(16, (window.innerHeight || 768) - 290 - 16);
+  photoContextMenu.value = {
+    visible: true,
+    x: Math.min(Math.max(12, event?.clientX || 0), maxX),
+    y: Math.min(Math.max(12, event?.clientY || 0), maxY),
+    photo,
+  };
+};
+
+const handleRestoreAllExcludedPhotos = () => {
+  const fileIds = (mediaPhotoStore.excludedPhotos || []).map((p) => p.id);
+  const folders = mediaPhotoStore.excludedPhotoFolders || [];
+  if (fileIds.length > 0) {
+    mediaPhotoStore.restoreExcludedPhotoFiles?.(fileIds);
+  }
+  for (const folder of folders) {
+    mediaPhotoStore.restoreExcludedPhotoFolder?.(folder.id);
+  }
+  isExcludedPhotosModalOpen.value = false;
 };
 
 const openCreateAlbumModal = (preselectedIds = []) => {
@@ -716,6 +760,9 @@ const onUploadInputChange = (event) => {
 
 const closeFloatingPopovers = () => {
   isSettingsPopoverOpen.value = false;
+  if (photoContextMenu.value.visible) {
+    photoContextMenu.value = { visible: false, x: 0, y: 0, photo: null };
+  }
 };
 
 watch(
@@ -876,11 +923,6 @@ onBeforeUnmount(() => {
                   <option value="manual">지정한 사진·폴더만 표시 (기본)</option>
                   <option value="all">{{ storageNoun }}의 모든 사진 자동 표시</option>
                 </select>
-                <p class="text-[11px] text-[var(--text-muted)]">
-                  {{ mediaPhotoStore.preferences.photoSourceMode === "manual"
-                    ? "내가 직접 추가한 사진이나 지정한 폴더 안의 사진만 사진첩에 표시됩니다."
-                    : `${storageNoun}의 모든 이미지 파일을 자동으로 사진첩에 표시합니다.` }}
-                </p>
               </div>
 
               <div class="flex items-center justify-between">
@@ -985,6 +1027,17 @@ onBeforeUnmount(() => {
           >
             <i :class="tab.icon"></i>
             <span>{{ tab.label }}</span>
+          </button>
+
+          <button
+            v-if="totalExcludedPhotosCount > 0"
+            type="button"
+            data-testid="photos-excluded-open-btn"
+            class="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs font-extrabold text-amber-500 transition hover:bg-amber-500/20"
+            @click="isExcludedPhotosModalOpen = true"
+          >
+            <i class="fa-solid fa-eye-slash"></i>
+            <span>제외 항목 ({{ totalExcludedPhotosCount }})</span>
           </button>
         </div>
 
@@ -1190,13 +1243,13 @@ onBeforeUnmount(() => {
           <span>앨범에서 제외 (원본 유지)</span>
         </button>
         <button
-          v-if="mediaPhotoStore.preferences.photoSourceMode === 'manual'"
           type="button"
+          data-testid="photos-batch-exclude-btn"
           class="inline-flex items-center gap-1.5 rounded-xl bg-amber-500/20 px-3 py-1.5 font-bold text-amber-300 hover:bg-amber-500/30"
           @click="handleBatchExcludeFromPhotos"
         >
           <i class="fa-solid fa-eye-slash"></i>
-          <span>사진첩 목록에서 제외 (원본 유지)</span>
+          <span>사진첩에서 제외 (원본 유지)</span>
         </button>
         <button
           type="button"
@@ -1231,9 +1284,6 @@ onBeforeUnmount(() => {
       >
         <i class="fa-solid fa-book-open text-3xl text-emerald-500"></i>
         <h3 class="mt-3 text-base font-extrabold text-[var(--text-main)]">생성된 사진 앨범이 없습니다</h3>
-        <p class="mt-1 text-xs text-[var(--text-muted)]">
-          {{ storageNoun }}의 원본 사진을 복제하지 않고 가족, 여행, 프로젝트 등 원하는 주제별 앨범으로 묶어 감상해 보세요.
-        </p>
         <button
           type="button"
           class="mt-4 rounded-2xl bg-blue-600 px-4 py-2 text-xs font-extrabold text-white hover:bg-blue-500"
@@ -1393,11 +1443,6 @@ onBeforeUnmount(() => {
             ? `현재 지정된 사진이 없습니다 (${storageNoun}에 사진 ${mediaPhotoStore.candidatePhotos.length}장 보관 중)`
             : "표시할 사진이 없습니다" }}
         </h3>
-        <p class="mt-1 text-xs text-[var(--text-muted)]">
-          {{ mediaPhotoStore.preferences.photoSourceMode === "manual"
-            ? "기본 설정은 '지정한 사진·폴더만 표시'로 되어 있어 모든 이미지가 섞이지 않습니다. 원하는 사진·폴더만 선택하거나 전체 자동 표시로 전환할 수 있습니다."
-            : `${storageNoun}에 사진을 업로드하면 날짜별로 자동 정리되어 사진첩에 표시됩니다.` }}
-        </p>
         <div class="mt-5 flex flex-wrap justify-center gap-2.5">
           <button
             type="button"
@@ -1482,6 +1527,7 @@ onBeforeUnmount(() => {
                   : 'border-[var(--border-color)]',
               ]"
               @click="handleOpenPhoto(photo, false)"
+              @contextmenu.prevent="openPhotoTileContextMenu($event, photo)"
             >
               <img
                 v-if="thumbnailMap[String(photo.id)]"
@@ -1512,18 +1558,29 @@ onBeforeUnmount(() => {
                 />
               </div>
 
-              <!-- Top-right Favorite Star -->
-              <button
-                type="button"
-                class="absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-xs transition"
-                :class="photo.isFavorite
-                  ? 'text-amber-400 opacity-100'
-                  : 'text-white/80 opacity-0 sm:group-hover:opacity-100 max-sm:opacity-60 hover:text-white'"
-                title="즐겨찾기"
-                @click.stop="mediaPhotoStore.togglePhotoFavorite(photo.id)"
-              >
-                <i :class="photo.isFavorite ? 'fa-solid fa-star' : 'fa-regular fa-star'"></i>
-              </button>
+              <!-- Top-right Quick Actions (Exclude & Favorite) -->
+              <div class="absolute right-2 top-2 z-10 flex items-center gap-1">
+                <button
+                  type="button"
+                  data-testid="photo-tile-exclude"
+                  class="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-[11px] text-white/80 opacity-0 transition sm:group-hover:opacity-100 max-sm:opacity-65 hover:bg-amber-600/80 hover:text-white"
+                  title="사진첩에서 제외 (원본 유지)"
+                  @click.stop="handleExcludeSinglePhoto(photo)"
+                >
+                  <i class="fa-solid fa-eye-slash"></i>
+                </button>
+                <button
+                  type="button"
+                  class="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-xs transition"
+                  :class="photo.isFavorite
+                    ? 'text-amber-400 opacity-100'
+                    : 'text-white/80 opacity-0 sm:group-hover:opacity-100 max-sm:opacity-60 hover:text-white'"
+                  title="즐겨찾기"
+                  @click.stop="mediaPhotoStore.togglePhotoFavorite(photo.id)"
+                >
+                  <i :class="photo.isFavorite ? 'fa-solid fa-star' : 'fa-regular fa-star'"></i>
+                </button>
+              </div>
 
               <!-- Bottom Overlay Info -->
               <div class="pointer-events-none absolute bottom-2 left-2.5 right-2.5 flex items-center justify-between text-[11px] font-bold text-white opacity-0 transition group-hover:opacity-100">
@@ -1710,9 +1767,6 @@ onBeforeUnmount(() => {
             <div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-input)] p-3.5">
               <div>
                 <p class="font-extrabold text-[var(--text-main)]">표시 모드 설정</p>
-                <p class="text-[11px] text-[var(--text-muted)]">
-                  지정한 사진만 볼지, {{ storageNoun }} 전체 사진을 자동으로 볼지 선택하세요.
-                </p>
               </div>
               <div class="inline-flex rounded-xl border border-[var(--border-color)] bg-[var(--bg-elevated)] p-1">
                 <button
@@ -1860,6 +1914,160 @@ onBeforeUnmount(() => {
                 지정 항목 적용하기
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Photo Tile Right-Click Context Menu -->
+    <Teleport to="body">
+      <div
+        v-if="photoContextMenu.visible && photoContextMenu.photo"
+        class="fixed z-[290] w-52 overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-elevated)] py-1.5 text-xs shadow-2xl"
+        :style="{ left: `${photoContextMenu.x}px`, top: `${photoContextMenu.y}px` }"
+        @click.stop
+        @contextmenu.prevent.stop
+      >
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 px-3.5 py-2 text-left font-bold text-[var(--text-main)] hover:bg-[var(--bg-input)]"
+          @click="handleOpenPhoto(photoContextMenu.photo, false); photoContextMenu.visible = false"
+        >
+          <i class="fa-solid fa-expand w-4 text-blue-500"></i>
+          <span>크게 보기</span>
+        </button>
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 px-3.5 py-2 text-left font-bold text-[var(--text-main)] hover:bg-[var(--bg-input)]"
+          @click="openBatchAddToAlbum([photoContextMenu.photo.id]); photoContextMenu.visible = false"
+        >
+          <i class="fa-solid fa-book-open w-4 text-emerald-500"></i>
+          <span>앨범에 추가</span>
+        </button>
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 px-3.5 py-2 text-left font-bold text-[var(--text-main)] hover:bg-[var(--bg-input)]"
+          @click="mediaPhotoStore.navigateToOriginalFolder(photoContextMenu.photo, router); photoContextMenu.visible = false"
+        >
+          <i class="fa-regular fa-folder-open w-4 text-amber-500"></i>
+          <span>원본 폴더로 이동</span>
+        </button>
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 px-3.5 py-2 text-left font-bold text-[var(--text-main)] hover:bg-[var(--bg-input)]"
+          @click="downloadFileAsset(photoContextMenu.photo, photoContextMenu.photo.name); photoContextMenu.visible = false"
+        >
+          <i class="fa-solid fa-download w-4 text-sky-500"></i>
+          <span>원본 다운로드</span>
+        </button>
+        <div class="my-1 border-t border-[var(--border-color)]"></div>
+        <button
+          v-if="activeAlbum"
+          type="button"
+          class="flex w-full items-center gap-2 px-3.5 py-2 text-left font-bold text-orange-500 hover:bg-orange-500/10"
+          @click="mediaPhotoStore.removePhotosFromAlbum(activeAlbum.id, [photoContextMenu.photo.id]); photoContextMenu.visible = false"
+        >
+          <i class="fa-solid fa-folder-minus w-4"></i>
+          <span>앨범에서 제외</span>
+        </button>
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 px-3.5 py-2 text-left font-bold text-amber-500 hover:bg-amber-500/10"
+          @click="handleExcludeSinglePhoto(photoContextMenu.photo)"
+        >
+          <i class="fa-solid fa-eye-slash w-4"></i>
+          <span>사진첩에서 제외 (원본 유지)</span>
+        </button>
+      </div>
+    </Teleport>
+
+    <!-- Excluded Photos & Folders Restore Modal -->
+    <Teleport to="body">
+      <div
+        v-if="isExcludedPhotosModalOpen"
+        class="fixed inset-0 z-[290] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm"
+        @click.self="isExcludedPhotosModalOpen = false"
+      >
+        <div class="flex max-h-[85dvh] w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-[var(--border-color)] bg-[var(--bg-elevated)] shadow-2xl">
+          <div class="flex items-center justify-between border-b border-[var(--border-color)] px-6 py-4">
+            <div>
+              <h3 class="text-base font-black text-[var(--text-main)]">사진첩 제외 항목 관리</h3>
+              <p class="mt-0.5 text-xs text-[var(--text-muted)]">
+                사진첩에서만 숨겨둔 항목입니다. {{ storageNoun }}의 원본 파일은 그대로 유지됩니다.
+              </p>
+            </div>
+            <button type="button" class="text-[var(--text-muted)] hover:text-[var(--text-main)]" @click="isExcludedPhotosModalOpen = false">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+
+          <div class="flex-1 space-y-2.5 overflow-y-auto p-5 text-xs">
+            <div
+              v-if="totalExcludedPhotosCount === 0"
+              class="rounded-2xl border border-dashed border-[var(--border-color)] py-10 text-center text-[var(--text-muted)]"
+            >
+              제외된 사진이나 폴더가 없습니다.
+            </div>
+
+            <div
+              v-for="folder in mediaPhotoStore.excludedPhotoFolders"
+              :key="'excluded-pfolder-' + folder.id"
+              class="flex items-center justify-between gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-input)] px-4 py-3"
+            >
+              <div class="flex min-w-0 flex-1 items-center gap-2.5">
+                <i class="fa-solid fa-folder text-amber-500"></i>
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-black text-[var(--text-main)]">{{ folder.name }}</p>
+                  <p class="truncate text-[11px] text-[var(--text-muted)]">{{ folder.pathLabel }}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                class="shrink-0 rounded-xl bg-emerald-600 px-3 py-1.5 font-extrabold text-white hover:bg-emerald-500"
+                @click="mediaPhotoStore.restoreExcludedPhotoFolder?.(folder.id)"
+              >
+                다시 표시
+              </button>
+            </div>
+
+            <div
+              v-for="photo in mediaPhotoStore.excludedPhotos"
+              :key="'excluded-photo-' + photo.id"
+              class="flex items-center justify-between gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-input)] px-4 py-3"
+            >
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-black text-[var(--text-main)]">{{ photo.name }}</p>
+                <p class="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">
+                  {{ photo.folderPathLabel }} · {{ photo.dayLabel }}
+                </p>
+              </div>
+              <button
+                type="button"
+                class="shrink-0 rounded-xl bg-emerald-600 px-3 py-1.5 font-extrabold text-white hover:bg-emerald-500"
+                @click="mediaPhotoStore.restoreExcludedPhotoFiles?.([photo.id])"
+              >
+                다시 표시
+              </button>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between border-t border-[var(--border-color)] px-6 py-4 text-xs">
+            <button
+              v-if="totalExcludedPhotosCount >= 2"
+              type="button"
+              class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 font-extrabold text-emerald-500 hover:bg-emerald-500/20"
+              @click="handleRestoreAllExcludedPhotos"
+            >
+              모두 다시 표시 ({{ totalExcludedPhotosCount }}개)
+            </button>
+            <span v-else></span>
+            <button
+              type="button"
+              class="rounded-xl border border-[var(--border-color)] px-4 py-2 font-bold text-[var(--text-secondary)] hover:text-[var(--text-main)]"
+              @click="isExcludedPhotosModalOpen = false"
+            >
+              닫기
+            </button>
           </div>
         </div>
       </div>

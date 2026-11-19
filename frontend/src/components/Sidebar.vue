@@ -857,6 +857,15 @@ const handleAction = async (action, idx) => {
                 <h3 class="text-xs font-bold text-[var(--text-muted)] tracking-wider truncate">최근 업로드한 파일</h3>
               </div>
               <div class="flex items-center gap-2 flex-shrink-0">
+                <button
+                  v-if="sidebarUploadedFiles.length > 0"
+                  type="button"
+                  @click.stop="fileStore.clearUploadedFiles()"
+                  class="text-[11px] text-[var(--text-muted)] hover:text-rose-500 transition-colors"
+                  title="최근 업로드 기록 비우기"
+                >
+                  비우기
+                </button>
                 <RouterLink
                   :to="{ name: 'recentFile', query: { tab: 'uploaded' } }"
                   @click.stop
@@ -881,7 +890,18 @@ const handleAction = async (action, idx) => {
                     <i :class="getSidebarFileIconClass(file)" class="w-4 text-center flex-shrink-0"></i>
                     <span class="truncate">{{ file.name }}</span>
                   </div>
-                  <span class="text-[10px] text-[var(--text-muted)] flex-shrink-0">{{ file.sizeLabel }}</span>
+                  <div class="flex items-center gap-1 flex-shrink-0">
+                    <span class="text-[10px] text-[var(--text-muted)]">{{ file.sizeLabel }}</span>
+                    <button
+                      type="button"
+                      @click.stop="fileStore.removeUploadedFileHistory(file.id)"
+                      class="opacity-0 group-hover:opacity-100 max-md:opacity-75 px-1 text-[10px] text-[var(--text-muted)] hover:text-rose-500 transition-opacity"
+                      title="기록에서 지우기"
+                      aria-label="최근 업로드 기록에서 지우기"
+                    >
+                      <i class="fa-solid fa-xmark"></i>
+                    </button>
+                  </div>
                 </div>
               </template>
               <div v-else class="px-3 py-3 text-xs text-[var(--text-muted)] italic text-center border border-dashed border-[var(--border-color)] rounded-lg mx-2">
@@ -934,7 +954,18 @@ const handleAction = async (action, idx) => {
                     <i :class="getSidebarFileIconClass(file)" class="w-4 text-center flex-shrink-0"></i>
                     <span class="truncate">{{ file.name }}</span>
                   </div>
-                  <span class="text-[10px] text-[var(--text-muted)] flex-shrink-0">{{ file.sizeLabel }}</span>
+                  <div class="flex items-center gap-1 flex-shrink-0">
+                    <span class="text-[10px] text-[var(--text-muted)]">{{ file.sizeLabel }}</span>
+                    <button
+                      type="button"
+                      @click.stop="fileStore.removeAccessedFileHistory(file.id)"
+                      class="opacity-0 group-hover:opacity-100 max-md:opacity-75 px-1 text-[10px] text-[var(--text-muted)] hover:text-rose-500 transition-opacity"
+                      title="기록에서 지우기"
+                      aria-label="최근 열람 기록에서 지우기"
+                    >
+                      <i class="fa-solid fa-xmark"></i>
+                    </button>
+                  </div>
                 </div>
               </template>
               <div v-else class="px-3 py-3 text-xs text-[var(--text-muted)] italic text-center border border-dashed border-[var(--border-color)] rounded-lg mx-2">

@@ -95,7 +95,6 @@ const submitButtonLabel = computed(() => (props.isSharing ? "공유 중..." : "�
         <div>
           <p class="text-xs font-semibold uppercase tracking-wide text-gray-400">파일/폴더 공유</p>
           <h3 class="mt-1 text-xl font-bold text-gray-900">{{ title }}</h3>
-          <p class="mt-2 text-sm text-gray-500">상대방의 공유 문서함과 데스크톱 동기화 폴더에서 사용할 권한을 선택할 수 있습니다.</p>
         </div>
         <button type="button" class="rounded-full p-2 text-gray-400 transition hover:bg-slate-100 hover:text-gray-600" @click="emit('close')">
           <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18 18 6M6 6l12 12" /></svg>
@@ -125,7 +124,6 @@ const submitButtonLabel = computed(() => (props.isSharing ? "공유 중..." : "�
       <div class="mt-4 rounded-2xl border border-gray-200 p-4">
         <div class="flex items-center justify-between gap-2">
           <p class="text-sm font-semibold text-gray-900">대상 선택</p>
-          <p class="text-xs text-gray-500">사용자, 그룹, 이메일을 함께 선택할 수 있습니다.</p>
         </div>
         <div v-if="isOverviewLoading" class="mt-4 rounded-2xl bg-slate-50 px-4 py-6 text-center text-sm text-gray-500">공유 대상을 불러오는 중입니다.</div>
         <div v-else class="mt-4 grid gap-4 lg:grid-cols-2">
@@ -171,7 +169,6 @@ const submitButtonLabel = computed(() => (props.isSharing ? "공유 중..." : "�
       <div class="mt-6 rounded-2xl border border-gray-200 p-4">
         <div class="flex items-center justify-between gap-2">
           <p class="text-sm font-semibold text-gray-900">현재 공유 목록</p>
-          <p class="text-xs text-gray-500">선택한 파일들을 기준으로 수신자와 공유 파일 목록을 함께 표시합니다.</p>
         </div>
         <div v-if="isInfoLoading" class="mt-4 rounded-2xl bg-slate-50 px-4 py-8 text-center text-sm text-gray-500">공유 정보를 불러오는 중입니다.</div>
         <div v-else-if="shareInfo.length === 0" class="mt-4 rounded-2xl bg-slate-50 px-4 py-8 text-center text-sm text-gray-500">현재 공유 중인 상대가 없습니다.</div>

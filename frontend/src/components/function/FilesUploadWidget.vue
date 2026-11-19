@@ -15,16 +15,6 @@
       <button
         v-if="!secretFolderStore.vaultMode"
         type="button"
-        class="upload-dropdown__item text-indigo-700 dark:text-indigo-300"
-        @click="createHiddenFolder"
-      >
-        <i class="fa-solid fa-eye-slash"></i>
-        <span>비밀 폴더 만들기 (숨김)</span>
-      </button>
-
-      <button
-        v-if="!secretFolderStore.vaultMode"
-        type="button"
         class="upload-dropdown__item"
         @click="openCreateSharedFolderModal"
       >
@@ -689,7 +679,7 @@ async function completeUploadedFile(file, uploadMetas, partitioned, itemId, pare
     uploadedBytes: Number(file?.size || 0),
   });
 
-  await completeUpload({
+  const completedFile = await completeUpload({
     fileOriginName: file?.name || "unnamed-file",
     fileFormat: getFileFormat(file),
     fileSize: Number(file?.size || 0),
@@ -700,6 +690,10 @@ async function completeUploadedFile(file, uploadMetas, partitioned, itemId, pare
     lastModified: Number(file?.lastModified || 0) || 0,
     ...(vaultMode ? { vaultMode: true, spaceType: "VAULT" } : {}),
   });
+  const completedId = completedFile?.idx ?? completedFile?.id;
+  if (completedId != null && !vaultMode) {
+    fileStore.markFilesRecentlyUploaded?.([completedId]);
+  }
 
   setItemState(itemId, {
     status: "completed",
@@ -1019,18 +1013,6 @@ function createNewFolder() {
     uploadError.value = extractErrorMessage(error, "폴더를 생성하지 못했습니다.");
   });
   closeDropdown();
-}
-
-async function createHiddenFolder() {
-  closeDropdown();
-  const created = await secretFolderStore.openCreateHiddenFolderDialog(fileStore.currentFolderId ?? null);
-  if (created) {
-    fileStore.invalidateFolderSnapshots?.();
-    await Promise.all([
-      fileStore.refreshDrivePage?.().catch(() => {}),
-      fileStore.fetchFiles({ background: true }).catch(() => {}),
-    ]);
-  }
 }
 
 function openCreateSharedFolderModal() {

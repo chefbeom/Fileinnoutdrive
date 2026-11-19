@@ -218,7 +218,7 @@ const ASPECT_OPTIONS = [
                 @click="emit('close'); emit('open-removed-series')"
               >
                 <i class="fa-solid fa-arrow-rotate-left"></i>
-                <span>내린 시리즈 다시 올리기 ({{ removedSeriesCount }}개)</span>
+                <span>제외 · 내린 항목 관리 ({{ removedSeriesCount }}개)</span>
               </button>
             </div>
           </section>

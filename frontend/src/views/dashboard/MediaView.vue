@@ -624,8 +624,13 @@ const handleRestoreRemovedSeries = (entry) => {
 };
 
 const handleRestoreAllRemovedSeries = () => {
-  if (!(mediaPhotoStore.removedMediaSeries || []).length) return;
-  mediaPhotoStore.restoreAllRemovedSeries();
+  if ((mediaPhotoStore.removedMediaSeries || []).length) {
+    mediaPhotoStore.restoreAllRemovedSeries();
+  }
+  const excludedIds = (mediaPhotoStore.excludedIndividualMediaVideos || []).map((v) => v.id);
+  if (excludedIds.length) {
+    mediaPhotoStore.restoreExcludedMediaFiles?.(excludedIds);
+  }
   isRemovedSeriesModalOpen.value = false;
 };
 
@@ -1038,10 +1043,31 @@ const saveSourcePickerModal = () => {
   isSourcePickerModalOpen.value = false;
 };
 
+const totalExcludedMediaCount = computed(() =>
+  (mediaPhotoStore.removedMediaSeries?.length || 0) +
+  (mediaPhotoStore.excludedIndividualMediaVideos?.length || 0),
+);
+
 const handleBatchExcludeFromMedia = () => {
   if (!selectedIds.value.length) return;
-  mediaPhotoStore.removeMediaFiles(selectedIds.value);
+  (mediaPhotoStore.excludeMediaFiles || mediaPhotoStore.removeMediaFiles)(selectedIds.value);
   clearSelection();
+};
+
+const handleExcludeSingleMediaItem = (item) => {
+  if (!item || item.id == null) return;
+  activeMenuCardId.value = null;
+  (mediaPhotoStore.excludeMediaFiles || mediaPhotoStore.removeMediaFiles)([item.id]);
+  const key = String(item.id);
+  selectedIds.value = selectedIds.value.filter((id) => String(id) !== key);
+};
+
+const handleRestoreExcludedSingleMedia = (item) => {
+  if (!item || item.id == null) return;
+  mediaPhotoStore.restoreExcludedMediaFiles?.([item.id]);
+  if (totalExcludedMediaCount.value === 0) {
+    isRemovedSeriesModalOpen.value = false;
+  }
 };
 
 const openCreateCollectionModal = (preselectedIds = []) => {
@@ -1431,8 +1457,8 @@ onBeforeUnmount(() => {
           <span>컬렉션에서 제외</span>
         </button>
         <button
-          v-if="mediaPhotoStore.preferences.mediaSourceMode === 'manual'"
           type="button"
+          data-testid="media-batch-exclude-btn"
           class="inline-flex items-center gap-1.5 rounded-xl bg-amber-500/20 px-3 py-1.5 font-bold text-amber-300 hover:bg-amber-500/30"
           @click="handleBatchExcludeFromMedia"
         >
@@ -1585,10 +1611,8 @@ onBeforeUnmount(() => {
             <i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i>
           </span>
           <p class="truncate font-bold text-[var(--text-main)]">
-            유사 폴더 {{ mediaPhotoStore.autoGroupedMediaSeries.length }}개 시리즈가 자동 통합되었습니다.
-            <span class="font-normal text-[var(--text-muted)]">
-              카드 우측 메뉴(⋮)에서 이름·시즌을 수정하거나 분리할 수 있습니다.
-            </span>
+            유사 폴더 {{ mediaPhotoStore.autoGroupedMediaSeries.length }}개 시리즈 자동 통합 ·
+            <span class="font-normal text-[var(--text-muted)]">우측 메뉴(⋮)에서 수정·분리</span>
           </p>
         </div>
         <button
@@ -1612,7 +1636,7 @@ onBeforeUnmount(() => {
 
         <!-- Contextual Series Management Menu (only shown when relevant actions exist) -->
         <div
-          v-if="filteredSeriesList.length >= 2 || (mediaPhotoStore.removedMediaSeries || []).length > 0"
+          v-if="filteredSeriesList.length >= 2 || totalExcludedMediaCount > 0"
           class="relative"
           @click.stop
         >
@@ -1641,13 +1665,13 @@ onBeforeUnmount(() => {
               <span>시리즈 수동 병합</span>
             </button>
             <button
-              v-if="(mediaPhotoStore.removedMediaSeries || []).length > 0"
+              v-if="totalExcludedMediaCount > 0"
               type="button"
               class="flex w-full items-center gap-2 rounded-xl px-3 py-2 font-bold text-amber-500 hover:bg-amber-500/10"
               @click="isSeriesToolsMenuOpen = false; isRemovedSeriesModalOpen = true"
             >
               <i class="fa-solid fa-arrow-rotate-left"></i>
-              <span>내린 시리즈 ({{ mediaPhotoStore.removedMediaSeries.length }})</span>
+              <span>제외 · 내린 항목 ({{ totalExcludedMediaCount }})</span>
             </button>
             <button
               type="button"
@@ -1718,9 +1742,6 @@ onBeforeUnmount(() => {
           <h3 class="mt-4 text-base font-extrabold text-[var(--text-main)]">
             조건에 맞는 시리즈 작품이 없습니다
           </h3>
-          <p class="mt-1 text-xs text-[var(--text-muted)]">
-            검색어 또는 필터 조건을 초기화하면 전체 등록 작품을 확인할 수 있습니다.
-          </p>
           <div class="mt-5 flex flex-wrap justify-center gap-2.5">
             <button
               type="button"
@@ -1746,9 +1767,6 @@ onBeforeUnmount(() => {
               ? `미디어를 시작해 보세요 (${storageNoun}에 동영상 ${mediaPhotoStore.candidateVideos.length}개 보관 중)`
               : "표시할 시리즈 작품이 없습니다" }}
           </h3>
-          <p class="mx-auto mt-1 max-w-xl text-xs text-[var(--text-muted)]">
-            상위 화면을 단순하게 유지하기 위해 업로드·폴더 지정·세부 설정은 필요할 때 아래 안내에서 바로 진행할 수 있습니다.
-          </p>
 
           <!-- Clean Guided Onboarding Cards -->
           <div class="mx-auto mt-6 grid max-w-3xl gap-3 text-left sm:grid-cols-2 lg:grid-cols-3">
@@ -2575,6 +2593,15 @@ onBeforeUnmount(() => {
                 <span v-if="ep.matchingSubtitles?.length" class="font-bold text-emerald-500">CC 자막</span>
                 <button
                   type="button"
+                  data-testid="episode-card-exclude"
+                  class="font-bold text-amber-500 hover:underline"
+                  title="미디어 목록에서 제외 (원본 파일은 유지)"
+                  @click.stop="handleExcludeSingleMediaItem(ep)"
+                >
+                  제외
+                </button>
+                <button
+                  type="button"
                   class="font-bold text-[var(--text-secondary)] hover:text-blue-500"
                   @click="mediaPhotoStore.navigateToOriginalFolder(ep, router)"
                 >
@@ -2674,6 +2701,15 @@ onBeforeUnmount(() => {
           <div class="flex shrink-0 items-center gap-2">
             <button
               type="button"
+              data-testid="episode-list-exclude"
+              class="rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-500 hover:bg-amber-500/20"
+              title="미디어 목록에서 제외 (원본 파일은 유지)"
+              @click="handleExcludeSingleMediaItem(ep)"
+            >
+              목록에서 제외
+            </button>
+            <button
+              type="button"
               class="rounded-xl border border-[var(--border-color)] px-3 py-1.5 text-xs font-bold text-[var(--text-secondary)] hover:text-[var(--text-main)]"
               @click="mediaPhotoStore.navigateToOriginalFolder(ep, router)"
             >
@@ -2719,9 +2755,6 @@ onBeforeUnmount(() => {
       >
         <i class="fa-solid fa-layer-group text-3xl text-purple-400"></i>
         <p class="mt-3 text-sm font-extrabold text-[var(--text-main)]">아직 만든 미디어 컬렉션이 없습니다</p>
-        <p class="mt-1 text-xs text-[var(--text-muted)]">
-          원본 파일을 복제하지 않고 강의, 여행, 영화 시리즈 등 주제별로 묶어 연속 재생해 보세요.
-        </p>
         <button
           type="button"
           class="mt-4 rounded-2xl bg-blue-600 px-4 py-2 text-xs font-extrabold text-white hover:bg-blue-500"
@@ -2916,9 +2949,6 @@ onBeforeUnmount(() => {
           <h3 class="mt-4 text-base font-extrabold text-[var(--text-main)]">
             조건에 맞는 미디어가 없습니다
           </h3>
-          <p class="mt-1 text-xs text-[var(--text-muted)]">
-            검색어 또는 필터를 초기화하면 표시 가능한 항목을 모두 확인할 수 있습니다.
-          </p>
           <div class="mt-5 flex justify-center">
             <button
               type="button"
@@ -2936,9 +2966,6 @@ onBeforeUnmount(() => {
               ? `지정된 항목이 없습니다 (${storageNoun}에 동영상 ${mediaPhotoStore.candidateVideos.length}개 보관 중)`
               : "표시할 미디어 콘텐츠가 없습니다" }}
           </h3>
-          <p class="mx-auto mt-1 max-w-lg text-xs text-[var(--text-muted)]">
-            필요할 때 아래 안내를 통해 새 동영상을 업로드하거나 {{ storageNoun }} 폴더를 연결할 수 있습니다.
-          </p>
           <div class="mt-5 flex flex-wrap justify-center gap-2.5">
             <button
               type="button"
@@ -3216,10 +3243,10 @@ onBeforeUnmount(() => {
                   </template>
                   <div class="my-1 border-t border-[var(--border-color)]"></div>
                   <button
-                    v-if="mediaPhotoStore.preferences.mediaSourceMode === 'manual'"
                     type="button"
+                    data-testid="media-card-exclude"
                     class="flex w-full items-center gap-2 px-3.5 py-2 text-left font-bold text-amber-500 hover:bg-amber-500/10"
-                    @click="activeMenuCardId = null; mediaPhotoStore.removeMediaFiles([item.id])"
+                    @click="handleExcludeSingleMediaItem(item)"
                   >
                     <i class="fa-solid fa-eye-slash w-4"></i>
                     <span>미디어 목록에서 제외</span>
@@ -3309,6 +3336,15 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              data-testid="media-list-exclude"
+              class="rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-500 hover:bg-amber-500/20"
+              title="미디어 목록에서 제외 (원본 유지)"
+              @click="handleExcludeSingleMediaItem(item)"
+            >
+              제외
+            </button>
             <button
               type="button"
               class="rounded-xl border border-[var(--border-color)] px-3 py-1.5 text-xs font-bold text-[var(--text-secondary)] hover:text-[var(--text-main)]"
@@ -4233,10 +4269,10 @@ onBeforeUnmount(() => {
           <div class="flex items-center justify-between border-b border-[var(--border-color)] px-6 py-4">
             <div>
               <h3 class="text-base font-black text-[var(--text-main)]">
-                내린 시리즈 관리 · 다시 올리기
+                제외 · 내린 미디어 관리
               </h3>
               <p class="mt-0.5 text-xs text-[var(--text-muted)]">
-                미디어 목록에서 내린 작품들입니다. {{ storageNoun }}의 원본과 시청 기록은 그대로 유지됩니다.
+                미디어 목록에서만 숨긴 항목입니다. {{ storageNoun }}의 원본 파일과 시청 기록은 유지됩니다.
               </p>
             </div>
             <button type="button" class="text-[var(--text-muted)] hover:text-[var(--text-main)]" @click="isRemovedSeriesModalOpen = false">
@@ -4244,12 +4280,12 @@ onBeforeUnmount(() => {
             </button>
           </div>
 
-          <div class="flex-1 space-y-2.5 overflow-y-auto p-5 text-xs">
+          <div class="flex-1 space-y-3 overflow-y-auto p-5 text-xs">
             <div
-              v-if="!(mediaPhotoStore.removedMediaSeries || []).length"
+              v-if="totalExcludedMediaCount === 0"
               class="rounded-2xl border border-dashed border-[var(--border-color)] py-10 text-center text-[var(--text-muted)]"
             >
-              현재 미디어 목록에서 내린 시리즈가 없습니다.
+              현재 미디어 목록에서 내리거나 제외한 항목이 없습니다.
             </div>
 
             <div
@@ -4262,7 +4298,7 @@ onBeforeUnmount(() => {
                   {{ entry.title }}
                 </p>
                 <p class="mt-0.5 text-[11px] text-[var(--text-muted)]">
-                  시즌 {{ entry.seasonCount || 1 }}개
+                  시리즈 · 시즌 {{ entry.seasonCount || 1 }}개
                   <template v-if="entry.specialCount > 0"> · 특별편 {{ entry.specialCount }}개</template>
                   · 총 {{ entry.episodeCount || 0 }}화
                   <template v-if="entry.removedAt"> · {{ formatRemovedTimestamp(entry.removedAt) }} 내림</template>
@@ -4277,16 +4313,39 @@ onBeforeUnmount(() => {
                 <span>다시 올리기</span>
               </button>
             </div>
+
+            <div
+              v-for="video in (mediaPhotoStore.excludedIndividualMediaVideos || [])"
+              :key="'excluded-video-' + video.id"
+              class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-input)] px-4 py-3"
+            >
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-black text-[var(--text-main)]">
+                  {{ video.displayTitle || video.name }}
+                </p>
+                <p class="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">
+                  개별 제외 · {{ video.folderPathLabel }}
+                </p>
+              </div>
+              <button
+                type="button"
+                class="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 font-extrabold text-white transition hover:bg-emerald-500"
+                @click="handleRestoreExcludedSingleMedia(video)"
+              >
+                <i class="fa-solid fa-eye text-[11px]"></i>
+                <span>다시 표시</span>
+              </button>
+            </div>
           </div>
 
           <div class="flex items-center justify-between border-t border-[var(--border-color)] px-6 py-4 text-xs">
             <button
-              v-if="(mediaPhotoStore.removedMediaSeries || []).length >= 2"
+              v-if="totalExcludedMediaCount >= 2"
               type="button"
               class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 font-extrabold text-emerald-500 hover:bg-emerald-500/20"
               @click="handleRestoreAllRemovedSeries"
             >
-              모두 다시 올리기 ({{ mediaPhotoStore.removedMediaSeries.length }}개)
+              모두 다시 표시 ({{ totalExcludedMediaCount }}개)
             </button>
             <span v-else></span>
             <button
@@ -4316,7 +4375,7 @@ onBeforeUnmount(() => {
       :file-count="mediaPhotoStore.mediaIncludedFileIds.length"
       :candidate-video-count="mediaPhotoStore.candidateVideos.length"
       :series-count="(mediaPhotoStore.resolvedMediaSeries || []).length"
-      :removed-series-count="(mediaPhotoStore.removedMediaSeries || []).length"
+      :removed-series-count="totalExcludedMediaCount"
       @close="isSettingsModalOpen = false"
       @update-preferences="mediaPhotoStore.updatePreferences($event)"
       @set-auto-classify="mediaPhotoStore.setAutoClassifyEnabled($event)"

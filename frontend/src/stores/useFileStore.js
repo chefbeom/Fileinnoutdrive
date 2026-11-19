@@ -56,14 +56,23 @@ const ADMIN_MAX_UPLOAD_COUNT = 500;
 const DEFAULT_DRIVE_PAGE_SIZE = 10;
 const MAX_DRIVE_PAGE_SIZE = 30;
 const RECENT_ACCESSED_STORAGE_KEY = "fileinnout-recent-accessed-files";
+const RECENT_UPLOADED_HISTORY_STORAGE_KEY = "fileinnout-recent-uploaded-history";
 const MAX_RECENT_ACCESSED_COUNT = 50;
+const MAX_DISMISSED_UPLOAD_IDS = 500;
 
-function readSavedAccessedFiles() {
+function resolveScopedRecentKey(baseKey, userIdx = null) {
+  return userIdx != null && String(userIdx).trim() !== ""
+    ? `${baseKey}:${String(userIdx).trim()}`
+    : baseKey;
+}
+
+function readSavedAccessedFiles(userIdx = null) {
   if (typeof window === "undefined" || !window.localStorage) {
     return [];
   }
   try {
-    const raw = window.localStorage.getItem(RECENT_ACCESSED_STORAGE_KEY);
+    const raw = window.localStorage.getItem(resolveScopedRecentKey(RECENT_ACCESSED_STORAGE_KEY, userIdx))
+      ?? (userIdx != null ? window.localStorage.getItem(RECENT_ACCESSED_STORAGE_KEY) : null);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.filter((item) => item && item.id != null) : [];
@@ -72,12 +81,64 @@ function readSavedAccessedFiles() {
   }
 }
 
-function writeSavedAccessedFiles(items) {
+function writeSavedAccessedFiles(items, userIdx = null) {
   if (typeof window === "undefined" || !window.localStorage) {
     return;
   }
   try {
-    window.localStorage.setItem(RECENT_ACCESSED_STORAGE_KEY, JSON.stringify(items));
+    window.localStorage.setItem(
+      resolveScopedRecentKey(RECENT_ACCESSED_STORAGE_KEY, userIdx),
+      JSON.stringify(items),
+    );
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+function createEmptyUploadedHistoryState() {
+  return {
+    clearedCutoffMs: 0,
+    dismissedIds: [],
+  };
+}
+
+function readSavedUploadedHistoryState(userIdx = null) {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return createEmptyUploadedHistoryState();
+  }
+  try {
+    const raw = window.localStorage.getItem(resolveScopedRecentKey(RECENT_UPLOADED_HISTORY_STORAGE_KEY, userIdx))
+      ?? (userIdx != null ? window.localStorage.getItem(RECENT_UPLOADED_HISTORY_STORAGE_KEY) : null);
+    if (!raw) return createEmptyUploadedHistoryState();
+    const parsed = JSON.parse(raw);
+    const clearedCutoffMs = Number(parsed?.clearedCutoffMs || 0) || 0;
+    const dismissedIds = Array.isArray(parsed?.dismissedIds)
+      ? parsed.dismissedIds.map((id) => String(id)).filter(Boolean).slice(-MAX_DISMISSED_UPLOAD_IDS)
+      : [];
+    return {
+      clearedCutoffMs: clearedCutoffMs > 0 ? clearedCutoffMs : 0,
+      dismissedIds,
+    };
+  } catch {
+    return createEmptyUploadedHistoryState();
+  }
+}
+
+function writeSavedUploadedHistoryState(state, userIdx = null) {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return;
+  }
+  try {
+    const payload = {
+      clearedCutoffMs: Number(state?.clearedCutoffMs || 0) || 0,
+      dismissedIds: Array.isArray(state?.dismissedIds)
+        ? state.dismissedIds.map((id) => String(id)).filter(Boolean).slice(-MAX_DISMISSED_UPLOAD_IDS)
+        : [],
+    };
+    window.localStorage.setItem(
+      resolveScopedRecentKey(RECENT_UPLOADED_HISTORY_STORAGE_KEY, userIdx),
+      JSON.stringify(payload),
+    );
   } catch {
     // Ignore storage errors
   }
@@ -113,7 +174,9 @@ export const useFileStore = defineStore("file", () => {
   const vaultAllFiles = ref([]);
   const vaultHasLoaded = ref(false);
   const vaultLoading = ref(false);
-  const accessedFilesHistory = ref(readSavedAccessedFiles());
+  const accessedFilesHistory = ref(readSavedAccessedFiles(authStore.user?.idx ?? null));
+  const uploadedHistoryState = ref(readSavedUploadedHistoryState(authStore.user?.idx ?? null));
+  const postClearUploadedIds = ref([]);
   const drivePageFiles = ref([]);
   const driveBreadcrumbs = ref([]);
   const driveRootFolders = ref([]);
@@ -624,36 +687,112 @@ export const useFileStore = defineStore("file", () => {
       .sort((left, right) => (right.lastModifiedMs || 0) - (left.lastModifiedMs || 0)),
   );
 
-  const recentUploadedFiles = computed(() => {
+  const isEligibleUploadedCandidate = (file) => !(
+    !file ||
+    file.id == null ||
+    file.isTrash ||
+    file.type === "folder" ||
+    file.hiddenFolder ||
+    file.isVaultSpace ||
+    file.spaceType === "VAULT"
+  );
+
+  const rawRecentUploadedCandidates = computed(() => {
     const mergedMap = new Map();
     const sources = (secretFolderStore.vaultMode || secretFolderStore.showHiddenFolders)
       ? [...allFiles.value]
       : [...drivePageFiles.value, ...allFiles.value];
 
     sources.forEach((file) => {
-      if (
-        !file ||
-        file.id == null ||
-        file.isTrash ||
-        file.type === "folder" ||
-        file.hiddenFolder ||
-        file.isVaultSpace ||
-        file.spaceType === "VAULT"
-      ) {
+      if (!isEligibleUploadedCandidate(file)) {
         return;
       }
       mergedMap.set(String(file.id), file);
     });
 
-    return Array.from(mergedMap.values()).sort((left, right) => {
-      const rightTime = right.uploadedAtMs || right.lastModifiedMs || 0;
-      const leftTime = left.uploadedAtMs || left.lastModifiedMs || 0;
-      if (rightTime !== leftTime) {
-        return rightTime - leftTime;
-      }
-      return (Number(right.id) || 0) - (Number(left.id) || 0);
-    });
+    return Array.from(mergedMap.values());
   });
+
+  const recentUploadedFiles = computed(() => {
+    const dismissedSet = new Set((uploadedHistoryState.value?.dismissedIds || []).map((id) => String(id)));
+    const unhiddenSet = new Set(postClearUploadedIds.value.map((id) => String(id)));
+    const clearedCutoffMs = Number(uploadedHistoryState.value?.clearedCutoffMs || 0) || 0;
+
+    return rawRecentUploadedCandidates.value
+      .filter((file) => {
+        const key = String(file.id);
+        if (dismissedSet.has(key)) {
+          return false;
+        }
+        const uploadMs = Number(file.uploadedAtMs || file.lastModifiedMs || 0) || 0;
+        if (clearedCutoffMs > 0 && uploadMs > 0 && uploadMs <= clearedCutoffMs && !unhiddenSet.has(key)) {
+          return false;
+        }
+        return true;
+      })
+      .sort((left, right) => {
+        const rightTime = right.uploadedAtMs || right.lastModifiedMs || 0;
+        const leftTime = left.uploadedAtMs || left.lastModifiedMs || 0;
+        if (rightTime !== leftTime) {
+          return rightTime - leftTime;
+        }
+        return (Number(right.id) || 0) - (Number(left.id) || 0);
+      });
+  });
+
+  const clearUploadedFiles = () => {
+    const candidates = rawRecentUploadedCandidates.value;
+    const maxCandidateUploadMs = candidates.reduce((max, file) => {
+      const ts = Number(file.uploadedAtMs || file.lastModifiedMs || 0) || 0;
+      return ts > max ? ts : max;
+    }, 0);
+    const nextDismissedIds = [
+      ...new Set([
+        ...(uploadedHistoryState.value?.dismissedIds || []).map((id) => String(id)),
+        ...candidates.map((file) => String(file.id)),
+      ]),
+    ].slice(-MAX_DISMISSED_UPLOAD_IDS);
+
+    const nextState = {
+      clearedCutoffMs: Math.max(Number(uploadedHistoryState.value?.clearedCutoffMs || 0) || 0, maxCandidateUploadMs),
+      dismissedIds: nextDismissedIds,
+    };
+    uploadedHistoryState.value = nextState;
+    postClearUploadedIds.value = [];
+    writeSavedUploadedHistoryState(nextState, authStore.user?.idx ?? null);
+  };
+
+  const removeUploadedFileHistory = (fileId) => {
+    const key = String(fileId ?? "");
+    if (!key) return;
+    const nextState = {
+      clearedCutoffMs: Number(uploadedHistoryState.value?.clearedCutoffMs || 0) || 0,
+      dismissedIds: [
+        ...new Set([
+          ...(uploadedHistoryState.value?.dismissedIds || []).map((id) => String(id)),
+          key,
+        ]),
+      ].slice(-MAX_DISMISSED_UPLOAD_IDS),
+    };
+    uploadedHistoryState.value = nextState;
+    postClearUploadedIds.value = postClearUploadedIds.value.filter((id) => String(id) !== key);
+    writeSavedUploadedHistoryState(nextState, authStore.user?.idx ?? null);
+  };
+
+  const markFilesRecentlyUploaded = (fileIds = []) => {
+    const keys = (Array.isArray(fileIds) ? fileIds : [fileIds])
+      .map((id) => String(id ?? ""))
+      .filter(Boolean);
+    if (!keys.length) return;
+    const keySet = new Set(keys);
+    const nextState = {
+      clearedCutoffMs: Number(uploadedHistoryState.value?.clearedCutoffMs || 0) || 0,
+      dismissedIds: (uploadedHistoryState.value?.dismissedIds || []).filter((id) => !keySet.has(String(id))),
+    };
+    uploadedHistoryState.value = nextState;
+    postClearUploadedIds.value = [...new Set([...postClearUploadedIds.value, ...keys])];
+    writeSavedUploadedHistoryState(nextState, authStore.user?.idx ?? null);
+  };
 
   const isInsideHiddenOrVault = (file) => {
     if (!file) {
@@ -732,12 +871,20 @@ export const useFileStore = defineStore("file", () => {
     ].slice(0, MAX_RECENT_ACCESSED_COUNT);
 
     accessedFilesHistory.value = nextHistory;
-    writeSavedAccessedFiles(nextHistory);
+    writeSavedAccessedFiles(nextHistory, authStore.user?.idx ?? null);
   };
 
   const clearAccessedFiles = () => {
     accessedFilesHistory.value = [];
-    writeSavedAccessedFiles([]);
+    writeSavedAccessedFiles([], authStore.user?.idx ?? null);
+  };
+
+  const removeAccessedFileHistory = (fileId) => {
+    const key = String(fileId ?? "");
+    if (!key) return;
+    const nextHistory = accessedFilesHistory.value.filter((candidate) => String(candidate?.id) !== key);
+    accessedFilesHistory.value = nextHistory;
+    writeSavedAccessedFiles(nextHistory, authStore.user?.idx ?? null);
   };
 
   const recentAccessedFiles = computed(() => {
@@ -1253,12 +1400,15 @@ export const useFileStore = defineStore("file", () => {
 
   watch(
     () => authStore.user?.idx ?? null,
-    () => {
+    (nextUserIdx) => {
       secretFolderStore.resetSecretSession();
       clearVaultFiles();
       invalidateFolderSnapshots();
       currentFolderId.value = null;
       applyFolderTransitionState(null);
+      accessedFilesHistory.value = readSavedAccessedFiles(nextUserIdx);
+      uploadedHistoryState.value = readSavedUploadedHistoryState(nextUserIdx);
+      postClearUploadedIds.value = [];
     },
   );
 
@@ -1306,6 +1456,10 @@ export const useFileStore = defineStore("file", () => {
     refreshAll,
     recordFileAccess,
     clearAccessedFiles,
+    removeAccessedFileHistory,
+    clearUploadedFiles,
+    removeUploadedFileHistory,
+    markFilesRecentlyUploaded,
     createFolder,
     moveToTrash,
     trashFilesBatch,

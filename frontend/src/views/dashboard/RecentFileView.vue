@@ -110,15 +110,29 @@ const viewTitle = computed(() => {
           </button>
         </div>
 
-        <button
-          v-if="activeTab === 'accessed' && recentFilesAccessed.length > 0"
-          type="button"
-          @click="fileStore.clearAccessedFiles()"
-          class="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-100"
-        >
-          <i class="fa-solid fa-trash-can"></i>
-          <span>열람 기록 비우기</span>
-        </button>
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            v-if="(activeTab === 'uploaded' || activeTab === 'all') && recentFilesUploaded.length > 0"
+            type="button"
+            data-testid="clear-recent-uploaded-btn"
+            @click="fileStore.clearUploadedFiles()"
+            class="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-100"
+          >
+            <i class="fa-solid fa-trash-can"></i>
+            <span>업로드 기록 비우기</span>
+          </button>
+
+          <button
+            v-if="(activeTab === 'accessed' || activeTab === 'all') && recentFilesAccessed.length > 0"
+            type="button"
+            data-testid="clear-recent-accessed-btn"
+            @click="fileStore.clearAccessedFiles()"
+            class="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-100"
+          >
+            <i class="fa-solid fa-trash-can"></i>
+            <span>열람 기록 비우기</span>
+          </button>
+        </div>
       </div>
     </template>
   </BaseFileView>

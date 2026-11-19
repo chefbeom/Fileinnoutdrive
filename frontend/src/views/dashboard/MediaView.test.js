@@ -178,4 +178,28 @@ describe("MediaView.vue streamlined layout & guided setup", () => {
     expect(areaBar.text()).toContain("애니메이션");
     expect(areaBar.text()).toContain("영화");
   });
+
+  it("allows excluding individual items in all-mode without manual-mode restriction", async () => {
+    mockRoute.query = { section: "favorites" };
+    mockMediaPhotoStore.preferences.mediaSourceMode = "all";
+    mockMediaPhotoStore.favoriteMediaItems = [
+      { id: 501, name: "trailer.mp4", displayTitle: "trailer", mediaKind: "video", sizeLabel: "10 MB" },
+    ];
+    mockMediaPhotoStore.excludeMediaFiles = vi.fn();
+
+    const wrapper = mount(MediaView, {
+      global: {
+        stubs: {
+          Teleport: true,
+          BaseFileShareDialog: true,
+        },
+      },
+    });
+
+    await wrapper.find("input[type='checkbox']").trigger("click");
+    const batchExcludeBtn = wrapper.find("[data-testid='media-batch-exclude-btn']");
+    expect(batchExcludeBtn.exists()).toBe(true);
+    await batchExcludeBtn.trigger("click");
+    expect(mockMediaPhotoStore.excludeMediaFiles).toHaveBeenCalledWith(["501"]);
+  });
 });

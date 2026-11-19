@@ -889,6 +889,22 @@ const onDropToParentNavigator = async (event) => {
   }
 };
 const isSharedFolder = isCollectionSharedFolder;
+const resolvedCurrentFolderForSecret = computed(() => {
+  if (secretFolderStore.vaultMode || props.sharedLibrary || props.deleteMode === "permanent") {
+    return null;
+  }
+  const current = fileStore.currentFolder;
+  if (!current || current.id == null) {
+    return null;
+  }
+  const enriched =
+    fileStore.allFiles?.find?.((item) => String(item?.id) === String(current.id)) ||
+    current;
+  if ((fileStore.currentFolderPath || []).some((segment) => isSharedFolder(segment))) {
+    return null;
+  }
+  return canConfigureSecret(enriched) ? enriched : null;
+});
 const contextMenu = ref({
   visible: false,
   x: 0,
@@ -1026,12 +1042,18 @@ const handleContextConfigureHiddenFolder = async (target) => {
   if (!target) {
     return;
   }
+  const isCurrentFolderTarget =
+    fileStore.currentFolderId != null &&
+    String(target.id ?? target.idx) === String(fileStore.currentFolderId);
   const saved = await secretFolderStore.openConfigureHiddenFolderDialog(target);
   if (saved) {
     fileStore.invalidateFolderSnapshots?.();
+    if (isCurrentFolderTarget && saved.hidden && !secretFolderStore.showHiddenFolders) {
+      fileStore.navigateToFolder(target.parentId ?? null);
+    }
     await Promise.all([
-      fileStore.refreshDrivePage().catch(() => {}),
-      fileStore.fetchFiles({ background: true }).catch(() => {}),
+      fileStore.refreshDrivePage?.().catch(() => {}),
+      fileStore.fetchFiles?.({ background: true }).catch(() => {}),
     ]);
   }
 };
@@ -1209,34 +1231,70 @@ const handleContextOpenInPhotoLightbox = (target) => {
 
 const isFolderIncludedInMedia = (folder) => {
   if (!folder) return false;
-  return mediaPhotoStore.mediaIncludedFolderIds.includes(String(folder.id));
+  const key = String(folder.id);
+  if (mediaPhotoStore.preferences?.mediaSourceMode === "all") {
+    return !(mediaPhotoStore.mediaExcludedFolderIds || []).includes(key);
+  }
+  return (mediaPhotoStore.mediaIncludedFolderIds || []).includes(key);
 };
 
 const isFolderIncludedInPhotos = (folder) => {
   if (!folder) return false;
-  return mediaPhotoStore.photoIncludedFolderIds.includes(String(folder.id));
+  const key = String(folder.id);
+  if (mediaPhotoStore.preferences?.photoSourceMode === "all") {
+    return !(mediaPhotoStore.photoExcludedFolderIds || []).includes(key);
+  }
+  return (mediaPhotoStore.photoIncludedFolderIds || []).includes(key);
 };
 
 const handleContextToggleFolderInMedia = (folder) => {
   closeContextMenu();
   if (!folder) return;
+  if (mediaPhotoStore.preferences?.mediaSourceMode === "all") {
+    mediaPhotoStore.toggleMediaFolderExclusion?.(folder.id);
+    return;
+  }
   mediaPhotoStore.toggleMediaFolderInclusion(folder.id);
 };
 
 const handleContextToggleFolderInPhotos = (folder) => {
   closeContextMenu();
   if (!folder) return;
+  if (mediaPhotoStore.preferences?.photoSourceMode === "all") {
+    mediaPhotoStore.togglePhotoFolderExclusion?.(folder.id);
+    return;
+  }
   mediaPhotoStore.togglePhotoFolderInclusion(folder.id);
 };
 
 const isFileIncludedInMedia = (file) => {
   if (!file) return false;
-  return mediaPhotoStore.mediaIncludedFileIds.includes(String(file.id));
+  const key = String(file.id);
+  if (mediaPhotoStore.isVideoExcludedFromMedia?.(file)) {
+    return false;
+  }
+  if (mediaPhotoStore.preferences?.mediaSourceMode === "all") {
+    return true;
+  }
+  if (mediaPhotoStore.videoById?.has?.(key)) {
+    return true;
+  }
+  return (mediaPhotoStore.mediaIncludedFileIds || []).includes(key);
 };
 
 const isFileIncludedInPhotos = (file) => {
   if (!file) return false;
-  return mediaPhotoStore.photoIncludedFileIds.includes(String(file.id));
+  const key = String(file.id);
+  if (mediaPhotoStore.isPhotoExcludedFromPhotos?.(file)) {
+    return false;
+  }
+  if (mediaPhotoStore.preferences?.photoSourceMode === "all") {
+    return true;
+  }
+  if (mediaPhotoStore.photoById?.has?.(key)) {
+    return true;
+  }
+  return (mediaPhotoStore.photoIncludedFileIds || []).includes(key);
 };
 
 const handleContextToggleFileInMedia = (file) => {
@@ -1244,7 +1302,7 @@ const handleContextToggleFileInMedia = (file) => {
   if (!file) return;
   const key = String(file.id);
   if (isFileIncludedInMedia(file)) {
-    mediaPhotoStore.removeMediaFiles([key]);
+    (mediaPhotoStore.excludeMediaFiles || mediaPhotoStore.removeMediaFiles)([key]);
   } else {
     mediaPhotoStore.addMediaFiles([key]);
   }
@@ -1255,7 +1313,7 @@ const handleContextToggleFileInPhotos = (file) => {
   if (!file) return;
   const key = String(file.id);
   if (isFileIncludedInPhotos(file)) {
-    mediaPhotoStore.removePhotoFiles([key]);
+    (mediaPhotoStore.excludePhotoFiles || mediaPhotoStore.removePhotoFiles)([key]);
   } else {
     mediaPhotoStore.addPhotoFiles([key]);
   }
@@ -1395,7 +1453,7 @@ provide(FILE_COLLECTION_CONTEXT_KEY, {
       </button>
 
       <p class="hidden text-xs text-gray-500 sm:block">
-        {{ viewMode === "icon" ? "클릭 시 선택, Shift+클릭 시 구간 선택, 더블클릭 시 열기가 실행됩니다." : "Shift+클릭으로 연속 구간 선택(예: 5번 클릭 후 25번 Shift+클릭) 및 Ctrl+클릭 다중 선택이 가능합니다." }}
+        {{ viewMode === "icon" ? "클릭 선택 · 더블클릭 열기 · Shift 구간 선택" : "Shift 구간 · Ctrl 다중 선택" }}
       </p>
     </div>
 
@@ -1488,8 +1546,11 @@ provide(FILE_COLLECTION_CONTEXT_KEY, {
             class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-indigo-700 transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-slate-800"
             @click="handleContextConfigureHiddenFolder(contextMenu.target)"
           >
-            <i class="fa-solid fa-key w-4 text-center text-indigo-500"></i>
-            <span>숨김 · PIN 설정</span>
+            <i
+              class="fa-solid w-4 text-center text-indigo-500"
+              :class="contextMenu.target.hiddenFolder ? 'fa-key' : 'fa-eye-slash'"
+            ></i>
+            <span>{{ contextMenu.target.hiddenFolder ? "비밀 폴더 설정 · 해제" : "비밀 폴더로 전환 (숨김)" }}</span>
           </button>
 
           <button
@@ -1901,6 +1962,19 @@ provide(FILE_COLLECTION_CONTEXT_KEY, {
             >
               <i class="fa-solid fa-pen-to-square w-4 text-center text-gray-500"></i>
               <span>현재 폴더 이름 변경</span>
+            </button>
+
+            <button
+              v-if="resolvedCurrentFolderForSecret"
+              type="button"
+              class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-indigo-700 transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-slate-800"
+              @click="handleContextConfigureHiddenFolder(resolvedCurrentFolderForSecret)"
+            >
+              <i
+                class="fa-solid w-4 text-center text-indigo-500"
+                :class="resolvedCurrentFolderForSecret.hiddenFolder ? 'fa-key' : 'fa-eye-slash'"
+              ></i>
+              <span>{{ resolvedCurrentFolderForSecret.hiddenFolder ? "현재 폴더 비밀 설정 · 해제" : "현재 폴더를 비밀 폴더로 전환" }}</span>
             </button>
 
             <button

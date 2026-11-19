@@ -15,6 +15,7 @@ describe("BaseFileSelectionBar.vue", () => {
     expect(slot.classes()).toContain("selection-bar--idle");
     expect(wrapper.text()).toContain("선택된 항목 없음");
     expect(wrapper.text()).toContain("일괄 작업 대기 중");
+    expect(wrapper.text()).not.toContain("파일이나 폴더를 선택하면 일괄 다운로드");
     expect(wrapper.findAll("button").length).toBe(0);
   });
 

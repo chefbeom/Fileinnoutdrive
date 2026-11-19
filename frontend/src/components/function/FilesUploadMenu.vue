@@ -39,7 +39,6 @@ defineProps({
 const emit = defineEmits([
   "toggle",
   "create-folder",
-  "create-hidden-folder",
   "file-change",
   "folder-change",
   "update-upload-concurrency",
@@ -89,18 +88,10 @@ function updateUploadConcurrency(event) {
           </div>
         </RouterLink>
         <div
-          class="px-4 py-2.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-gray-800 dark:text-gray-200"
-          :class="vaultMode ? 'rounded-b-xl' : ''"
+          class="px-4 py-2.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer rounded-b-xl text-gray-800 dark:text-gray-200"
           @click="emit('create-folder')"
         >
           새 폴더 만들기
-        </div>
-        <div
-          v-if="!vaultMode"
-          class="px-4 py-2.5 text-sm hover:bg-indigo-50 dark:hover:bg-gray-700 cursor-pointer rounded-b-xl text-indigo-700 dark:text-indigo-300 font-medium"
-          @click="emit('create-hidden-folder')"
-        >
-          비밀 폴더 만들기 (숨김)
         </div>
       </div>
     </div>

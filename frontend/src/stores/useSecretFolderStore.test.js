@@ -200,4 +200,27 @@ describe("useSecretFolderStore", () => {
     await expect(configPromise).resolves.toMatchObject({ idx: 91 });
     expect(getSecretFolderTokensHeader()).toContain("folder-91");
   });
+
+  it("defaults hidden=true with wasHidden=false when converting a normal folder to a secret folder", async () => {
+    configureHiddenFolderApi.mockResolvedValueOnce({ idx: 44, hiddenFolder: true, pinEnabled: false });
+    const store = useSecretFolderStore();
+
+    const convertPromise = store.openConfigureHiddenFolderDialog({
+      id: 44,
+      name: "WorkDocs",
+      hiddenFolder: false,
+      pinEnabled: false,
+    });
+    expect(store.folderDialog.wasHidden).toBe(false);
+    expect(store.folderDialog.hidden).toBe(true);
+
+    await expect(store.submitFolderDialog({ hidden: true, pinEnabled: false })).resolves.toMatchObject({ idx: 44, hiddenFolder: true });
+    await expect(convertPromise).resolves.toMatchObject({ idx: 44 });
+    expect(configureHiddenFolderApi).toHaveBeenCalledWith(44, {
+      hidden: true,
+      pinEnabled: false,
+      pin: undefined,
+      currentPin: undefined,
+    });
+  });
 });
