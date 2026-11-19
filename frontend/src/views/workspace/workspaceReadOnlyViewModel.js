@@ -21,6 +21,27 @@ export function formatReadOnlyDateTime(value) {
   }).format(date);
 }
 
+export function sanitizeReadOnlyAssetUrl(value = "", baseOrigin = "") {
+  const raw = String(value || "").trim();
+  if (!raw || /[\u0000-\u001F\u007F]/.test(raw)) return "";
+
+  const origin = baseOrigin ||
+    globalThis.window?.location?.origin ||
+    globalThis.location?.origin ||
+    "http://localhost";
+
+  try {
+    const parsed = new URL(raw, origin);
+    if (["http:", "https:"].includes(parsed.protocol)) {
+      return raw;
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
+}
+
 export function normalizeReadOnlyAsset(asset = {}, workspaceId = null) {
   return {
     id: asset.idx ?? asset.id ?? null,
@@ -31,8 +52,8 @@ export function normalizeReadOnlyAsset(asset = {}, workspaceId = null) {
     objectKey: asset.objectKey || asset.fileSavePath || "",
     contentType: asset.contentType || "application/octet-stream",
     fileSize: Number(asset.fileSize || 0),
-    previewUrl: asset.previewUrl || "",
-    downloadUrl: asset.downloadUrl || asset.presignedDownloadUrl || "",
+    previewUrl: sanitizeReadOnlyAssetUrl(asset.previewUrl),
+    downloadUrl: sanitizeReadOnlyAssetUrl(asset.downloadUrl || asset.presignedDownloadUrl),
     createdAt: asset.createdAt || null,
     createdAtLabel: formatReadOnlyDateTime(asset.createdAt),
     fileSizeLabel: formatReadOnlyBytes(asset.fileSize),

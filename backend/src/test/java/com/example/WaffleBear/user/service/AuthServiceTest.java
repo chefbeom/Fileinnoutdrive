@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
@@ -128,6 +129,28 @@ class AuthServiceTest {
         authService.logout("refresh-token");
 
         verify(refreshTokenRepository).deleteByTokenHash(hash("refresh-token"));
+    }
+
+    @Test
+    void reissueAndResolveRejectExpiredDatabaseRefreshTokenEvenBeforeJwtExpiry() {
+        String refreshToken = "db-expired-refresh-token";
+        RefreshToken expiredRow = RefreshToken.builder()
+                .id(31L)
+                .email("user@example.com")
+                .tokenHash(hash(refreshToken))
+                .expiryDate(LocalDateTime.now().minusSeconds(5))
+                .build();
+
+        when(jwtUtil.isExpired(refreshToken)).thenReturn(false);
+        when(jwtUtil.getCategory(refreshToken)).thenReturn("refresh");
+        when(refreshTokenRepository.findFirstByTokenHashOrderByIdDesc(hash(refreshToken)))
+                .thenReturn(Optional.of(expiredRow));
+
+        assertThatThrownBy(() -> authService.reissue(refreshToken))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Refresh token is expired.");
+        verify(refreshTokenRepository).delete(expiredRow);
+        assertThat(authService.resolveUserByRefreshToken(refreshToken)).isNull();
     }
 
     private static String hash(String value) {

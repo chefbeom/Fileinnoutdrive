@@ -23,6 +23,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
+import java.net.URI;
+import java.util.Locale;
 import java.util.Map;
 
 @Service
@@ -94,6 +96,10 @@ public class ChatMessageService {
     @Transactional
     public ChatMessagesDto.ListRes saveMessage(Long roomIdx, ChatMessagesDto.Send req, Long senderIdx) {
         validateRoomMembership(roomIdx, senderIdx);
+        if (req == null) {
+            throw new IllegalArgumentException("메시지 요청이 비어 있습니다.");
+        }
+        validateSafeFileUrl(req.getFileUrl());
         ChatRooms room = chatRoomRepository.findByIdWithLock(roomIdx)
                 .orElseThrow(() -> new RuntimeException("방을 찾을 수 없습니다."));
         User user = userRepository.findById(senderIdx)
@@ -169,6 +175,31 @@ public class ChatMessageService {
     private void validateRoomMembership(Long roomIdx, Long userIdx) {
         if (!participantsRepository.existsByChatRoomsIdxAndUsersIdx(roomIdx, userIdx)) {
             throw new IllegalArgumentException("해당 채팅방 접근 권한이 없습니다.");
+        }
+    }
+
+    private void validateSafeFileUrl(String fileUrl) {
+        if (fileUrl == null || fileUrl.isBlank()) {
+            return;
+        }
+        String trimmed = fileUrl.trim();
+        if (trimmed.chars().anyMatch(ch -> ch < 32 || ch == 127)) {
+            throw new IllegalArgumentException("유효하지 않은 파일 URL입니다.");
+        }
+        if (trimmed.startsWith("/")) {
+            if (trimmed.startsWith("//")) {
+                throw new IllegalArgumentException("유효하지 않은 파일 URL입니다.");
+            }
+            return;
+        }
+        try {
+            URI parsed = URI.create(trimmed);
+            String scheme = parsed.getScheme() == null ? "" : parsed.getScheme().toLowerCase(Locale.ROOT);
+            if (!"http".equals(scheme) && !"https".equals(scheme)) {
+                throw new IllegalArgumentException("유효하지 않은 파일 URL입니다.");
+            }
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("유효하지 않은 파일 URL입니다.");
         }
     }
 

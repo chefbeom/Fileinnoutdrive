@@ -9,13 +9,16 @@ import com.example.WaffleBear.user.model.AuthUserDetails;
 import com.example.WaffleBear.user.model.User;
 import com.example.WaffleBear.user.model.UserDto;
 import com.example.WaffleBear.user.repository.UserRepository;
+import com.example.WaffleBear.workspace.repository.PostRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -27,6 +30,9 @@ public class UserService implements UserDetailsService {
     private final PasswordEncoder passwordEncoder;
     private final EmailVerifyRepository emailVerifyRepository;
     private final EmailVerifyService emailVerifyService;
+
+    @Autowired(required = false)
+    private PostRepository postRepository;
 
     @Value("${spring.mail.username:}")
     private String mailUsername;
@@ -61,8 +67,15 @@ public class UserService implements UserDetailsService {
         return UserDto.SignupRes.from(user);
     }
 
+    @Transactional
     public void verifyEmail(String token) {
-        EmailVerify verificationToken = emailVerifyRepository.findByToken(token)
+        String normalizedToken = token == null ? "" : token.trim();
+        if (normalizedToken.isEmpty()
+                || (postRepository != null && postRepository.findByUUID(normalizedToken).isPresent())) {
+            throw new RuntimeException("invalid verify token");
+        }
+
+        EmailVerify verificationToken = emailVerifyRepository.findByToken(normalizedToken)
                 .orElseThrow(() -> new RuntimeException("invalid verify token"));
 
         if (verificationToken.getExpiryDate().isBefore(LocalDateTime.now())) {
@@ -73,6 +86,7 @@ public class UserService implements UserDetailsService {
                 .orElseThrow(() -> new RuntimeException("user not found"));
 
         user.setEnable(true);
+        userRepository.save(user);
         emailVerifyRepository.delete(verificationToken);
     }
 

@@ -66,13 +66,25 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                     accessor.setUser(authenticate(accessor));
                 }
 
-                if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
-                    authorizeSubscription(accessor);
-                }
+                authorizeInboundMessage(accessor);
 
                 return message;
             }
         });
+    }
+
+    void authorizeInboundMessage(StompHeaderAccessor accessor) {
+        if (accessor == null || accessor.getCommand() == null) {
+            return;
+        }
+
+        if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
+            authorizeSubscription(accessor);
+        }
+
+        if (StompCommand.SEND.equals(accessor.getCommand())) {
+            requireUser((Authentication) accessor.getUser());
+        }
     }
 
     Authentication authenticate(StompHeaderAccessor accessor) {
@@ -99,7 +111,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 throw new IllegalArgumentException("Websocket user access blocked");
             }
             String email = jwtUtil.getEmail(token);
-            String role = jwtUtil.getRole(token);
+            String tokenRole = jwtUtil.getRole(token);
+            String role = resolveRole(userEntity, tokenRole);
             AuthUserDetails user = AuthUserDetails.builder()
                     .idx(idx)
                     .email(email)
@@ -117,31 +130,47 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private void authorizeSubscription(StompHeaderAccessor accessor) {
         String destination = accessor.getDestination();
+        if (destination == null || destination.isBlank()) {
+            throw new RuntimeException("Missing subscription destination");
+        }
         Authentication auth = (Authentication) accessor.getUser();
+        AuthUserDetails user = requireUser(auth);
 
-        if (destination != null && destination.startsWith("/sub/chat/room/")) {
-            Long roomId = Long.parseLong(destination.replace("/sub/chat/room/", ""));
-            AuthUserDetails user = requireUser(auth);
+        if (destination.startsWith("/sub/chat/room/")) {
+            Long roomId = parseDestinationTargetId(destination, "/sub/chat/room/");
             if (!chatRoomService.isMember(roomId, user.getIdx())) {
                 throw new RuntimeException("No chat room access");
             }
         }
 
-        if (destination != null && destination.startsWith("/sub/workspace/assets/")) {
-            Long workspaceId = Long.parseLong(destination.replace("/sub/workspace/assets/", ""));
-            AuthUserDetails user = requireUser(auth);
+        if (destination.startsWith("/sub/workspace/assets/")) {
+            Long workspaceId = parseDestinationTargetId(destination, "/sub/workspace/assets/");
             if (userPostRepository.findByUser_IdxAndWorkspace_Idx(user.getIdx(), workspaceId).isEmpty()) {
                 throw new RuntimeException("No workspace access");
             }
         }
 
-        if (destination != null && destination.startsWith("/sub/workspace/comments/")) {
-            Long workspaceId = Long.parseLong(destination.replace("/sub/workspace/comments/", ""));
-            AuthUserDetails user = requireUser(auth);
+        if (destination.startsWith("/sub/workspace/comments/")) {
+            Long workspaceId = parseDestinationTargetId(destination, "/sub/workspace/comments/");
             if (userPostRepository.findByUser_IdxAndWorkspace_Idx(user.getIdx(), workspaceId).isEmpty()) {
                 throw new RuntimeException("No workspace access");
             }
         }
+    }
+
+    private Long parseDestinationTargetId(String destination, String prefix) {
+        String rawId = destination.substring(prefix.length()).trim();
+        if (!rawId.matches("^[0-9]+$")) {
+            throw new RuntimeException("Invalid subscription target id");
+        }
+        return Long.parseLong(rawId);
+    }
+
+    private String resolveRole(User userEntity, String fallbackRole) {
+        if (userEntity != null && userEntity.getRole() != null && !userEntity.getRole().isBlank()) {
+            return userEntity.getRole().trim();
+        }
+        return (fallbackRole != null && !fallbackRole.isBlank()) ? fallbackRole.trim() : "ROLE_USER";
     }
 
     private AuthUserDetails requireUser(Authentication auth) {

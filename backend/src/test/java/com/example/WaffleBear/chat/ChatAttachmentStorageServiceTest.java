@@ -7,6 +7,7 @@ import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -69,5 +70,35 @@ class ChatAttachmentStorageServiceTest {
                 .hasMessageContaining("이미지는 5MB 이하");
 
         verify(minioClient, never()).putObject(any(PutObjectArgs.class));
+    }
+
+    @Test
+    void uploadChatAttachmentSanitizesPathTraversalFilenameAndForcesOctetStreamForNonImage() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "../../evil.html",
+                "text/html",
+                "<script>alert(1)</script>".getBytes(StandardCharsets.UTF_8)
+        );
+        when(minioProperties.getBucket_cloud()).thenReturn("fileinnout-test");
+        when(minioPresignedUrlService.getPresignedObjectUrl(any(GetPresignedObjectUrlArgs.class)))
+                .thenReturn("http://download.example/chat/evil.html");
+
+        storageService.uploadChatAttachment(10L, 99L, file);
+
+        ArgumentCaptor<PutObjectArgs> putCaptor = ArgumentCaptor.forClass(PutObjectArgs.class);
+        verify(minioClient).putObject(putCaptor.capture());
+        assertThat(putCaptor.getValue().object())
+                .startsWith("chat/10/99/")
+                .endsWith("_evil.html")
+                .doesNotContain("..");
+        assertThat(putCaptor.getValue().contentType()).isEqualTo("application/octet-stream");
+
+        ArgumentCaptor<GetPresignedObjectUrlArgs> urlCaptor = ArgumentCaptor.forClass(GetPresignedObjectUrlArgs.class);
+        verify(minioPresignedUrlService).getPresignedObjectUrl(urlCaptor.capture());
+        assertThat(urlCaptor.getValue().extraQueryParams().get("response-content-type"))
+                .containsExactly("application/octet-stream");
+        assertThat(urlCaptor.getValue().extraQueryParams().get("response-content-disposition"))
+                .anySatisfy(value -> assertThat(value).startsWith("attachment;"));
     }
 }

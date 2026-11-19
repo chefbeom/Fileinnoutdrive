@@ -56,6 +56,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -340,6 +342,100 @@ class StorageShareServicesTest {
         assertEquals(ApprovalStatus.APPROVED, approval.getStatus());
         assertEquals(SharedStorageStatus.TRASHED, storage.getStatus());
         assertNotNull(storage.getPurgeAt());
+    }
+
+    @Test
+    void completeUploadRejectsFinalObjectKeyOwnedByAnotherUserOrWithTraversal() {
+        User attacker = User.builder().idx(1L).email("attacker@example.com").name("공격자").build();
+        SharedStorage storage = SharedStorage.builder()
+                .idx(50L)
+                .name("공유 저장소")
+                .creator(attacker)
+                .status(SharedStorageStatus.ACTIVE)
+                .build();
+        SharedStorageMember membership = SharedStorageMember.builder()
+                .idx(501L)
+                .storage(storage)
+                .user(attacker)
+                .role(MemberRole.OWNER)
+                .status(MemberStatus.ACTIVE)
+                .contributionBytes(10L * GB)
+                .build();
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(attacker));
+        when(sharedStorageRepository.findWithCreatorByIdx(50L)).thenReturn(Optional.of(storage));
+        when(sharedStorageMemberRepository.findByStorage_IdxAndUser_Idx(50L, 1L)).thenReturn(Optional.of(membership));
+
+        assertThrows(BaseException.class, () -> sharedStorageService.completeUpload(
+                1L,
+                50L,
+                new StorageShareDto.CompleteUploadReq(
+                        null,
+                        null,
+                        "secret.pdf",
+                        "pdf",
+                        128L,
+                        "shared-storage/50/2_other-user.pdf",
+                        List.of()
+                )
+        ));
+        assertThrows(BaseException.class, () -> sharedStorageService.completeUpload(
+                1L,
+                50L,
+                new StorageShareDto.CompleteUploadReq(
+                        null,
+                        null,
+                        "secret.pdf",
+                        "pdf",
+                        128L,
+                        "shared-storage/50/1_uuid_../../secret.pdf",
+                        List.of()
+                )
+        ));
+
+        verify(uploadObjectStorageService, never()).composeFinalObject(anyString(), anyList());
+        verify(uploadObjectStorageService, never()).deleteObjectKeys(anyList());
+    }
+
+    @Test
+    void completeUploadRejectsForeignChunkObjectKeysBeforeComposeOrDelete() {
+        User attacker = User.builder().idx(1L).email("attacker@example.com").name("공격자").build();
+        SharedStorage storage = SharedStorage.builder()
+                .idx(50L)
+                .name("공유 저장소")
+                .creator(attacker)
+                .status(SharedStorageStatus.ACTIVE)
+                .build();
+        SharedStorageMember membership = SharedStorageMember.builder()
+                .idx(501L)
+                .storage(storage)
+                .user(attacker)
+                .role(MemberRole.OWNER)
+                .status(MemberStatus.ACTIVE)
+                .contributionBytes(10L * GB)
+                .build();
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(attacker));
+        when(sharedStorageRepository.findWithCreatorByIdx(50L)).thenReturn(Optional.of(storage));
+        when(sharedStorageMemberRepository.findByStorage_IdxAndUser_Idx(50L, 1L)).thenReturn(Optional.of(membership));
+
+        assertThrows(BaseException.class, () -> sharedStorageService.completeUpload(
+                1L,
+                50L,
+                new StorageShareDto.CompleteUploadReq(
+                        null,
+                        null,
+                        "stolen.pdf",
+                        "pdf",
+                        128L,
+                        "shared-storage/50/1_valid-uuid_stolen.pdf",
+                        List.of("2/victim-secret.pdf")
+                )
+        ));
+
+        verify(uploadObjectStorageService, never()).ensureAllUploaded(anyList());
+        verify(uploadObjectStorageService, never()).composeFinalObject(anyString(), anyList());
+        verify(uploadObjectStorageService, never()).deleteObjectKeys(anyList());
     }
 
     private static StoragePlanService.StorageQuota quota(long totalBytes) {

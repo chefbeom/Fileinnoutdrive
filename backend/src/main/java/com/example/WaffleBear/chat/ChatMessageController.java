@@ -47,8 +47,11 @@ public class ChatMessageController {
             @Payload ChatMessagesDto.Send req,
             Principal principal) {
 
-        Authentication auth = (Authentication) principal;
-        AuthUserDetails user = (AuthUserDetails) auth.getPrincipal();
+        if (!(principal instanceof Authentication auth)
+                || !(auth.getPrincipal() instanceof AuthUserDetails user)) {
+            return;
+        }
+        // Principal/AuthUserDetails already verified above
 
         if (user == null || user.getIdx() == null) {
             // 인증 정보가 없으면 처리 중단

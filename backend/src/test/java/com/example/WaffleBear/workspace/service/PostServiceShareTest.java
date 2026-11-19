@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static com.example.WaffleBear.common.model.BaseResponseStatus.ADMIN_ONLY_ACTION;
+import static com.example.WaffleBear.common.model.BaseResponseStatus.WORKSPACE_NOT_ACCESSIBLE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -182,6 +183,55 @@ class PostServiceShareTest {
 
         verify(postRepository, never()).save(any(Post.class));
     }
+    @Test
+    void resolveByUuidRejectsNonShareablePublicWorkspaceAutoJoin() {
+        User visitor = user(2L, "visitor@example.com");
+        Post workspace = Post.builder()
+                .idx(42L)
+                .title("Private Public Flag")
+                .contents("{}")
+                .type(false)
+                .status(isShare.Public)
+                .UUID("non-shareable-uuid")
+                .build();
+
+        when(postRepository.findByUUID("non-shareable-uuid")).thenReturn(Optional.of(workspace));
+        when(userPostRepository.findByUser_IdxAndWorkspace_Idx(2L, 42L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> postService.resolveByUuid(2L, "non-shareable-uuid"))
+                .isInstanceOfSatisfying(BaseException.class, error ->
+                        assertThat(error.getStatus()).isEqualTo(WORKSPACE_NOT_ACCESSIBLE));
+
+        verify(userPostRepository, never()).save(any(UserPost.class));
+    }
+
+    @Test
+    void adminCannotDemoteOrKickSelfOrFellowAdmin() {
+        User actorAdmin = user(1L, "admin1@example.com");
+        User fellowAdmin = user(2L, "admin2@example.com");
+        Post workspace = sharedWorkspace();
+        UserPost actorRelation = relation(actorAdmin, workspace, AccessRole.ADMIN);
+        UserPost fellowRelation = relation(fellowAdmin, workspace, AccessRole.ADMIN);
+
+        when(userPostRepository.findByUser_IdxAndWorkspace_Idx(1L, 42L)).thenReturn(Optional.of(actorRelation));
+        when(userPostRepository.findByUser_IdxAndWorkspace_Idx(2L, 42L)).thenReturn(Optional.of(fellowRelation));
+
+        assertThatThrownBy(() -> postService.changeSingleRole(42L, authUser(actorAdmin), 1L, "READ"))
+                .isInstanceOfSatisfying(BaseException.class, error ->
+                        assertThat(error.getStatus()).isEqualTo(ADMIN_ONLY_ACTION));
+        assertThatThrownBy(() -> postService.changeSingleRole(42L, authUser(actorAdmin), 2L, "READ"))
+                .isInstanceOfSatisfying(BaseException.class, error ->
+                        assertThat(error.getStatus()).isEqualTo(ADMIN_ONLY_ACTION));
+        assertThatThrownBy(() -> postService.kickMember(42L, authUser(actorAdmin), 1L))
+                .isInstanceOfSatisfying(BaseException.class, error ->
+                        assertThat(error.getStatus()).isEqualTo(ADMIN_ONLY_ACTION));
+        assertThatThrownBy(() -> postService.kickMember(42L, authUser(actorAdmin), 2L))
+                .isInstanceOfSatisfying(BaseException.class, error ->
+                        assertThat(error.getStatus()).isEqualTo(ADMIN_ONLY_ACTION));
+
+        verify(userPostRepository, never()).deleteByUser_IdxAndWorkspace_Idx(any(), any());
+    }
+
     private User user(Long idx, String email) {
         return User.builder()
                 .idx(idx)

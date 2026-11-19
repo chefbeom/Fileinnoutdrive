@@ -75,6 +75,30 @@ class ShareResponseMapperTest {
     }
 
     @Test
+    void omitsDirectSharedThumbnailUrlWhenShareIsPasswordProtected() {
+        User owner = user(1L, "Owner", "owner@example.com");
+        User recipient = user(2L, "Reader", "reader@example.com");
+        FileInfo file = file(16L, owner, "secret-clip.mp4", "mp4", false);
+        FileShare share = FileShare.builder()
+                .idx(106L)
+                .file(file)
+                .owner(owner)
+                .recipient(recipient)
+                .permission(FileSharePermission.READ)
+                .status(FileShareStatus.ACCEPTED)
+                .passwordHash("{noop}secret")
+                .build();
+
+        when(shareFileObjectStorageService.presignedUrlExpirySeconds()).thenReturn(300);
+
+        var result = shareResponseMapper.toSharedFileRes(share);
+
+        assertThat(result.passwordProtected()).isTrue();
+        assertThat(result.thumbnailPresignedUrl()).isNull();
+        verify(shareFileObjectStorageService, never()).generateThumbnailUrl("1/secret-clip.mp4");
+    }
+
+    @Test
     void mapsSentShareRecipientsAndFileListItemUrls() {
         User owner = user(1L, "Owner", "owner@example.com");
         User firstRecipient = user(2L, "Writer", "writer@example.com");

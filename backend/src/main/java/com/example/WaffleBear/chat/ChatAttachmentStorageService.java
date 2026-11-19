@@ -7,9 +7,13 @@ import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.http.Method;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 @Service
@@ -27,43 +31,83 @@ public class ChatAttachmentStorageService {
     private final MinioProperties minioProperties;
 
     public String uploadChatAttachment(Long roomIdx, Long userIdx, MultipartFile file) {
-        String contentType = file.getContentType();
-        validateSize(file, contentType);
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("업로드할 파일이 비어 있습니다.");
+        }
+
+        String normalizedContentType = normalizeContentType(file.getContentType());
+        boolean isImage = IMAGE_TYPES.contains(normalizedContentType);
+        validateSize(file, isImage);
+
+        String safeFileName = sanitizeFileName(file.getOriginalFilename());
+        String storedContentType = isImage ? normalizedContentType : "application/octet-stream";
 
         try {
             String objectKey = "chat/" + roomIdx + "/" + userIdx + "/"
-                    + System.currentTimeMillis() + "_" + file.getOriginalFilename();
+                    + System.currentTimeMillis() + "_" + safeFileName;
 
             minioClient.putObject(
                     PutObjectArgs.builder()
                             .bucket(minioProperties.getBucket_cloud())
                             .object(objectKey)
                             .stream(file.getInputStream(), file.getSize(), -1)
-                            .contentType(contentType)
+                            .contentType(storedContentType)
                             .build()
             );
 
-            return minioPresignedUrlService.getPresignedObjectUrl(
-                    GetPresignedObjectUrlArgs.builder()
-                            .method(Method.GET)
-                            .bucket(minioProperties.getBucket_cloud())
-                            .object(objectKey)
-                            .expiry(DOWNLOAD_URL_EXPIRY_SECONDS)
-                            .build()
-            );
+            GetPresignedObjectUrlArgs.Builder urlArgs = GetPresignedObjectUrlArgs.builder()
+                    .method(Method.GET)
+                    .bucket(minioProperties.getBucket_cloud())
+                    .object(objectKey)
+                    .expiry(DOWNLOAD_URL_EXPIRY_SECONDS);
+            if (!isImage) {
+                urlArgs.extraQueryParams(Map.of(
+                        "response-content-disposition",
+                        ContentDisposition.attachment()
+                                .filename(safeFileName, StandardCharsets.UTF_8)
+                                .build()
+                                .toString(),
+                        "response-content-type",
+                        "application/octet-stream"
+                ));
+            }
+
+            return minioPresignedUrlService.getPresignedObjectUrl(urlArgs.build());
         } catch (Exception e) {
             throw new RuntimeException("파일 업로드 실패: " + e.getMessage());
         }
     }
 
-    private void validateSize(MultipartFile file, String contentType) {
-        boolean isImage = IMAGE_TYPES.contains(contentType);
-
+    private void validateSize(MultipartFile file, boolean isImage) {
         if (isImage && file.getSize() > MAX_IMAGE_SIZE) {
             throw new IllegalArgumentException("이미지는 5MB 이하만 업로드 가능합니다.");
         }
         if (!isImage && file.getSize() > MAX_FILE_SIZE) {
             throw new IllegalArgumentException("파일은 30MB 이하만 업로드 가능합니다.");
         }
+    }
+
+    private String normalizeContentType(String contentType) {
+        if (contentType == null) {
+            return "";
+        }
+        String baseType = contentType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
+        return baseType;
+    }
+
+    private String sanitizeFileName(String originalFilename) {
+        String normalized = originalFilename == null ? "" : originalFilename.replace('\\', '/').trim();
+        int slashIndex = normalized.lastIndexOf('/');
+        if (slashIndex >= 0) {
+            normalized = normalized.substring(slashIndex + 1);
+        }
+        if (normalized.isBlank() || normalized.contains("\u0000") || normalized.contains("..") || ".".equals(normalized)) {
+            throw new IllegalArgumentException("유효하지 않은 파일명입니다.");
+        }
+        String sanitized = normalized.replaceAll("[^A-Za-z0-9가-힣._-]", "_");
+        if (sanitized.isBlank() || sanitized.replace(".", "").isBlank()) {
+            throw new IllegalArgumentException("유효하지 않은 파일명입니다.");
+        }
+        return sanitized;
     }
 }

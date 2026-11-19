@@ -12,6 +12,7 @@ import {
   renderReadOnlyBlock,
   renderReadOnlyContent,
   safeReadOnlyUrl,
+  sanitizeReadOnlyAssetUrl,
 } from "./workspaceReadOnlyViewModel.js";
 
 describe("workspaceReadOnlyViewModel", () => {
@@ -59,6 +60,16 @@ describe("workspaceReadOnlyViewModel", () => {
     expect(escapeReadOnlyHtml("<script>alert('x')</script>")).toBe("&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;");
     expect(safeReadOnlyUrl("https://example.com/a?b=1", "https://fileinnout.local")).toBe("https://example.com/a?b=1");
     expect(safeReadOnlyUrl("javascript:alert(1)", "https://fileinnout.local")).toBe("");
+    expect(sanitizeReadOnlyAssetUrl("javascript:alert(1)")).toBe("");
+    expect(sanitizeReadOnlyAssetUrl("data:text/html,<script>alert(1)</script>")).toBe("");
+    expect(normalizeReadOnlyAsset({
+      idx: 3,
+      previewUrl: "javascript:alert(1)",
+      presignedDownloadUrl: "data:text/html,evil",
+    })).toMatchObject({
+      previewUrl: "",
+      downloadUrl: "",
+    });
   });
 
   it("renders supported editor blocks safely", () => {

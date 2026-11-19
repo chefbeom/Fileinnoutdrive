@@ -11,6 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -76,5 +77,18 @@ class ChatMessageServicePermissionTest {
                 .hasMessageContaining("접근 권한");
 
         verifyNoInteractions(chatAttachmentStorageService);
+    }
+
+    @Test
+    void saveMessageRejectsUnsafeFileUrlScheme() {
+        ChatMessagesDto.Send req = new ChatMessagesDto.Send();
+        ReflectionTestUtils.setField(req, "fileUrl", "javascript:alert(1)");
+        when(participantsRepository.existsByChatRoomsIdxAndUsersIdx(10L, 99L)).thenReturn(true);
+
+        assertThatThrownBy(() -> chatMessageService.saveMessage(10L, req, 99L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("유효하지 않은 파일 URL");
+
+        verify(chatRoomRepository, never()).findByIdWithLock(10L);
     }
 }

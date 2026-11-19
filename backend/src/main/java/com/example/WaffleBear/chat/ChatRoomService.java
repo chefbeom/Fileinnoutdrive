@@ -253,6 +253,7 @@ public class ChatRoomService {
 
     @Transactional
     public void exit(Long roomIdx, Long userIdx) {
+        validateRoomMembership(roomIdx, userIdx);
         User user = userRepository.findById(userIdx)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자입니다. idx: " + userIdx));
 

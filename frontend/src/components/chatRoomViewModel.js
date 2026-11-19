@@ -3,6 +3,26 @@ export const CHAT_IMAGE_UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
 export const CHAT_FILE_UPLOAD_MAX_BYTES = 30 * 1024 * 1024;
 
 const IMAGE_FILE_EXTENSION_PATTERN = /\.(png|jpe?g|gif|webp|bmp|svg)$/;
+const SAFE_CHAT_URL_PROTOCOLS = new Set(["http:", "https:", "blob:"]);
+
+export function sanitizeChatUrl(rawUrl = "") {
+  const trimmed = String(rawUrl ?? "").trim();
+  if (!trimmed || /[\u0000-\u001F\u007F]/.test(trimmed)) {
+    return null;
+  }
+  if (trimmed.startsWith("/")) {
+    return trimmed.startsWith("//") ? null : trimmed;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (!SAFE_CHAT_URL_PROTOCOLS.has(String(parsed.protocol || "").toLowerCase())) {
+      return null;
+    }
+    return trimmed;
+  } catch {
+    return null;
+  }
+}
 
 const defaultNow = () => new Date().toISOString();
 const defaultIdFactory = () => `${Date.now()}${Math.random()}`;
@@ -29,8 +49,8 @@ export function toChatMessage(payload = {}, options = {}) {
     isPending: Boolean(options.isPending),
     deleted,
     messageUnreadCount: payload.messageUnreadCount ?? 0,
-    profileImageUrl: deleted ? null : (payload.profileImageUrl ?? null),
-    fileUrl: deleted ? null : (payload.fileUrl ?? null),
+    profileImageUrl: deleted ? null : sanitizeChatUrl(payload.profileImageUrl),
+    fileUrl: deleted ? null : sanitizeChatUrl(payload.fileUrl),
     fileName: deleted ? null : (payload.fileName ?? null),
     fileType: deleted ? null : (payload.fileType ?? null),
     fileSize: deleted ? null : (payload.fileSize ?? null),
@@ -267,8 +287,14 @@ export function buildChatFileMessagePayload({ file = {}, fileUrl = "", messageTy
 
 export function buildPendingChatFileMessage({ file = {}, fileUrl = "", sender = "Guest", profileImageUrl = null, now = defaultNow, idFactory = defaultIdFactory } = {}) {
   return {
-    ...buildPendingChatTextMessage({ text: "", sender, profileImageUrl, now, idFactory }),
-    fileUrl,
+    ...buildPendingChatTextMessage({
+      text: "",
+      sender,
+      profileImageUrl: sanitizeChatUrl(profileImageUrl),
+      now,
+      idFactory,
+    }),
+    fileUrl: sanitizeChatUrl(fileUrl),
     fileName: file.name,
     fileType: file.type,
     fileSize: file.size,

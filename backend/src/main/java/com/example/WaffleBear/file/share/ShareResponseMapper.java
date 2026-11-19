@@ -77,7 +77,9 @@ class ShareResponseMapper {
                 file.getUploadDate(),
                 file.getLastModifyDate(),
                 directDownloadUrl,
-                accepted && !expired ? generatePresignedThumbnailUrl(file) : null,
+                accepted && !expired && !share.isPasswordProtected() && !file.isTrashed()
+                        ? generatePresignedThumbnailUrl(file)
+                        : null,
                 shareFileObjectStorageService.presignedUrlExpirySeconds(),
                 true,
                 permission.name(),

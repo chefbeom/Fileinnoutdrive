@@ -149,7 +149,7 @@ public class PostService {
             return PostDto.ResUuidLookup.from(workspace, existingAccess.get().getLevel());
         }
 
-        if (workspace.getStatus() == isShare.Public) {
+        if (Boolean.TRUE.equals(workspace.getType()) && workspace.getStatus() == isShare.Public) {
             User user = ur.findById(userIdx)
                     .orElseThrow(() -> new BaseException(USER_NOT_FOUND));
 
@@ -355,6 +355,10 @@ public class PostService {
         UserPost targetPost = upr.findByUser_IdxAndWorkspace_Idx(targetUserIdx, postIdx)
                 .orElseThrow(() -> new BaseException(WORKSPACE_ACCESS_DENIED));
 
+        if (Objects.equals(admin.getIdx(), targetUserIdx) || targetPost.getLevel() == AccessRole.ADMIN) {
+            throw new BaseException(ADMIN_ONLY_ACTION);
+        }
+
         targetPost.updateLevel(AccessRole.valueOf(newRole));
 
         // 3. SSE로 해당 유저에게 알림 (본인이 같은 페이지에 있으면 새로고침)
@@ -374,6 +378,12 @@ public class PostService {
         }
 
         // 2. 관계 삭제
+        UserPost targetPost = upr.findByUser_IdxAndWorkspace_Idx(targetUserIdx, postIdx)
+                .orElseThrow(() -> new BaseException(WORKSPACE_ACCESS_DENIED));
+        if (Objects.equals(admin.getIdx(), targetUserIdx) || targetPost.getLevel() == AccessRole.ADMIN) {
+            throw new BaseException(ADMIN_ONLY_ACTION);
+        }
+
         upr.deleteByUser_IdxAndWorkspace_Idx(targetUserIdx, postIdx)
                 .orElseThrow(() -> new BaseException(WORKSPACE_ACCESS_DENIED));
 

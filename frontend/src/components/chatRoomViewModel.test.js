@@ -18,6 +18,7 @@ import {
   normalizeChatParticipant,
   participantInitial,
   participantReadLabel,
+  sanitizeChatUrl,
   shouldShowChatDateDivider,
   sortChatMessages,
   toChatMessage,
@@ -140,6 +141,23 @@ describe("chatRoomViewModel", () => {
       fileType: "image/png",
       fileSize: 1024,
       messageType: "IMAGE",
+    });
+
+    expect(sanitizeChatUrl("javascript:alert(1)")).toBeNull();
+    expect(sanitizeChatUrl("data:text/html,<script>alert(1)</script>")).toBeNull();
+    expect(sanitizeChatUrl("//evil.example/a.png")).toBeNull();
+    expect(sanitizeChatUrl("https://cdn.example/photo.png")).toBe("https://cdn.example/photo.png");
+    expect(sanitizeChatUrl("/chat/photo.png")).toBe("/chat/photo.png");
+    expect(toChatMessage({
+      idx: 8,
+      contents: "",
+      fileUrl: "javascript:alert(1)",
+      profileImageUrl: "data:text/html,xss",
+      messageType: "FILE",
+    })).toMatchObject({
+      id: 8,
+      fileUrl: null,
+      profileImageUrl: null,
     });
   });
 });

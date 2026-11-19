@@ -27,18 +27,37 @@ import java.util.Map;
 public class CheckRoomAuthInterceptor implements HandlerInterceptor {
     private final ChatRoomService chatroomService;
 
+    private String resolveRoomId(Map<String, String> pathVariables) {
+        if (pathVariables == null || pathVariables.isEmpty()) {
+            return null;
+        }
+        for (String key : List.of("id", "roomIdx", "roomId")) {
+            String value = pathVariables.get(key);
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         // PathVariable에서 roomId 추출 (예: /chat/room/{roomId})
         Map<String, String> pathVariables = (Map<String, String>) request.getAttribute(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE);
-        String roomIdStr = pathVariables != null ? pathVariables.get("id") : null;
+        String roomIdStr = resolveRoomId(pathVariables);
 
         if (roomIdStr == null) {
             // 초대 로직 등에서 body에 roomId가 있는 경우 처리 (단, 여기서는 PathVariable 위주로 예시)
             return true;
         }
 
-        Long roomId = Long.parseLong(roomIdStr);
+        final Long roomId;
+        try {
+            roomId = Long.parseLong(roomIdStr);
+        } catch (NumberFormatException exception) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid chat room ID.");
+            return false;
+        }
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
 
         if (auth != null && auth.getPrincipal() instanceof AuthUserDetails user) {

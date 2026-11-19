@@ -25,8 +25,9 @@ class WebSocketConfigTest {
 
     private final JwtUtil jwtUtil = mock(JwtUtil.class);
     private final UserRepository userRepository = mock(UserRepository.class);
+    private final ChatRoomService chatRoomService = mock(ChatRoomService.class);
     private final WebSocketConfig config = new WebSocketConfig(
-            mock(ChatRoomService.class),
+            chatRoomService,
             jwtUtil,
             mock(UserPostRepository.class),
             userRepository
@@ -72,6 +73,59 @@ class WebSocketConfigTest {
         assertThat(user.getIdx()).isEqualTo(7L);
         assertThat(user.getEmail()).isEqualTo("user@example.com");
         assertThat(user.getRole()).isEqualTo("ROLE_USER");
+    }
+
+    @Test
+    void usesDatabaseRoleInsteadOfStaleJwtRoleClaimDuringStompConnect() {
+        StompHeaderAccessor accessor = connectAccessor("access-token");
+        when(jwtUtil.getCategory("access-token")).thenReturn("access");
+        when(jwtUtil.getUserIdx("access-token")).thenReturn(7L);
+        when(userRepository.findById(7L)).thenReturn(Optional.of(User.builder()
+                .idx(7L)
+                .email("user@example.com")
+                .role("ROLE_USER")
+                .enable(true)
+                .accountStatus(UserAccountStatus.ACTIVE)
+                .build()));
+        when(jwtUtil.getEmail("access-token")).thenReturn("user@example.com");
+        when(jwtUtil.getRole("access-token")).thenReturn("ROLE_ADMIN");
+
+        Authentication authentication = config.authenticate(accessor);
+
+        AuthUserDetails user = (AuthUserDetails) authentication.getPrincipal();
+        assertThat(user.getRole()).isEqualTo("ROLE_USER");
+        assertThat(authentication.getAuthorities()).extracting("authority").containsExactly("ROLE_USER");
+    }
+
+    @Test
+    void rejectsUnauthenticatedSubscribeAndSendAndNonMemberChatRoomSubscribe() {
+        StompHeaderAccessor unauthSub = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        unauthSub.setDestination("/sub/game/openhexagon/lobby");
+        assertThatThrownBy(() -> config.authorizeInboundMessage(unauthSub))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Unauthenticated websocket user");
+
+        StompHeaderAccessor unauthSend = StompHeaderAccessor.create(StompCommand.SEND);
+        unauthSend.setDestination("/pub/chat/10");
+        assertThatThrownBy(() -> config.authorizeInboundMessage(unauthSend))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Unauthenticated websocket user");
+
+        when(jwtUtil.getCategory("access-token")).thenReturn("access");
+        when(jwtUtil.getUserIdx("access-token")).thenReturn(7L);
+        when(userRepository.findById(7L)).thenReturn(Optional.of(user(true, UserAccountStatus.ACTIVE)));
+        when(jwtUtil.getEmail("access-token")).thenReturn("user@example.com");
+        when(jwtUtil.getRole("access-token")).thenReturn("ROLE_USER");
+        Authentication auth = config.authenticate(connectAccessor("access-token"));
+
+        StompHeaderAccessor nonMemberRoomSub = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        nonMemberRoomSub.setDestination("/sub/chat/room/10");
+        nonMemberRoomSub.setUser(auth);
+        when(chatRoomService.isMember(10L, 7L)).thenReturn(false);
+
+        assertThatThrownBy(() -> config.authorizeInboundMessage(nonMemberRoomSub))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("No chat room access");
     }
 
     private static User user(boolean enabled, UserAccountStatus status) {

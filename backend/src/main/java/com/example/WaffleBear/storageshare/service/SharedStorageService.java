@@ -770,22 +770,25 @@ public class SharedStorageService {
         SharedStorage storage = requireActiveStorage(storageIdx);
         requireActiveMembership(storageIdx, userIdx);
 
-        if (request == null || request.finalObjectKey() == null || request.finalObjectKey().isBlank()) {
+        if (request == null) {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
         }
-        String finalObjectKey = request.finalObjectKey().trim();
-        String expectedPrefix = "shared-storage/" + storageIdx + "/";
-        if (!finalObjectKey.startsWith(expectedPrefix)) {
+        String finalObjectKey = normalizeOwnedSharedStorageFinalObjectKey(
+                storageIdx,
+                userIdx,
+                request.finalObjectKey()
+        );
+        boolean alreadyBound = sharedStorageNodeRepository
+                .findAllByStorage_IdxOrderByNodeTypeDescNameAsc(storageIdx)
+                .stream()
+                .map(SharedStorageNode::getObjectKey)
+                .filter(Objects::nonNull)
+                .anyMatch(existingKey -> existingKey.trim().equals(finalObjectKey));
+        if (alreadyBound) {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
         }
 
-        List<String> chunkKeys = request.chunkObjectKeys() == null
-                ? List.of()
-                : request.chunkObjectKeys().stream()
-                .filter(Objects::nonNull)
-                .map(String::trim)
-                .filter(key -> !key.isBlank())
-                .toList();
+        List<String> chunkKeys = normalizeOwnedSharedStorageChunkKeys(finalObjectKey, request.chunkObjectKeys());
 
         if (chunkKeys.isEmpty()) {
             uploadObjectStorageService.ensureUploadedObjectExists(finalObjectKey);
@@ -1620,6 +1623,59 @@ public class SharedStorageService {
     private String buildSharedStorageObjectKey(Long storageIdx, Long uploaderIdx, String originName) {
         String safeName = originName.replaceAll("[^A-Za-z0-9._-]", "_");
         return "shared-storage/" + storageIdx + "/" + uploaderIdx + "_" + UUID.randomUUID() + "_" + safeName;
+    }
+
+    private String normalizeOwnedSharedStorageFinalObjectKey(Long storageIdx, Long userIdx, String rawFinalObjectKey) {
+        String normalized = rawFinalObjectKey == null ? "" : rawFinalObjectKey.trim();
+        String expectedPrefix = "shared-storage/" + storageIdx + "/" + userIdx + "_";
+        if (normalized.isEmpty()
+                || !normalized.startsWith(expectedPrefix)
+                || containsUnsafeObjectKeyToken(normalized)
+                || normalized.contains(".part.")) {
+            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
+        String suffix = normalized.substring(expectedPrefix.length());
+        if (suffix.isEmpty() || suffix.contains("/")) {
+            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
+        return normalized;
+    }
+
+    private List<String> normalizeOwnedSharedStorageChunkKeys(String finalObjectKey, List<String> rawChunkKeys) {
+        if (rawChunkKeys == null || rawChunkKeys.isEmpty()) {
+            return List.of();
+        }
+
+        String partPrefix = finalObjectKey + ".part.";
+        List<String> normalizedKeys = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (String rawKey : rawChunkKeys) {
+            if (rawKey == null) {
+                continue;
+            }
+            String trimmed = rawKey.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            if (!trimmed.startsWith(partPrefix) || containsUnsafeObjectKeyToken(trimmed)) {
+                throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+            }
+            String partIndex = trimmed.substring(partPrefix.length());
+            if (!partIndex.matches("^[0-9]+$")) {
+                throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+            }
+            if (seen.add(trimmed)) {
+                normalizedKeys.add(trimmed);
+            }
+        }
+        return normalizedKeys;
+    }
+
+    private boolean containsUnsafeObjectKeyToken(String key) {
+        if (key.contains("..") || key.contains("\\")) {
+            return true;
+        }
+        return key.chars().anyMatch(ch -> ch < 32 || ch == 127);
     }
 
     private List<Long> calculateChunkSizes(long fileSize) {

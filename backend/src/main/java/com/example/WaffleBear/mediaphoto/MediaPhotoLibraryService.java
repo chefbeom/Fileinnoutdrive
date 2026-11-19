@@ -1,6 +1,7 @@
 package com.example.WaffleBear.mediaphoto;
 
 import com.example.WaffleBear.common.exception.BaseException;
+import com.example.WaffleBear.common.model.BaseResponseStatus;
 import com.example.WaffleBear.file.secret.SecretAccessGuard;
 import com.example.WaffleBear.user.model.User;
 import com.example.WaffleBear.user.repository.UserRepository;
@@ -10,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -21,6 +23,7 @@ import static com.example.WaffleBear.common.model.BaseResponseStatus.USER_NOT_FO
 @RequiredArgsConstructor
 public class MediaPhotoLibraryService {
 
+    private static final int MAX_STATE_JSON_BYTES = 524_288;
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
 
@@ -105,7 +108,13 @@ public class MediaPhotoLibraryService {
 
     private String writeStateJson(Map<String, Object> map) {
         try {
-            return objectMapper.writeValueAsString(map != null ? map : Map.of());
+            String serialized = objectMapper.writeValueAsString(map != null ? map : Map.of());
+            if (serialized.getBytes(StandardCharsets.UTF_8).length > MAX_STATE_JSON_BYTES) {
+                throw new BaseException(BaseResponseStatus.REQUEST_ERROR);
+            }
+            return serialized;
+        } catch (BaseException exception) {
+            throw exception;
         } catch (Exception exception) {
             throw new BaseException(FAIL);
         }

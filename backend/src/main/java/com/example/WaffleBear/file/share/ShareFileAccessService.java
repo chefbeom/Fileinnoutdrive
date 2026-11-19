@@ -9,6 +9,7 @@ import com.example.WaffleBear.file.manage.dto.FileManageDto;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
 import com.example.WaffleBear.file.secret.PinAttemptLimiter;
+import com.example.WaffleBear.file.secret.SecretAccessGuard;
 import com.example.WaffleBear.file.share.model.FileShare;
 import com.example.WaffleBear.file.share.model.FileShareAuditAction;
 import com.example.WaffleBear.file.share.model.FileShareStatus;
@@ -45,6 +46,9 @@ class ShareFileAccessService {
     private final PasswordEncoder passwordEncoder;
     private final TransactionTemplate transactionTemplate;
     private PinAttemptLimiter pinAttemptLimiter = new PinAttemptLimiter();
+
+    @Autowired(required = false)
+    private SecretAccessGuard secretAccessGuard;
 
     @Autowired(required = false)
     public void setPinAttemptLimiter(PinAttemptLimiter pinAttemptLimiter) {
@@ -496,6 +500,9 @@ class ShareFileAccessService {
         if (ShareFileTree.resolveNodeType(parent) != FileNodeType.FOLDER || parent.isTrashed()) {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
         }
+        if (secretAccessGuard != null) {
+            secretAccessGuard.assertNodeAccess(userIdx, parent, true);
+        }
 
         return parent;
     }
@@ -533,7 +540,7 @@ class ShareFileAccessService {
         }
 
         FileInfo existingFile = existing.get();
-        if (ShareFileTree.resolveNodeType(existingFile) == FileNodeType.FOLDER) {
+        if (existingFile.isLockedFile() || ShareFileTree.resolveNodeType(existingFile) == FileNodeType.FOLDER) {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
         }
         existingFile.markTrashed(LocalDateTime.now());

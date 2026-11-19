@@ -235,12 +235,13 @@ public class ShareController {
     public ResponseEntity<byte[]> getSharedThumbnail(
             @AuthenticationPrincipal AuthUserDetails userDetails,
             @PathVariable Long fileIdx,
-            @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch
+            @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch,
+            @RequestHeader(value = "X-FileInNOut-Share-Password", required = false) String sharePasswordHeader
     ) {
-        FileThumbnailService.ThumbnailPayload payload = fileThumbnailQueryService.loadSharedThumbnail(
-                userDetails != null ? userDetails.getIdx() : 0L,
-                fileIdx
-        );
+        Long userIdx = userDetails != null ? userDetails.getIdx() : 0L;
+        FileThumbnailService.ThumbnailPayload payload = (sharePasswordHeader == null || sharePasswordHeader.isBlank())
+                ? fileThumbnailQueryService.loadSharedThumbnail(userIdx, fileIdx)
+                : fileThumbnailQueryService.loadSharedThumbnail(userIdx, fileIdx, sharePasswordHeader);
         return buildThumbnailResponse(payload, ifNoneMatch);
     }
 

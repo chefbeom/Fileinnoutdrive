@@ -64,4 +64,17 @@ class ChatRoomServicePermissionTest {
 
         verify(userRepository, never()).findAllByEmailIn(any());
     }
+
+    @Test
+    void nonMemberCannotExitChatRoom() {
+        when(participantsRepository.existsByChatRoomsIdxAndUsersIdx(10L, 99L)).thenReturn(false);
+
+        assertThatThrownBy(() -> chatRoomService.exit(10L, 99L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("접근 권한");
+
+        verify(participantsRepository, never()).deleteByChatRoomsIdxAndUsersIdx(10L, 99L);
+        verify(chatRoomRepository, never()).deleteById(10L);
+        verify(stompPublisher, never()).send(any(), any());
+    }
 }

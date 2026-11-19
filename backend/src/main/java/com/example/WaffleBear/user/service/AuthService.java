@@ -67,6 +67,10 @@ public class AuthService {
         String refreshTokenHash = hashRefreshToken(refreshToken);
         RefreshToken dbToken = refreshTokenRepository.findFirstByTokenHashOrderByIdDesc(refreshTokenHash)
                 .orElseThrow(() -> new IllegalArgumentException("Refresh token is not registered."));
+        if (dbToken.getExpiryDate() != null && dbToken.getExpiryDate().isBefore(LocalDateTime.now())) {
+            refreshTokenRepository.delete(dbToken);
+            throw new IllegalArgumentException("Refresh token is expired.");
+        }
         removeDuplicateRefreshTokenRows(refreshTokenHash, dbToken);
 
         String email = jwtUtil.getEmail(refreshToken);
@@ -151,7 +155,8 @@ public class AuthService {
             }
 
             String refreshTokenHash = hashRefreshToken(refreshToken);
-            if (refreshTokenRepository.findFirstByTokenHashOrderByIdDesc(refreshTokenHash).isEmpty()) {
+            RefreshToken dbToken = refreshTokenRepository.findFirstByTokenHashOrderByIdDesc(refreshTokenHash).orElse(null);
+            if (dbToken == null || (dbToken.getExpiryDate() != null && dbToken.getExpiryDate().isBefore(LocalDateTime.now()))) {
                 return null;
             }
 
@@ -183,7 +188,9 @@ public class AuthService {
         }
         if (secretTokenService != null) {
             try {
-                Long userIdx = jwtUtil.getUserIdx(refreshToken);
+                Long userIdx = "refresh".equals(jwtUtil.getCategory(refreshToken))
+                        ? jwtUtil.getUserIdx(refreshToken)
+                        : null;
                 secretTokenService.revokeVaultTokens(userIdx);
             } catch (RuntimeException ignored) {
                 // Ignore malformed or expired token during logout cleanup.

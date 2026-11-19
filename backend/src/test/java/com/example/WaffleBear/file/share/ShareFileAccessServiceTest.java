@@ -355,6 +355,31 @@ class ShareFileAccessServiceTest {
                 .isInstanceOf(BaseException.class);
     }
 
+    @Test
+    void uploadFileToSharedFolderRefusesToOverwriteExistingLockedFile() {
+        User owner = user(1L, "owner@example.com");
+        User recipient = user(2L, "recipient@example.com");
+        FileInfo sharedFolder = folder(10L, owner, null, "Team", false);
+        FileInfo existingLocked = file(11L, owner, sharedFolder, "report.txt", true);
+        FileShare folderShare = share(sharedFolder, owner, recipient, FileSharePermission.WRITE, FileShareStatus.ACCEPTED);
+        MockMultipartFile upload = uploadFile();
+
+        when(shareRepository.findByFile_IdxAndRecipient_Idx(sharedFolder.getIdx(), recipient.getIdx()))
+                .thenReturn(Optional.of(folderShare));
+        when(fileUpDownloadRepository.findByUser_IdxAndParent_IdxAndFileOriginNameAndTrashedFalse(
+                owner.getIdx(),
+                sharedFolder.getIdx(),
+                "report.txt"
+        )).thenReturn(Optional.of(existingLocked));
+
+        assertThatThrownBy(() -> shareFileAccessService.uploadFileToSharedFolder(recipient.getIdx(), sharedFolder.getIdx(), upload, null))
+                .isInstanceOf(BaseException.class);
+
+        verify(shareFileObjectStorageService).putObject(any(), anyString(), anyLong(), anyString());
+        verify(shareFileObjectStorageService).deleteObjectQuietly(anyString());
+        verify(fileUpDownloadRepository, never()).save(any(FileInfo.class));
+    }
+
     private void startTransactionSynchronization() {
         TransactionSynchronizationManager.initSynchronization();
         TransactionSynchronizationManager.setActualTransactionActive(true);

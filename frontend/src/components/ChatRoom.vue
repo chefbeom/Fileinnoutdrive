@@ -23,6 +23,7 @@ import {
   getChatReadersForMessage,
   getLatestChatMessageId,
   normalizeChatParticipant,
+  sanitizeChatUrl,
   shouldShowChatDateDivider,
   sortChatMessages,
   toChatMessage,
@@ -115,8 +116,9 @@ const closeMessageMenu = () => {
 }
 
 const openImagePreview = (message) => {
-  if (!message?.fileUrl) return
-  imagePreviewUrl.value = message.fileUrl
+  const safeUrl = sanitizeChatUrl(message?.fileUrl)
+  if (!safeUrl) return
+  imagePreviewUrl.value = safeUrl
   imagePreviewName.value = message.fileName ?? '이미지 미리보기'
 }
 
@@ -486,7 +488,9 @@ const requestNotificationPermission = async () => {
   }
 }
 const openFile = (url) => {
-  window.open(url, '_blank')
+  const safeUrl = sanitizeChatUrl(url)
+  if (!safeUrl) return
+  window.open(safeUrl, '_blank', 'noopener,noreferrer')
 }
 
 const deleteMessage = async () => {
@@ -631,6 +635,7 @@ watch(() => props.participantsRefreshKey, () => {
                   v-else-if="msg.messageType === 'FILE'"
                   :href="msg.fileUrl"
                   target="_blank"
+                  rel="noopener noreferrer"
                   :class="['flex items-center gap-2', msg.isMe ? 'text-white' : 'text-[var(--text-main)]']"
                 >
                   <i class="fa-solid fa-file text-lg"></i>
