@@ -47,7 +47,7 @@ final class FileListQueryRules {
         if (size == null || size <= 0) {
             return 10;
         }
-        return Math.min(30, size);
+        return Math.min(50, size);
     }
 
     static String normalizeSearchKeyword(String value) {

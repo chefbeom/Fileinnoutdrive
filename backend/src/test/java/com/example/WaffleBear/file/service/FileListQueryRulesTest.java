@@ -63,4 +63,14 @@ class FileListQueryRulesTest {
                             assertThat(ex.getStatus()).isEqualTo(BaseResponseStatus.FILE_NAME_WRONG));
         }
     }
+
+    @Test
+    void sanitizePageSizeAllowsUpTo50ItemsIncludingSubfolder49Count() {
+        assertThat(FileListQueryRules.sanitizePageSize(null)).isEqualTo(10);
+        assertThat(FileListQueryRules.sanitizePageSize(0)).isEqualTo(10);
+        assertThat(FileListQueryRules.sanitizePageSize(29)).isEqualTo(29);
+        assertThat(FileListQueryRules.sanitizePageSize(49)).isEqualTo(49);
+        assertThat(FileListQueryRules.sanitizePageSize(50)).isEqualTo(50);
+        assertThat(FileListQueryRules.sanitizePageSize(100)).isEqualTo(50);
+    }
 }

@@ -90,14 +90,17 @@ vi.mock("@/stores/useHeaderSearchStore.js", () => ({
   }),
 }));
 
+const mockLayoutPreset = ref("20");
+const mockResolvedPageSize = ref(20);
+
 vi.mock("@/stores/viewStore.js", () => ({
   useViewStore: () => ({
     viewMode: ref("table"),
     itemSize: ref("small"),
-    layoutPreset: ref("20"),
+    layoutPreset: mockLayoutPreset,
     customLayoutColumns: ref("5"),
     customLayoutRows: ref("5"),
-    resolvedPageSize: ref(20),
+    resolvedPageSize: mockResolvedPageSize,
     setViewMode: vi.fn(),
     setItemSize: vi.fn(),
     setLayoutPreset: vi.fn(),
@@ -136,6 +139,8 @@ describe("BaseFileView empty directory navigation", () => {
     vi.clearAllMocks();
     mockRoute.name = "home";
     mockRoute.query = {};
+    mockLayoutPreset.value = "20";
+    mockResolvedPageSize.value = 20;
     mockSecretFolderStore.vaultMode = false;
     mockSecretFolderStore.vaultTrashView = false;
     mockFileStore.currentFolderId = null;
@@ -201,5 +206,27 @@ describe("BaseFileView empty directory navigation", () => {
     await emptyBox.trigger("contextmenu", { clientX: 120, clientY: 160 });
 
     expect(wrapper.text()).toContain("이전 디렉터리로 이동");
+  });
+
+  it("requests 50 items at root and 49 items (+ 1 parent navigator = 50 total) inside a subfolder when 50-item preset is selected", async () => {
+    mockLayoutPreset.value = "50";
+    mockResolvedPageSize.value = 50;
+
+    const wrapper = mountView();
+    await nextTick();
+
+    expect(mockFileStore.fetchDrivePage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ parentId: null, page: 0, size: 50 }),
+    );
+
+    mockFileStore.currentFolderId = 20;
+    mockFileStore.currentFolder = { id: 20, name: "temp", parentId: null };
+    mockFileStore.currentFolderPath = [{ id: 20, name: "temp", parentId: null }];
+    await nextTick();
+
+    expect(mockFileStore.fetchDrivePage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ parentId: 20, page: 0, size: 49 }),
+    );
+    wrapper.unmount();
   });
 });

@@ -43,6 +43,7 @@ import {
   hasBaseSearchFilters,
   isOwnedSharedBaseFile,
   paginateBaseFiles,
+  resolveEffectivePageSize,
   resolveEmptyFolderNavigationState,
 } from "./baseFileViewModel.js";
 import { BASE_SHARE_PERMISSION_OPTIONS, useBaseFileShareDialog } from "./useBaseFileShareDialog.js";
@@ -161,6 +162,8 @@ const layoutPresetOptions = [
   { value: "10", label: "10개" },
   { value: "20", label: "20개" },
   { value: "30", label: "30개" },
+  { value: "40", label: "40개" },
+  { value: "50", label: "50개" },
   { value: "custom", label: "사용자 설정" },
 ];
 const sizeOptionLabelMap = Object.fromEntries(sizeOptions.map((option) => [option.value, option.label]));
@@ -225,13 +228,18 @@ const canCreateLocks = computed(() => Boolean(planCapabilities.value?.fileLockEn
 const customSizeRangeLabel = computed(() => buildBaseCustomSizeRangeLabel(searchState.value));
 const hasSearchFilters = computed(() => hasBaseSearchFilters(searchState.value));
 
+const showParentNavigator = computed(() => emptyFolderNavigation.value.inSubfolder);
+const effectivePageSize = computed(() => resolveEffectivePageSize(pageSize.value, showParentNavigator.value));
+
 const hasActiveFilters = computed(() => hasSearchFilters.value || sortOption.value !== "updatedAt-desc");
 const layoutGuideLabel = "배치";
 const layoutGuideSummary = computed(() => (
   `${pageSize.value}`
 ));
 const layoutGuideHint = computed(() => (
-  `현재 한 페이지에 ${pageSize.value}개씩 표시합니다.`
+  showParentNavigator.value
+    ? `현재 한 페이지에 ${pageSize.value}개씩 표시합니다. (항목 ${effectivePageSize.value}개 + 상위 이동 1개)`
+    : `현재 한 페이지에 ${pageSize.value}개씩 표시합니다.`
 ));
 const resetFiltersLabel = "조건 초기화";
 const customSizeChipPrefix = "사용자 크기";
@@ -351,20 +359,20 @@ const pageCount = computed(() => buildBasePageCount({
   useServerPaging: useServerPaging.value,
   drivePageInfo: fileStore.drivePageInfo,
   filteredFiles: filteredFiles.value,
-  pageSize: pageSize.value,
+  pageSize: effectivePageSize.value,
 }));
 const paginatedFiles = computed(() => paginateBaseFiles({
   useServerPaging: useServerPaging.value,
   filteredFiles: filteredFiles.value,
   currentPage: currentPage.value,
-  pageSize: pageSize.value,
+  pageSize: effectivePageSize.value,
 }));
 const pageNumbers = computed(() => buildBasePageNumbers(currentPage.value, pageCount.value));
 const serverListQuery = computed(() => buildBaseServerListQuery({
   useServerPaging: useServerPaging.value,
   currentFolderId: fileStore.currentFolderId,
   currentPage: currentPage.value,
-  pageSize: pageSize.value,
+  pageSize: effectivePageSize.value,
   sortOption: sortOption.value,
   searchState: searchState.value,
   vaultMode: isVaultMode.value,
@@ -585,6 +593,7 @@ watch(filteredFiles, (files) => {
 
 watch(pageSize, () => {
   currentPage.value = 1;
+  fileStore.invalidateFolderSnapshots?.();
 });
 
 const resetFilters = () => {
@@ -1356,7 +1365,7 @@ onBeforeUnmount(() => {
         :selected-ids="selectedIds"
         :files="paginatedFiles"
         :delete-mode="effectiveDeleteMode"
-        :show-parent-navigator="emptyFolderNavigation.inSubfolder"
+        :show-parent-navigator="showParentNavigator"
         :parent-folder-target-id="fileStore.currentFolder?.parentId ?? null"
         :shared-library="sharedLibrary"
         @update:selected-ids="selectedIds = $event"

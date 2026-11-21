@@ -22,6 +22,7 @@ import {
   hasBaseSearchFilters,
   matchesBaseFileSizeFilter,
   paginateBaseFiles,
+  resolveEffectivePageSize,
   resolveEmptyFolderNavigationState,
 } from "./baseFileViewModel.js";
 
@@ -268,5 +269,14 @@ describe("baseFileViewModel", () => {
       currentFolderId: 20,
       currentFolder: { id: 20, name: "temp", parentId: null },
     }).canGoBack).toBe(false);
+  });
+
+  it("subtracts 1 slot from effective page size when the parent folder navigator button is shown", () => {
+    expect(resolveEffectivePageSize(50, false)).toBe(50);
+    expect(resolveEffectivePageSize(50, true)).toBe(49);
+    expect(resolveEffectivePageSize(30, true)).toBe(29);
+    expect(resolveEffectivePageSize(20, true)).toBe(19);
+    expect(resolveEffectivePageSize(10, true)).toBe(9);
+    expect(resolveEffectivePageSize(1, true)).toBe(1);
   });
 });

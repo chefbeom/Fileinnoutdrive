@@ -227,6 +227,14 @@ export function buildBasePageCount({ useServerPaging = false, drivePageInfo = {}
     : Math.max(1, Math.ceil(filteredFiles.length / pageSize));
 }
 
+export function resolveEffectivePageSize(pageSize = 10, hasParentNavigator = false) {
+  const normalized = Math.max(1, Number(pageSize) || 10);
+  if (!hasParentNavigator) {
+    return normalized;
+  }
+  return Math.max(1, normalized - 1);
+}
+
 export function paginateBaseFiles({ useServerPaging = false, filteredFiles = [], currentPage = 1, pageSize = 1 } = {}) {
   if (useServerPaging) {
     return filteredFiles;

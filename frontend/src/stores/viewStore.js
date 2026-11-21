@@ -16,11 +16,13 @@ const DEFAULT_LAYOUT_ROWS = 2;
 
 const VIEW_MODE_SET = new Set(["table", "grid", "icon"]);
 const ITEM_SIZE_SET = new Set(["small", "medium", "large"]);
-const LAYOUT_PRESET_SET = new Set(["10", "20", "30"]);
+const LAYOUT_PRESET_SET = new Set(["10", "20", "30", "40", "50"]);
 const LAYOUT_PRESETS = {
   "10": { columns: 5, rows: 2 },
   "20": { columns: 5, rows: 4 },
   "30": { columns: 5, rows: 6 },
+  "40": { columns: 5, rows: 8 },
+  "50": { columns: 5, rows: 10 },
 };
 
 const LEGACY_LAYOUT_PRESET_MAP = {
