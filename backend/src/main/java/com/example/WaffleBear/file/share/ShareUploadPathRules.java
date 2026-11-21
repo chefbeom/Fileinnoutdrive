@@ -17,14 +17,21 @@ final class ShareUploadPathRules {
         String normalized = relativePath == null || relativePath.isBlank()
                 ? fileOriginName
                 : relativePath.trim().replace("\\", "/");
-        String[] segments = normalized.split("/");
+        while (normalized != null && normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        String[] segments = normalized == null ? new String[0] : normalized.split("/");
         if (segments.length <= 1) {
             return List.of();
         }
 
         List<String> folderSegments = new ArrayList<>();
         for (int index = 0; index < segments.length - 1; index += 1) {
-            String folderName = sanitizeFolderName(segments[index]);
+            String rawSegment = segments[index];
+            if (rawSegment == null || rawSegment.trim().isEmpty()) {
+                continue;
+            }
+            String folderName = sanitizeFolderName(rawSegment);
             if (!folderName.isBlank()) {
                 folderSegments.add(folderName);
             }
@@ -41,10 +48,16 @@ final class ShareUploadPathRules {
 
     static String sanitizeUploadFileName(String fileName) {
         String normalized = fileName == null ? "" : fileName.trim();
-        if (normalized.isEmpty() || normalized.length() > 100) {
+        if (normalized.isEmpty() || normalized.length() > 255) {
             throw BaseException.from(BaseResponseStatus.FILE_NAME_WRONG);
         }
-        if (normalized.contains("..") || normalized.contains("/") || normalized.contains("\\") || normalized.contains("\u0000")) {
+        if (".".equals(normalized)
+                || "..".equals(normalized)
+                || normalized.contains("/")
+                || normalized.contains("\\")
+                || normalized.contains("\u0000")
+                || normalized.contains("\r")
+                || normalized.contains("\n")) {
             throw BaseException.from(BaseResponseStatus.FILE_NAME_WRONG);
         }
         return normalized;
@@ -72,10 +85,16 @@ final class ShareUploadPathRules {
 
     private static String sanitizeFolderName(String folderName) {
         String normalized = folderName == null ? "" : folderName.trim();
-        if (normalized.isEmpty() || normalized.length() > 100) {
+        if (normalized.isEmpty() || normalized.length() > 255) {
             throw BaseException.from(BaseResponseStatus.FILE_NAME_WRONG);
         }
-        if (normalized.contains("..") || normalized.contains("/") || normalized.contains("\\") || normalized.contains("\u0000")) {
+        if (".".equals(normalized)
+                || "..".equals(normalized)
+                || normalized.contains("/")
+                || normalized.contains("\\")
+                || normalized.contains("\u0000")
+                || normalized.contains("\r")
+                || normalized.contains("\n")) {
             throw BaseException.from(BaseResponseStatus.FILE_NAME_WRONG);
         }
         return normalized;

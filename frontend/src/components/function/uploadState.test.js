@@ -17,7 +17,10 @@ import {
   getUploadPanelEtaText,
   getUploadPanelSubtitle,
   getUploadPanelTitle,
+  isPerFileInitError,
+  resolveUploadFileFormat,
   updateUploadItemProgress,
+  validateUploadFile,
 } from "./uploadState.js";
 import { CHUNK_SIZE_BYTES, MIN_FINAL_PARTITION_SIZE_BYTES, PARTITION_SIZE_BYTES } from "@/constants/uploadOptions.js";
 
@@ -177,5 +180,55 @@ describe("uploadState", () => {
     expect(getUploadPanelEtaText({ activeUploadCount: 1, mergingUploadCount: 1 })).toBe("파일 전송을 마무리하는 중...");
     expect(getUploadPanelEtaText({ activeUploadCount: 1, overallTransferSpeedText: "2.00 MB/s" })).toBe("2.00 MB/s 전송 중");
     expect(getUploadPanelEtaText({ activeUploadCount: 1, overallEstimatedSeconds: 90, overallTransferSpeedText: "1.50 MB/s" })).toBe("2분 남음 · 1.50 MB/s");
+  });
+
+  it("resolves safe upload formats with bin fallback for extensionless or unusual extensions", () => {
+    expect(resolveUploadFileFormat({ name: "Report.PDF" })).toBe("pdf");
+    expect(resolveUploadFileFormat({ name: "README" })).toBe("bin");
+    expect(resolveUploadFileFormat({ name: ".gitignore" })).toBe("bin");
+    expect(resolveUploadFileFormat({ name: ".env" })).toBe("bin");
+    expect(resolveUploadFileFormat({ name: "clip.mp4_1" })).toBe("bin");
+    expect(resolveUploadFileFormat({ name: "source.c++" })).toBe("bin");
+    expect(resolveUploadFileFormat({ name: `archive.${"a".repeat(21)}` })).toBe("bin");
+  });
+
+  it("validates upload filenames, folder segments, and max sizes cleanly", () => {
+    const validEllipsis = {
+      name: "여행 영상...최종..컷.mp4",
+      size: 1024,
+      webkitRelativePath: "여행...2026/여행 영상...최종..컷.mp4",
+    };
+    expect(validateUploadFile(validEllipsis, { maxUploadFileBytes: 2048 })).toEqual({ valid: true });
+
+    const max255 = {
+      name: `${"가".repeat(251)}.mp4`,
+      size: 10,
+      webkitRelativePath: `${"폴".repeat(255)}/${"가".repeat(251)}.mp4`,
+    };
+    expect(validateUploadFile(max255, { maxUploadFileBytes: 2048 })).toEqual({ valid: true });
+
+    expect(validateUploadFile({ name: `${"가".repeat(252)}.mp4`, size: 10 }).valid).toBe(false);
+    expect(validateUploadFile({ name: "..", size: 10 }).valid).toBe(false);
+    expect(validateUploadFile({ name: ".", size: 10 }).valid).toBe(false);
+    expect(validateUploadFile({ name: "bad/name.mp4", size: 10 }).valid).toBe(false);
+    expect(validateUploadFile({ name: "ok.mp4", size: 10, webkitRelativePath: "../secret/ok.mp4" }).valid).toBe(false);
+    expect(validateUploadFile({ name: "ok.mp4", size: 10, webkitRelativePath: `${"폴".repeat(256)}/ok.mp4` }).valid).toBe(false);
+    expect(
+      validateUploadFile({ name: "huge.mp4", size: 5000 }, { maxUploadFileBytes: 1024, formattedMaxSize: "1 KB" }),
+    ).toEqual({
+      valid: false,
+      reason: "최대 업로드 크기(1 KB)를 초과합니다.",
+    });
+  });
+
+  it("identifies per-file upload init error codes without treating quota exhaustion as per-file", () => {
+    expect(isPerFileInitError({ response: { data: { code: 3501 } } })).toBe(true);
+    expect(isPerFileInitError({ response: { data: { code: 3502 } } })).toBe(true);
+    expect(isPerFileInitError({ response: { data: { code: 3503 } } })).toBe(true);
+    expect(isPerFileInitError({ response: { data: { code: 3509 } } })).toBe(true);
+    expect(isPerFileInitError({ response: { data: { code: 3510 } } })).toBe(true);
+    expect(isPerFileInitError({ response: { data: { code: 3512 } } })).toBe(false);
+    expect(isPerFileInitError({ response: { data: { code: 5000 } } })).toBe(false);
+    expect(isPerFileInitError(new Error("network"))).toBe(false);
   });
 });

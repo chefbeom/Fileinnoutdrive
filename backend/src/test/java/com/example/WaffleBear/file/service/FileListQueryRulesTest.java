@@ -1,8 +1,11 @@
 package com.example.WaffleBear.file.service;
 
+import com.example.WaffleBear.common.exception.BaseException;
+import com.example.WaffleBear.common.model.BaseResponseStatus;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class FileListQueryRulesTest {
 
@@ -46,5 +49,18 @@ class FileListQueryRulesTest {
     void escapeLikePatternEscapesBackslashPercentAndUnderscore() {
         assertThat(FileListQueryRules.escapeLikePattern("100%_final\\v1"))
                 .isEqualTo("100\\%\\_final\\\\v1");
+    }
+
+    @Test
+    void sanitizeFolderNameAllowsEllipsisAnd255CharsWhileRejectingTraversalSegments() {
+        String longName = "가".repeat(255);
+        assertThat(FileListQueryRules.sanitizeFolderName(" 영상 모음...2026 ")).isEqualTo("영상 모음...2026");
+        assertThat(FileListQueryRules.sanitizeFolderName(longName)).isEqualTo(longName);
+
+        for (String invalidName : new String[]{".", "..", "a/b", "a\\b", "가".repeat(256)}) {
+            assertThatThrownBy(() -> FileListQueryRules.sanitizeFolderName(invalidName))
+                    .isInstanceOfSatisfying(BaseException.class, ex ->
+                            assertThat(ex.getStatus()).isEqualTo(BaseResponseStatus.FILE_NAME_WRONG));
+        }
     }
 }

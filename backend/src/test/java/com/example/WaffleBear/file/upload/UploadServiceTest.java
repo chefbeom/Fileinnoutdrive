@@ -2,6 +2,7 @@ package com.example.WaffleBear.file.upload;
 
 import com.example.WaffleBear.administrator.StorageAnalyticsService;
 import com.example.WaffleBear.common.exception.BaseException;
+import com.example.WaffleBear.common.model.BaseResponseStatus;
 import com.example.WaffleBear.file.FileUpDownloadRepository;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
@@ -370,5 +371,92 @@ class UploadServiceTest {
         assertThat(result.getAffectedCount()).isEqualTo(3);
         verify(uploadObjectStorageService).deleteObjectKeys(any());
         verify(uploadReservationStore).release(finalObjectKey);
+    }
+
+    @Test
+    void initAllowsEllipsisNamesAndUpTo255CharFileNames() throws Exception {
+        Long userIdx = 7L;
+        String name255 = "v".repeat(251) + ".mp4";
+        when(storagePlanService.resolveQuota(userIdx)).thenReturn(new StoragePlanService.StorageQuota(
+                "ADMIN",
+                "Admin",
+                "Admin",
+                10_000_000L,
+                0L,
+                10_000_000L,
+                true,
+                true,
+                1_000_000L,
+                500
+        ));
+        when(uploadObjectStorageService.generatePresignedUploadUrl(any())).thenReturn("http://minio.local/put");
+        when(uploadObjectStorageService.getPresignedUrlExpirySeconds()).thenReturn(1800);
+        when(fileUpDownloadRepository.sumStoredFileBytesByUser(userIdx, FileNodeType.FILE)).thenReturn(0L);
+        when(fileVersionLifecycleService.sumStoredVersionBytes(userIdx)).thenReturn(0L);
+        when(uploadReservationStore.reserve(eq(userIdx), eq(10_000_000L), eq(0L), any(), anyLong())).thenReturn(true);
+
+        List<UploadDto.InitReq> requests = List.of(
+                UploadDto.InitReq.builder()
+                        .fileOriginName("여행 영상...최종..컷.mp4")
+                        .fileFormat("mp4")
+                        .fileSize(128L)
+                        .relativePath("여행...2026/여행 영상...최종..컷.mp4")
+                        .build(),
+                UploadDto.InitReq.builder()
+                        .fileOriginName(name255)
+                        .fileFormat("mp4")
+                        .fileSize(256L)
+                        .relativePath(name255)
+                        .build()
+        );
+
+        List<UploadDto.ChunkRes> responses = uploadService.init(userIdx, requests);
+
+        assertThat(responses).hasSize(2);
+        assertThat(responses.get(0).getFileOriginName()).isEqualTo("여행 영상...최종..컷.mp4");
+        assertThat(responses.get(1).getFileOriginName()).hasSize(255);
+        verify(uploadFolderService).ensureFolderHierarchies(userIdx, requests);
+    }
+
+    @Test
+    void initRejectsTraversalSegmentsAndOver255CharFileNamesWithDetailMessage() {
+        Long userIdx = 7L;
+        when(storagePlanService.resolveQuota(userIdx)).thenReturn(new StoragePlanService.StorageQuota(
+                "ADMIN",
+                "Admin",
+                "Admin",
+                10_000_000L,
+                0L,
+                10_000_000L,
+                true,
+                true,
+                1_000_000L,
+                500
+        ));
+
+        for (String invalidName : new String[]{".", "..", "bad/clip.mp4", "bad\\clip.mp4", "bad\u0000.mp4"}) {
+            UploadDto.InitReq badReq = UploadDto.InitReq.builder()
+                    .fileOriginName(invalidName)
+                    .fileFormat("mp4")
+                    .fileSize(10L)
+                    .build();
+            assertThatThrownBy(() -> uploadService.init(userIdx, List.of(badReq)))
+                    .isInstanceOfSatisfying(BaseException.class, ex -> {
+                        assertThat(ex.getStatus()).isEqualTo(BaseResponseStatus.FILE_NAME_WRONG);
+                        assertThat(ex.resolveMessage()).contains("파일 이름이 올바르지 않습니다");
+                    });
+        }
+
+        String name256 = "a".repeat(252) + ".mp4";
+        UploadDto.InitReq longReq = UploadDto.InitReq.builder()
+                .fileOriginName(name256)
+                .fileFormat("mp4")
+                .fileSize(10L)
+                .build();
+        assertThatThrownBy(() -> uploadService.init(userIdx, List.of(longReq)))
+                .isInstanceOfSatisfying(BaseException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(BaseResponseStatus.FILE_NAME_LENGTH_WRONG);
+                    assertThat(ex.resolveMessage()).contains("255자");
+                });
     }
 }

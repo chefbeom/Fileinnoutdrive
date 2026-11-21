@@ -32,6 +32,7 @@ public class UploadService {
     private static final long CHUNK_SIZE_BYTES = 80L * 1024 * 1024;
     private static final long MIN_FINAL_PARTITION_SIZE_BYTES = 10L * 1024 * 1024;
     private static final long RESERVATION_GRACE_SECONDS = 5L * 60L;
+    private static final int MAX_FILE_NAME_LENGTH = 255;
     private final FileUpDownloadRepository fileUpDownloadRepository;
     private final UploadObjectStorageService uploadObjectStorageService;
     private final StoragePlanService storagePlanService;
@@ -319,24 +320,34 @@ public class UploadService {
 
         // 이름이 없을경우, 이름이 널일 경우
         String originName = request.getFileOriginName();
-        if (originName == null || originName.isBlank()) {
+        String trimmedName = originName == null ? "" : originName.trim();
+        if (trimmedName.isEmpty()) {
             throw BaseException.from(BaseResponseStatus.FILE_NAME_WRONG);
         }
 
-        // 이름이 100자 초과할 경우
-        if (originName.length() > 100) {
-            throw BaseException.from(BaseResponseStatus.FILE_NAME_LENGTH_WRONG);
+        // 이름이 255자를 초과할 경우
+        if (trimmedName.length() > MAX_FILE_NAME_LENGTH) {
+            throw BaseException.from(
+                    BaseResponseStatus.FILE_NAME_LENGTH_WRONG,
+                    "파일 이름 길이가 허용 범위(255자)를 초과했습니다: " + summarizeName(trimmedName)
+            );
         }
 
-        // 이름에 ..이렇게 혹은 이름에 /슬래시 혹은 \\역슬래시 두개가 혹은 \u0000(즉 **“문자열의 끝 또는 비어있는 문자”**를 의미하는 특수 문자)가 있을 경우
-        if (originName.contains("..") || originName.contains("/") || originName.contains("\\") || originName.contains("\u0000")) {
-            throw BaseException.from(BaseResponseStatus.FILE_NAME_WRONG);
+        // 경로 탐색 세그먼트(., ..), 경로 구분자(/, \\), 제어문자 등이 있을 경우
+        if (isUnsafePathSegment(trimmedName)) {
+            throw BaseException.from(
+                    BaseResponseStatus.FILE_NAME_WRONG,
+                    "파일 이름이 올바르지 않습니다: " + summarizeName(trimmedName)
+            );
         }
 
         // 파일 사이즈가 업로드할 수 있는 최대값을 넘은 경우
         Long fileSize = request.getFileSize();
         if (fileSize != null && fileSize > maxUploadFileBytes) {
-            throw BaseException.from(BaseResponseStatus.FILE_SIZE_WRONG);
+            throw BaseException.from(
+                    BaseResponseStatus.FILE_SIZE_WRONG,
+                    "최대 업로드 파일 크기를 초과했습니다: " + summarizeName(trimmedName)
+            );
         }
     }
 
@@ -345,13 +356,46 @@ public class UploadService {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
         }
 
-        if (request.getFileOriginName() == null || request.getFileOriginName().isBlank()) {
+        String trimmedName = request.getFileOriginName() == null ? "" : request.getFileOriginName().trim();
+        if (trimmedName.isEmpty()) {
             throw BaseException.from(BaseResponseStatus.FILE_NAME_WRONG);
+        }
+
+        if (trimmedName.length() > MAX_FILE_NAME_LENGTH) {
+            throw BaseException.from(
+                    BaseResponseStatus.FILE_NAME_LENGTH_WRONG,
+                    "파일 이름 길이가 허용 범위(255자)를 초과했습니다: " + summarizeName(trimmedName)
+            );
+        }
+
+        if (isUnsafePathSegment(trimmedName)) {
+            throw BaseException.from(
+                    BaseResponseStatus.FILE_NAME_WRONG,
+                    "파일 이름이 올바르지 않습니다: " + summarizeName(trimmedName)
+            );
         }
 
         if (request.getFinalObjectKey() == null || request.getFinalObjectKey().isBlank()) {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
         }
+    }
+
+    private boolean isUnsafePathSegment(String value) {
+        return ".".equals(value)
+                || "..".equals(value)
+                || value.contains("/")
+                || value.contains("\\")
+                || value.contains("\u0000")
+                || value.contains("\r")
+                || value.contains("\n");
+    }
+
+    private String summarizeName(String value) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.length() <= 60) {
+            return normalized;
+        }
+        return normalized.substring(0, 57) + "...";
     }
 
     // 사용자의 저장 용량(quota)을 초과하지 않는지 확인하는 메서드

@@ -41,4 +41,16 @@ public class BaseResponse<T> {
                 result
         );
     }
+
+    public static <T> BaseResponse<T> failWithMessage(BaseResponseStatus status, String customMessage) {
+        String resolvedMessage = (customMessage != null && !customMessage.isBlank())
+                ? customMessage
+                : status.getMessage();
+        return new BaseResponse<>(
+                status.isSuccess(),
+                status.getCode(),
+                resolvedMessage,
+                null
+        );
+    }
 }

@@ -19,13 +19,23 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class UploadFolderService {
+
+    private static final int MAX_FOLDER_NAME_LENGTH = 255;
+
+    private record ParentCacheKey(Long parentId, FileSpaceType spaceType) {
+    }
+
+    private record ChildFolderCacheKey(Long parentId, FileSpaceType spaceType, String folderName) {
+    }
 
     private final FileUpDownloadRepository fileUpDownloadRepository;
     private final ShareInheritanceService shareInheritanceService;
@@ -61,6 +71,9 @@ public class UploadFolderService {
         if (requests == null || requests.isEmpty()) {
             return;
         }
+        Map<ParentCacheKey, FileInfo> parentCache = new HashMap<>();
+        Map<ChildFolderCacheKey, FileInfo> childCache = new HashMap<>();
+
         for (UploadDto.InitReq request : requests) {
             if (request == null) {
                 continue;
@@ -69,13 +82,45 @@ public class UploadFolderService {
                     request.getSpaceType(),
                     request.getVaultMode()
             );
-            resolveUploadParentFolder(
-                    userIdx,
-                    request.getParentId(),
+            ParentCacheKey rootKey = new ParentCacheKey(request.getParentId(), requestedSpace);
+            FileInfo currentParent;
+            if (parentCache.containsKey(rootKey)) {
+                currentParent = parentCache.get(rootKey);
+            } else {
+                currentParent = resolveParentFolder(userIdx, request.getParentId(), requestedSpace);
+                FileSpaceType rootEffectiveSpace = currentParent != null
+                        ? currentParent.resolveSpaceType()
+                        : (requestedSpace == null ? FileSpaceType.DRIVE : requestedSpace);
+                if (rootEffectiveSpace == FileSpaceType.VAULT && secretAccessGuard != null) {
+                    secretAccessGuard.requireVaultUnlocked(userIdx);
+                }
+                parentCache.put(rootKey, currentParent);
+            }
+
+            FileSpaceType effectiveSpace = currentParent != null
+                    ? currentParent.resolveSpaceType()
+                    : (requestedSpace == null ? FileSpaceType.DRIVE : requestedSpace);
+
+            List<String> folderSegments = extractFolderSegments(
                     request.getRelativePath(),
-                    request.getFileOriginName(),
-                    requestedSpace
+                    request.getFileOriginName()
             );
+            for (String folderSegment : folderSegments) {
+                Long currentParentId = currentParent != null ? currentParent.getIdx() : null;
+                ChildFolderCacheKey childKey = new ChildFolderCacheKey(currentParentId, effectiveSpace, folderSegment);
+                if (childCache.containsKey(childKey)) {
+                    currentParent = childCache.get(childKey);
+                } else {
+                    FileInfo resolvedChild = findOrCreateFolderSynchronized(
+                            userIdx,
+                            currentParentId,
+                            folderSegment,
+                            effectiveSpace
+                    );
+                    childCache.put(childKey, resolvedChild);
+                    currentParent = resolvedChild;
+                }
+            }
         }
     }
 
@@ -195,6 +240,9 @@ public class UploadFolderService {
 
     private List<String> extractFolderSegments(String relativePath, String fileOriginName) {
         String normalized = normalizeRelativePath(relativePath, fileOriginName);
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
         String[] pathSegments = normalized.split("/");
 
         if (pathSegments.length <= 1) {
@@ -203,7 +251,11 @@ public class UploadFolderService {
 
         List<String> folderSegments = new ArrayList<>();
         for (int index = 0; index < pathSegments.length - 1; index += 1) {
-            String segment = sanitizeFolderName(pathSegments[index]);
+            String rawSegment = pathSegments[index];
+            if (rawSegment == null || rawSegment.trim().isEmpty()) {
+                continue;
+            }
+            String segment = sanitizeFolderName(rawSegment);
             if (!segment.isBlank()) {
                 folderSegments.add(segment);
             }
@@ -295,15 +347,38 @@ public class UploadFolderService {
 
     private String sanitizeFolderName(String folderName) {
         String normalized = folderName == null ? "" : folderName.trim();
-        if (normalized.isEmpty() || normalized.length() > 100) {
+        if (normalized.isEmpty()) {
             throw BaseException.from(BaseResponseStatus.FILE_NAME_WRONG);
         }
+        if (normalized.length() > MAX_FOLDER_NAME_LENGTH) {
+            throw BaseException.from(
+                    BaseResponseStatus.FILE_NAME_LENGTH_WRONG,
+                    "폴더 이름 길이가 허용 범위(255자)를 초과했습니다: " + summarizeName(normalized)
+            );
+        }
 
-        if (normalized.contains("..") || normalized.contains("/") || normalized.contains("\\") || normalized.contains("\u0000")) {
-            throw BaseException.from(BaseResponseStatus.FILE_NAME_WRONG);
+        if (".".equals(normalized)
+                || "..".equals(normalized)
+                || normalized.contains("/")
+                || normalized.contains("\\")
+                || normalized.contains("\u0000")
+                || normalized.contains("\r")
+                || normalized.contains("\n")) {
+            throw BaseException.from(
+                    BaseResponseStatus.FILE_NAME_WRONG,
+                    "폴더 이름이 올바르지 않습니다: " + summarizeName(normalized)
+            );
         }
 
         return normalized;
+    }
+
+    private String summarizeName(String value) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.length() <= 60) {
+            return normalized;
+        }
+        return normalized.substring(0, 57) + "...";
     }
 
     private String normalizeRelativePath(String relativePath, String fallbackFileName) {

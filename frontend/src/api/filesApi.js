@@ -1,18 +1,19 @@
 import { api } from "@/plugins/axiosinterceptor.js";
 
 const normalizeFileFormat = (file) => {
-  if (typeof file?.name !== "string") return "";
+  if (typeof file?.name !== "string") return "bin";
 
   const lastDot = file.name.lastIndexOf(".");
-  if (lastDot < 0 || lastDot === file.name.length - 1) {
-    return "";
+  if (lastDot <= 0 || lastDot >= file.name.length - 1) {
+    return "bin";
   }
 
-  return file.name
+  const ext = file.name
     .slice(lastDot + 1)
     .trim()
     .replace(/^\.+/, "")
     .toLowerCase();
+  return /^[a-z0-9]{1,20}$/.test(ext) ? ext : "bin";
 };
 
 const toUploadRequestList = (files, parentId = null, options = {}) => {

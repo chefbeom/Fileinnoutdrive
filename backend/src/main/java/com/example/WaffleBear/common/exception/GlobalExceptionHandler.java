@@ -46,7 +46,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<BaseResponse<Void>> handleException(BaseException e) {
         BaseResponseStatus status = e.getStatus();
         HttpStatus httpStatus = statusCodeMapper(status);
-        BaseResponse<Void> response = BaseResponse.fail(status);
+        BaseResponse<Void> response = BaseResponse.failWithMessage(status, e.resolveMessage());
 
         return ResponseEntity
                 .status(httpStatus)

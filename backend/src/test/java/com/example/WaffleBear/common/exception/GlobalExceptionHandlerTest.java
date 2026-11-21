@@ -1,6 +1,7 @@
 package com.example.WaffleBear.common.exception;
 
 import com.example.WaffleBear.common.model.BaseResponse;
+import com.example.WaffleBear.common.model.BaseResponseStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -64,5 +65,24 @@ class GlobalExceptionHandlerTest {
         assertNotNull(response);
         assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
         assertNull(response.getBody());
+    }
+
+    @Test
+    void baseExceptionUsesDefaultMessageOrCustomDetailMessage() {
+        ResponseEntity<BaseResponse<Void>> defaultResponse = handler.handleException(
+                BaseException.from(BaseResponseStatus.FILE_NAME_WRONG)
+        );
+        assertEquals(HttpStatus.BAD_REQUEST, defaultResponse.getStatusCode());
+        assertNotNull(defaultResponse.getBody());
+        assertEquals(BaseResponseStatus.FILE_NAME_WRONG.getCode(), defaultResponse.getBody().getCode());
+        assertEquals(BaseResponseStatus.FILE_NAME_WRONG.getMessage(), defaultResponse.getBody().getMessage());
+
+        ResponseEntity<BaseResponse<Void>> customResponse = handler.handleException(
+                BaseException.from(BaseResponseStatus.FILE_NAME_WRONG, "파일 이름이 올바르지 않습니다: bad.mp4")
+        );
+        assertEquals(HttpStatus.BAD_REQUEST, customResponse.getStatusCode());
+        assertNotNull(customResponse.getBody());
+        assertEquals(BaseResponseStatus.FILE_NAME_WRONG.getCode(), customResponse.getBody().getCode());
+        assertEquals("파일 이름이 올바르지 않습니다: bad.mp4", customResponse.getBody().getMessage());
     }
 }

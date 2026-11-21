@@ -15,6 +15,8 @@ class ShareUploadPathRulesTest {
     void extractsSanitizedFolderSegmentsFromRelativePath() {
         assertThat(ShareUploadPathRules.extractFolderSegments(" Team / Docs / report.txt ", "report.txt"))
                 .containsExactly("Team", "Docs");
+        assertThat(ShareUploadPathRules.extractFolderSegments("/여행...2026/영상...01.mp4", "영상...01.mp4"))
+                .containsExactly("여행...2026");
 
         assertThat(ShareUploadPathRules.extractFolderSegments(null, "report.txt"))
                 .isEqualTo(List.of());
@@ -24,15 +26,25 @@ class ShareUploadPathRulesTest {
     void rejectsUnsafeFolderSegments() {
         assertThatThrownBy(() -> ShareUploadPathRules.extractFolderSegments("../secret/report.txt", "report.txt"))
                 .isInstanceOf(BaseException.class);
+        assertThatThrownBy(() -> ShareUploadPathRules.extractFolderSegments("./secret/report.txt", "report.txt"))
+                .isInstanceOf(BaseException.class);
     }
 
     @Test
     void sanitizesUploadFileNameAndRejectsUnsafeNames() {
         assertThat(ShareUploadPathRules.sanitizeUploadFileName(" report.TXT ")).isEqualTo("report.TXT");
+        assertThat(ShareUploadPathRules.sanitizeUploadFileName("영상...01.mp4")).isEqualTo("영상...01.mp4");
+        assertThat(ShareUploadPathRules.sanitizeUploadFileName("a".repeat(251) + ".mp4")).hasSize(255);
 
+        assertThatThrownBy(() -> ShareUploadPathRules.sanitizeUploadFileName(".."))
+                .isInstanceOf(BaseException.class);
+        assertThatThrownBy(() -> ShareUploadPathRules.sanitizeUploadFileName("."))
+                .isInstanceOf(BaseException.class);
         assertThatThrownBy(() -> ShareUploadPathRules.sanitizeUploadFileName("../report.txt"))
                 .isInstanceOf(BaseException.class);
         assertThatThrownBy(() -> ShareUploadPathRules.sanitizeUploadFileName("folder/report.txt"))
+                .isInstanceOf(BaseException.class);
+        assertThatThrownBy(() -> ShareUploadPathRules.sanitizeUploadFileName("a".repeat(252) + ".mp4"))
                 .isInstanceOf(BaseException.class);
         assertThatThrownBy(() -> ShareUploadPathRules.sanitizeUploadFileName(""))
                 .isInstanceOf(BaseException.class);

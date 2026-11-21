@@ -111,7 +111,9 @@ import {
   ACTIVE_UPLOAD_STATUSES,
   CHUNK_SIZE_BYTES,
   DEFAULT_UPLOAD_CONCURRENCY,
+  MAX_UPLOAD_NAME_LENGTH,
   UPLOAD_CONCURRENCY_STORAGE_KEY,
+  UPLOAD_INIT_BATCH_SIZE,
   normalizeUploadConcurrency,
   uploadConcurrencyOptions,
 } from "@/constants/uploadOptions.js";
@@ -132,8 +134,10 @@ import {
   defaultStatusText,
   extractErrorMessage,
   formatBytesPerSecond,
-  getFileFormat,
+  isPerFileInitError,
+  resolveUploadFileFormat,
   updateUploadItemProgress,
+  validateUploadFile,
 } from "./uploadState.js";
 
 const props = defineProps({
@@ -408,14 +412,13 @@ watch(uploadConcurrency, (value) => {
 });
 
 watch(
-  uploadItems,
-  (items) => {
-    if (items.length === 0) {
+  () => uploadItems.value.length,
+  (length) => {
+    if (length === 0) {
       isPanelCollapsed.value = false;
       isPanelHidden.value = false;
     }
   },
-  { deep: true },
 );
 
 function readSavedConcurrency() {
@@ -681,7 +684,7 @@ async function completeUploadedFile(file, uploadMetas, partitioned, itemId, pare
 
   const completedFile = await completeUpload({
     fileOriginName: file?.name || "unnamed-file",
-    fileFormat: getFileFormat(file),
+    fileFormat: resolveUploadFileFormat(file),
     fileSize: Number(file?.size || 0),
     finalObjectKey,
     chunkObjectKeys,
@@ -711,6 +714,7 @@ function isAbortError(error) {
 async function runJobs(jobs, parentId, vaultMode = false) {
   const successList = [];
   const failureList = [];
+  const failureDetails = [];
   let nextJobIndex = 0;
   const configuredConcurrency = normalizeUploadConcurrency(uploadConcurrency.value);
   const workerCount = Math.min(configuredConcurrency, jobs.length);
@@ -745,17 +749,23 @@ async function runJobs(jobs, parentId, vaultMode = false) {
           continue;
         }
 
+        const errorMessage = extractErrorMessage(error, defaultStatusText("failed"));
+        const failedName = job.file?.name || "파일";
         setItemState(job.itemId, {
           status: "failed",
-          statusText: extractErrorMessage(error, defaultStatusText("failed")),
+          statusText: errorMessage,
         });
-        failureList.push(job.file?.name || "파일");
+        failureList.push(failedName);
+        failureDetails.push({
+          name: failedName,
+          reason: errorMessage,
+        });
       }
     }
   };
 
   await Promise.all(Array.from({ length: workerCount }, worker));
-  return { successList, failureList };
+  return { successList, failureList, failureDetails };
 }
 
 async function terminateUploadsForExit() {
@@ -817,6 +827,20 @@ function abortUploadsKeepalive() {
   });
 }
 
+function buildFailureSummary(failureEntries, fallbackMessage = "일부 업로드에 실패했습니다.") {
+  if (!Array.isArray(failureEntries) || failureEntries.length === 0) {
+    return "";
+  }
+  const first = failureEntries[0];
+  if (failureEntries.length === 1) {
+    return `"${first.name}" 업로드 실패: ${first.reason}`;
+  }
+  if (!first?.name) {
+    return fallbackMessage;
+  }
+  return `${failureEntries.length}개 파일 업로드 실패 (${first.name}: ${first.reason})`;
+}
+
 async function startUploadFiles(files, targetFolderId = fileStore.currentFolderId, uploadTypeLabel = "파일") {
   const selectedFiles = Array.from(files || []);
   if (selectedFiles.length === 0) {
@@ -832,40 +856,165 @@ async function startUploadFiles(files, targetFolderId = fileStore.currentFolderI
       throw new Error(`한 번에 최대 ${maxUploadCount.value}개까지 업로드할 수 있습니다.`);
     }
 
-    const oversizedFile = selectedFiles.find((file) => Number(file?.size || 0) > maxUploadFileBytes.value);
-    if (oversizedFile) {
-      throw new Error(
-        `"${oversizedFile.name}" 파일은 최대 제한 크기(${formatBytes(maxUploadFileBytes.value)})를 초과합니다.`,
-      );
-    }
-
-    const invalidFile = selectedFiles.find((file) => !getFileFormat(file));
-    if (invalidFile) {
-      throw new Error(`"${invalidFile.name}" 파일은 확장자를 확인할 수 없습니다.`);
-    }
-
     uploadError.value = "";
     isUploading.value = true;
     isCancelRequested.value = false;
     clearCompletedHistoryIfIdle();
     isPanelCollapsed.value = false;
     openPanel();
-    uploadItems.value = selectedFiles.map((file) => createUploadItem(file));
 
-    const uploadVaultMode = Boolean(secretFolderStore.vaultMode);
-    const response = await initUploadFiles(selectedFiles, targetFolderId, {
-      vaultMode: uploadVaultMode,
+    const entries = [];
+    const failureEntries = [];
+    const formattedMaxSize = formatBytes(maxUploadFileBytes.value);
+
+    uploadItems.value = selectedFiles.map((file) => {
+      const item = createUploadItem(file);
+      const validation = validateUploadFile(file, {
+        maxUploadFileBytes: maxUploadFileBytes.value,
+        maxNameLength: MAX_UPLOAD_NAME_LENGTH,
+        formattedMaxSize,
+      });
+      if (validation.valid) {
+        applyUploadItemState(item, {
+          status: "pending",
+          statusText: defaultStatusText("pending"),
+        });
+        entries.push({ file, item });
+      } else {
+        applyUploadItemState(item, {
+          status: "failed",
+          statusText: validation.reason,
+        });
+        failureEntries.push({
+          name: file?.name || "파일",
+          reason: validation.reason,
+        });
+      }
+      return item;
     });
-    const uploadMetas = parseUploadResponse(response?.data);
-    if (!Array.isArray(uploadMetas) || uploadMetas.length === 0) {
-      throw new Error("업로드 준비 응답이 비어 있습니다.");
+
+    if (entries.length === 0) {
+      const failureMessage = buildFailureSummary(failureEntries, `${uploadTypeLabel} 업로드에 실패했습니다.`);
+      uploadError.value = failureMessage;
+      emit("upload-fail", failureMessage);
+      return;
     }
 
-    const jobs = buildUploadJobs(selectedFiles, uploadMetas, uploadItems.value);
-    const { successList, failureList } = await runJobs(jobs, targetFolderId, uploadVaultMode);
+    const uploadVaultMode = Boolean(secretFolderStore.vaultMode);
+    const batchSize = Math.max(1, Math.min(UPLOAD_INIT_BATCH_SIZE, maxUploadCount.value));
+    const successList = [];
+    let fatalBatchError = "";
 
-    if (isCancelRequested.value) {
-      return;
+    const markEntriesState = (targetEntries, status, statusText) => {
+      targetEntries.forEach(({ item }) => {
+        if (item.status === "preparing" || item.status === "pending") {
+          applyUploadItemState(item, { status, statusText });
+        }
+      });
+    };
+
+    for (let offset = 0; offset < entries.length; offset += batchSize) {
+      if (isCancelRequested.value) {
+        markEntriesState(entries.slice(offset), "canceled", defaultStatusText("canceled"));
+        break;
+      }
+
+      const batchEntries = entries.slice(offset, offset + batchSize);
+      markEntriesState(batchEntries, "preparing", defaultStatusText("preparing"));
+
+      try {
+        const batchFiles = batchEntries.map((entry) => entry.file);
+        const batchItems = batchEntries.map((entry) => entry.item);
+        const response = await initUploadFiles(batchFiles, targetFolderId, {
+          vaultMode: uploadVaultMode,
+        });
+        const uploadMetas = parseUploadResponse(response?.data);
+        if (!Array.isArray(uploadMetas) || uploadMetas.length === 0) {
+          throw new Error("업로드 준비 응답이 비어 있습니다.");
+        }
+
+        if (isCancelRequested.value) {
+          markEntriesState(entries.slice(offset), "canceled", defaultStatusText("canceled"));
+          break;
+        }
+
+        const jobs = buildUploadJobs(batchFiles, uploadMetas, batchItems);
+        const batchResult = await runJobs(jobs, targetFolderId, uploadVaultMode);
+        successList.push(...batchResult.successList);
+        failureEntries.push(...batchResult.failureDetails);
+      } catch (initError) {
+        if (isCancelRequested.value || isAbortError(initError)) {
+          markEntriesState(entries.slice(offset), "canceled", defaultStatusText("canceled"));
+          break;
+        }
+
+        if (batchEntries.length > 1 && isPerFileInitError(initError)) {
+          const singleJobs = [];
+          for (const entry of batchEntries) {
+            if (isCancelRequested.value) {
+              applyUploadItemState(entry.item, {
+                status: "canceled",
+                statusText: defaultStatusText("canceled"),
+              });
+              continue;
+            }
+            try {
+              const singleResponse = await initUploadFiles([entry.file], targetFolderId, {
+                vaultMode: uploadVaultMode,
+              });
+              const singleMetas = parseUploadResponse(singleResponse?.data);
+              if (!Array.isArray(singleMetas) || singleMetas.length === 0) {
+                throw new Error("업로드 준비 응답이 비어 있습니다.");
+              }
+              singleJobs.push(...buildUploadJobs([entry.file], singleMetas, [entry.item]));
+            } catch (singleError) {
+              if (isCancelRequested.value || isAbortError(singleError)) {
+                applyUploadItemState(entry.item, {
+                  status: "canceled",
+                  statusText: defaultStatusText("canceled"),
+                });
+                continue;
+              }
+              const singleMessage = extractErrorMessage(singleError, defaultStatusText("failed"));
+              applyUploadItemState(entry.item, {
+                status: "failed",
+                statusText: singleMessage,
+              });
+              failureEntries.push({
+                name: entry.file?.name || "파일",
+                reason: singleMessage,
+              });
+            }
+          }
+
+          if (singleJobs.length > 0 && !isCancelRequested.value) {
+            const singleBatchResult = await runJobs(singleJobs, targetFolderId, uploadVaultMode);
+            successList.push(...singleBatchResult.successList);
+            failureEntries.push(...singleBatchResult.failureDetails);
+          } else if (singleJobs.length > 0) {
+            singleJobs.forEach((job) => {
+              setItemState(job.itemId, {
+                status: "canceled",
+                statusText: defaultStatusText("canceled"),
+                progress: 0,
+              });
+            });
+          }
+          continue;
+        }
+
+        const batchMessage = extractErrorMessage(initError, `${uploadTypeLabel} 업로드에 실패했습니다.`);
+        fatalBatchError = batchMessage;
+        const remaining = entries.slice(offset);
+        markEntriesState(remaining, "failed", batchMessage);
+        remaining.forEach((entry) => {
+          failureEntries.push({
+            name: entry.file?.name || "파일",
+            reason: batchMessage,
+          });
+        });
+        break;
+      }
     }
 
     if (successList.length > 0) {
@@ -876,16 +1025,30 @@ async function startUploadFiles(files, targetFolderId = fileStore.currentFolderI
         await fileStore.fetchVaultFiles({ background: true }).catch(() => {});
       }
       await fileStore.fetchFiles({ background: fileStore.driveHasLoaded }).catch(() => {});
-      emit("upload-complete", successList);
+      if (!isCancelRequested.value) {
+        emit("upload-complete", successList);
+      }
     }
 
-    if (failureList.length > 0) {
-      const failureMessage = "일부 업로드에 실패했습니다.";
+    if (isCancelRequested.value) {
+      return;
+    }
+
+    if (failureEntries.length > 0) {
+      const failureMessage = fatalBatchError || buildFailureSummary(failureEntries) || "일부 업로드에 실패했습니다.";
       uploadError.value = failureMessage;
       emit("upload-fail", failureMessage);
     }
   } catch (error) {
     const message = extractErrorMessage(error, `${uploadTypeLabel} 업로드에 실패했습니다.`);
+    uploadItems.value.forEach((item) => {
+      if (item.status === "preparing" || item.status === "pending") {
+        applyUploadItemState(item, {
+          status: "failed",
+          statusText: message,
+        });
+      }
+    });
     uploadError.value = message;
     emit("upload-fail", message);
   } finally {

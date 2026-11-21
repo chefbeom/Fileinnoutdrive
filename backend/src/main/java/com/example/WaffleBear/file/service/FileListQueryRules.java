@@ -19,11 +19,17 @@ final class FileListQueryRules {
 
     static String sanitizeFolderName(String folderName) {
         String normalized = folderName == null ? "" : folderName.trim();
-        if (normalized.isEmpty() || normalized.length() > 100) {
+        if (normalized.isEmpty() || normalized.length() > 255) {
             throw BaseException.from(BaseResponseStatus.FILE_NAME_WRONG);
         }
 
-        if (normalized.contains("..") || normalized.contains("/") || normalized.contains("\\") || normalized.contains("\u0000")) {
+        if (".".equals(normalized)
+                || "..".equals(normalized)
+                || normalized.contains("/")
+                || normalized.contains("\\")
+                || normalized.contains("\u0000")
+                || normalized.contains("\r")
+                || normalized.contains("\n")) {
             throw BaseException.from(BaseResponseStatus.FILE_NAME_WRONG);
         }
 

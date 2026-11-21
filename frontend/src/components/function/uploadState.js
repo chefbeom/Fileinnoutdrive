@@ -57,6 +57,65 @@ export function getFileFormat(file) {
   return file.name.slice(lastDotIndex + 1).trim().replace(/^\.+/, "").toLowerCase();
 }
 
+export function resolveUploadFileFormat(file) {
+  const ext = getFileFormat(file);
+  if (/^[a-z0-9]{1,20}$/.test(ext)) {
+    return ext;
+  }
+  return "bin";
+}
+
+export function validateUploadFile(file, options = {}) {
+  const maxUploadFileBytes = Number(options?.maxUploadFileBytes ?? Number.POSITIVE_INFINITY);
+  const maxNameLength = Number(options?.maxNameLength ?? 255);
+  const formattedMaxSize = typeof options?.formattedMaxSize === "string" ? options.formattedMaxSize : "";
+
+  const name = String(file?.name || "").trim();
+  if (!name) {
+    return { valid: false, reason: "파일 이름이 비어 있습니다." };
+  }
+
+  if (name.length > maxNameLength) {
+    return { valid: false, reason: `파일 이름이 ${maxNameLength}자를 초과합니다.` };
+  }
+
+  if (name === "." || name === ".." || /[\\/\u0000\r\n]/.test(name)) {
+    return { valid: false, reason: "파일 이름에 사용할 수 없는 문자가 포함되어 있습니다." };
+  }
+
+  const rawRelativePath = String(file?.webkitRelativePath || "").replace(/\\/g, "/").replace(/^\/+/, "");
+  if (rawRelativePath.includes("/")) {
+    const folderSegments = rawRelativePath.split("/").slice(0, -1);
+    for (const rawSegment of folderSegments) {
+      const segment = rawSegment.trim();
+      if (!segment) {
+        continue;
+      }
+      if (
+        segment.length > maxNameLength ||
+        segment === "." ||
+        segment === ".." ||
+        /[\u0000\r\n]/.test(segment)
+      ) {
+        return { valid: false, reason: `폴더 이름이 올바르지 않거나 ${maxNameLength}자를 초과합니다.` };
+      }
+    }
+  }
+
+  const fileSize = Number(file?.size || 0);
+  if (Number.isFinite(maxUploadFileBytes) && maxUploadFileBytes > 0 && fileSize > maxUploadFileBytes) {
+    const limitLabel = formattedMaxSize ? `(${formattedMaxSize})` : "";
+    return { valid: false, reason: `최대 업로드 크기${limitLabel}를 초과합니다.` };
+  }
+
+  return { valid: true };
+}
+
+export function isPerFileInitError(error) {
+  const code = Number(error?.response?.data?.code);
+  return [3501, 3502, 3503, 3509, 3510].includes(code);
+}
+
 export function defaultStatusText(status) {
   switch (status) {
     case "preparing":
