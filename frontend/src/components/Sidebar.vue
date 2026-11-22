@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router';
+import BrandLogoIcon from '@/components/BrandLogoIcon.vue';
 import FileUpload from '@/components/function/FilesUploadWidget.vue';
 import loadpost from '@/components/workspace/loadpost.js';
 import { useFileStore } from '@/stores/useFileStore.js';
@@ -480,11 +481,7 @@ const handleAction = async (action, idx) => {
           class="py-6 px-6 pb-4 flex items-center gap-3 no-underline cursor-pointer transition-opacity duration-200 hover:opacity-80 flex-shrink-0"
           @click="handleGoHome"
         >
-          <div class="w-9 h-9 bg-blue-600 rounded-lg shadow-lg shadow-blue-200 flex items-center justify-center flex-shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
-          </div>
+          <BrandLogoIcon class="w-9 h-9 flex-shrink-0 rounded-[9px] shadow-md shadow-sky-500/20" />
           <span class="font-bold text-lg text-[var(--text-main)] tracking-tight no-underline">FileInNOut</span>
         </RouterLink>
 

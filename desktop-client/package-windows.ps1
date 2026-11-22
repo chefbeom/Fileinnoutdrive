@@ -297,9 +297,14 @@ $stagedTrayText = [System.IO.File]::ReadAllText($stagedTraySource, [System.Text.
 $stagedTrayText = $stagedTrayText.Replace("__FILEINNOUT_DESKTOP_VERSION__", $Version)
 [System.IO.File]::WriteAllText($stagedTraySource, $stagedTrayText, [System.Text.UTF8Encoding]::new($false))
 
+$sourceIconPath = Join-Path $sourceDir "FileInNOutDesktop.ico"
 $iconPath = Join-Path $stagingRoot "FileInNOutDesktop.ico"
 $trayExePath = Join-Path $stagingRoot "FileInNOutDesktop.exe"
-New-FileInNOutIcon -Path $iconPath
+if (Test-Path -LiteralPath $sourceIconPath) {
+  Copy-Item -Force -LiteralPath $sourceIconPath -Destination $iconPath
+} else {
+  New-FileInNOutIcon -Path $iconPath
+}
 Build-TrayApplication -Sources @($stagedDesktopProgramSource, $stagedTraySource, $stagedDesktopTrayControllerActionsSource, $stagedSettingsFormSource, $stagedSettingsFormActionsSource, $stagedDesktopUiControlsSource, $stagedDesktopTrayMenuSource, $stagedDesktopTrayVisualsSource, $stagedDesktopSettingsTextSource, $stagedDesktopSettingsDialogTextSource, $stagedDesktopModelsSource, $stagedDesktopSyncTextSource, $stagedDesktopUpdateServiceSource, $stagedDesktopExplorerTextSource, $stagedDesktopExplorerBrandingSource, $stagedDesktopExplorerNamespaceSource, $stagedDesktopDriveHubLinksSource, $stagedDesktopDriveHubMaintenanceSource, $stagedDesktopDriveMappingSource, $stagedDesktopProcessRunnerSource, $stagedDesktopPathRulesSource, $stagedDesktopDataReaderSource, $stagedDesktopTrayConfigStoreSource, $stagedDesktopTrayPreferencesSource, $stagedDesktopFolderProfileRulesSource, $stagedDesktopFileSearchSource, $stagedDesktopSearchServiceSource, $stagedDesktopSyncStateSource, $stagedDesktopChangeTrackerSource, $stagedDesktopSyncCommandRunnerSource, $stagedExplorerDriveLauncherSource, $stagedCloudFilesIntegrationSource) -Output $trayExePath -Icon $iconPath
 
 if ($PythonRuntimeDir) {

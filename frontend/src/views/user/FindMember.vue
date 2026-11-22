@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
+import BrandLogoIcon from '@/components/BrandLogoIcon.vue';
 
 const currentStep = ref('main');
 const mode = ref('');
@@ -70,25 +71,7 @@ const goBack = () => {
           to="/"
           class="inline-flex flex-col items-center cursor-pointer group"
         >
-          <div
-            class="inline-flex items-center justify-center w-14 h-14 bg-indigo-600 rounded-2xl shadow-lg shadow-indigo-200 mb-6
-                  group-hover:bg-indigo-700 transition"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="w-8 h-8 text-white"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2.5"
-                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-              />
-            </svg>
-          </div>
+          <BrandLogoIcon class="w-14 h-14 rounded-[14px] shadow-lg shadow-blue-200/80 mb-6 transition-transform duration-200 group-hover:scale-105" />
 
           <h1
             class="text-3xl font-extrabold text-gray-900 tracking-tight group-hover:text-indigo-700 transition"

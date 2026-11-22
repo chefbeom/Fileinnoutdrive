@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import BrandLogoIcon from "@/components/BrandLogoIcon.vue";
 import {
   fetchPublicShareLinkMeta,
   issuePublicSharePresignedUrl,
@@ -162,11 +163,9 @@ onBeforeUnmount(stopTimer);
     <div class="w-full max-w-lg rounded-3xl border border-[var(--border-color)] bg-[var(--bg-elevated)] p-6 shadow-2xl sm:p-8">
       <div class="flex items-center justify-between gap-3 border-b border-[var(--border-color)] pb-4">
         <div class="flex items-center gap-2.5">
-          <div class="flex h-10 w-10 items-center justify-center rounded-2xl bg-sky-500/15 text-sky-500">
-            <i class="fa-solid fa-cloud-arrow-down text-lg"></i>
-          </div>
+          <BrandLogoIcon class="h-10 w-10 shrink-0 rounded-[10px] shadow-md shadow-sky-500/20" />
           <div>
-            <p class="text-[11px] font-extrabold uppercase tracking-wider text-sky-500">File In & Out</p>
+            <p class="text-[11px] font-extrabold uppercase tracking-wider text-sky-500">FileInNOut</p>
             <h1 class="text-base font-extrabold">보안 다운로드 링크</h1>
           </div>
         </div>

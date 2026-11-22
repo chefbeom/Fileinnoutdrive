@@ -218,7 +218,14 @@ try {
   $references += "/reference:System.Drawing.dll"
   $references += "/reference:System.Security.dll"
 
-  & $csc /nologo /target:exe /out:$resolvedOutputPath $references "/resource:$zipPath,FileInNOutDesktopPayload" $sourcePath $formSourcePath
+  $setupIconPath = Join-Path $sourceDir "FileInNOutDesktop.ico"
+  $cscArgs = @("/nologo", "/target:exe", "/out:$resolvedOutputPath") + $references
+  if (Test-Path -LiteralPath $setupIconPath) {
+    $cscArgs += "/win32icon:$setupIconPath"
+  }
+  $cscArgs += @("/resource:$zipPath,FileInNOutDesktopPayload", $sourcePath, $formSourcePath)
+
+  & $csc @cscArgs
   if ($LASTEXITCODE -ne 0) {
     throw "csc.exe failed with exit code $LASTEXITCODE"
   }

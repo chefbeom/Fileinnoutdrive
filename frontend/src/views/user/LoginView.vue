@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import BrandLogoIcon from '@/components/BrandLogoIcon.vue'
 import { getOAuthProviders, login } from '@/api/user/index.js'
 import { useAuthStore } from '@/stores/useAuthStore.js'
 import { apiPath } from '@/utils/backendUrl.js'
@@ -158,14 +159,7 @@ onMounted(() => {
       <div class="brand-panel">
         <router-link to="/" class="brand-link" aria-label="FileInNOut 홈">
           <span class="brand-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2.4"
-                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-              />
-            </svg>
+            <BrandLogoIcon class="brand-icon-img" />
           </span>
           <span class="brand-name">FileInNOut</span>
         </router-link>
@@ -325,15 +319,15 @@ onMounted(() => {
   height: 44px;
   display: inline-grid;
   place-items: center;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #2563eb, #4f46e5);
-  color: #fff;
-  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.25);
+  border-radius: 11px;
+  overflow: hidden;
+  background: transparent;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.22);
 }
 
-.brand-icon svg {
-  width: 24px;
-  height: 24px;
+.brand-icon-img {
+  width: 100%;
+  height: 100%;
 }
 
 .brand-name {

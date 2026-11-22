@@ -99,8 +99,8 @@ self.addEventListener('push', (event) => {
       const isInvite = payload.type === 'invite'
       const options = {
         body: payload.message,
-        icon: '/favicon.ico',
-        badge: '/favicon.ico',
+        icon: '/favicon.ico?v=4',
+        badge: '/favicon.ico?v=4',
         data: {
           notificationId: payload.notificationId,
           type: payload.type,

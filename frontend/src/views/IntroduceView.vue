@@ -1,4 +1,5 @@
 <script setup>
+import BrandLogoIcon from '@/components/BrandLogoIcon.vue';
 import IntrodHeader from '@/components/IntrodHeader.vue';
 import { computed } from 'vue';
 import { useAuthStore } from '@/stores/useAuthStore.js';
@@ -131,12 +132,7 @@ const isLoggedIn = computed(() => !!authStore.token);
     <footer class="py-12 px-6 md:px-12 border-t border-slate-100 text-center md:text-left">
         <div class="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
         <div class="flex items-center gap-3">
-        <div class="w-9 h-9 bg-blue-600 rounded-lg shadow-lg shadow-blue-200 flex items-center justify-center">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
-              d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-          </svg>
-        </div>
+        <BrandLogoIcon class="w-9 h-9 shrink-0 rounded-[9px] shadow-md shadow-blue-200/80" />
         <p class="font-bold">FileInNOut</p>
       </div>
             <div class="flex gap-6 text-sm text-slate-500 font-medium">
