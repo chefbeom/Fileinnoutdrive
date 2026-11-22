@@ -24,7 +24,9 @@ import java.util.concurrent.CompletableFuture;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -115,5 +117,28 @@ class OrderServiceTest {
 
         assertEquals("pay-ok", order.getPaymentId());
         verify(orderRepository).save(order);
+    }
+
+    @Test
+    void verifyAndCompleteOrderRejectsAlreadyPaidOrderReplay() {
+        java.time.LocalDateTime originalExpiry = java.time.LocalDateTime.of(2027, 1, 1, 0, 0);
+        Order order = Order.builder()
+                .orderId("order-paid")
+                .paymentId("pay-existing")
+                .user(User.builder().idx(1L).email("user@example.com").build())
+                .productCode("PLUS")
+                .amount(BigDecimal.valueOf(9900))
+                .expiresAt(originalExpiry)
+                .build();
+        when(orderRepository.findByOrderId("order-paid")).thenReturn(Optional.of(order));
+
+        assertThrows(
+                BaseException.class,
+                () -> orderService.verifyAndCompleteOrder("user@example.com", new OrderDto.OrderVerifyRequest("pay-existing", "order-paid"))
+        );
+
+        assertEquals(originalExpiry, order.getExpiresAt());
+        verifyNoInteractions(paymentClientProvider);
+        verify(orderRepository, never()).save(order);
     }
 }

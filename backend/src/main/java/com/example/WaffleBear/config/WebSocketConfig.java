@@ -26,6 +26,7 @@ import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
 import java.util.List;
+import java.util.Locale;
 
 @Configuration
 @EnableWebSocketMessageBroker
@@ -33,6 +34,9 @@ import java.util.List;
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Value("${app.frontend-url}")
     private String frontendUrl;
+
+    @Value("${app.admin-only:false}")
+    private boolean adminOnly;
 
     private final ChatRoomService chatRoomService;
     private final JwtUtil jwtUtil;
@@ -113,6 +117,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
             String email = jwtUtil.getEmail(token);
             String tokenRole = jwtUtil.getRole(token);
             String role = resolveRole(userEntity, tokenRole);
+            if (adminOnly && !role.toUpperCase(Locale.ROOT).contains("ADMIN")) {
+                throw new IllegalArgumentException("Websocket admin only mode");
+            }
             AuthUserDetails user = AuthUserDetails.builder()
                     .idx(idx)
                     .email(email)
@@ -141,6 +148,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
             if (!chatRoomService.isMember(roomId, user.getIdx())) {
                 throw new RuntimeException("No chat room access");
             }
+            return;
         }
 
         if (destination.startsWith("/sub/workspace/assets/")) {
@@ -148,6 +156,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
             if (userPostRepository.findByUser_IdxAndWorkspace_Idx(user.getIdx(), workspaceId).isEmpty()) {
                 throw new RuntimeException("No workspace access");
             }
+            return;
         }
 
         if (destination.startsWith("/sub/workspace/comments/")) {
@@ -155,7 +164,22 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
             if (userPostRepository.findByUser_IdxAndWorkspace_Idx(user.getIdx(), workspaceId).isEmpty()) {
                 throw new RuntimeException("No workspace access");
             }
+            return;
         }
+
+        if ("/sub/game/openhexagon/lobby".equals(destination)) {
+            return;
+        }
+
+        if (destination.startsWith("/sub/game/rps/room/")) {
+            String roomCode = destination.substring("/sub/game/rps/room/".length()).trim();
+            if (!roomCode.matches("^[A-Za-z0-9_-]+$")) {
+                throw new RuntimeException("Invalid subscription target id");
+            }
+            return;
+        }
+
+        throw new RuntimeException("Unsupported subscription destination");
     }
 
     private Long parseDestinationTargetId(String destination, String prefix) {

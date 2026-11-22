@@ -101,4 +101,28 @@ class ChatAttachmentStorageServiceTest {
         assertThat(urlCaptor.getValue().extraQueryParams().get("response-content-disposition"))
                 .anySatisfy(value -> assertThat(value).startsWith("attachment;"));
     }
+
+    @Test
+    void uploadChatAttachmentForcesAttachmentForSpoofedImageContentTypeWithHtmlFilename() throws Exception {
+        MockMultipartFile spoofed = new MockMultipartFile(
+                "file",
+                "evil.svg",
+                "image/png",
+                "<svg onload=alert(1)></svg>".getBytes(StandardCharsets.UTF_8)
+        );
+        when(minioProperties.getBucket_cloud()).thenReturn("fileinnout-test");
+        when(minioPresignedUrlService.getPresignedObjectUrl(any(GetPresignedObjectUrlArgs.class)))
+                .thenReturn("http://download.example/chat/evil.svg");
+
+        storageService.uploadChatAttachment(10L, 99L, spoofed);
+
+        ArgumentCaptor<PutObjectArgs> putCaptor = ArgumentCaptor.forClass(PutObjectArgs.class);
+        verify(minioClient).putObject(putCaptor.capture());
+        assertThat(putCaptor.getValue().contentType()).isEqualTo("application/octet-stream");
+
+        ArgumentCaptor<GetPresignedObjectUrlArgs> urlCaptor = ArgumentCaptor.forClass(GetPresignedObjectUrlArgs.class);
+        verify(minioPresignedUrlService).getPresignedObjectUrl(urlCaptor.capture());
+        assertThat(urlCaptor.getValue().extraQueryParams().get("response-content-type"))
+                .containsExactly("application/octet-stream");
+    }
 }

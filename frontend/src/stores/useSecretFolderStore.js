@@ -1,4 +1,4 @@
-import { ref } from "vue";
+import { onScopeDispose, ref } from "vue";
 import { clearVaultThumbnails } from "@/utils/fileThumbnailCache.js";
 import { defineStore } from "pinia";
 import {
@@ -493,6 +493,15 @@ export const useSecretFolderStore = defineStore("secretFolder", () => {
     cancelPinModal();
     cancelFolderDialog();
   };
+
+  if (globalThis.window?.addEventListener) {
+    globalThis.window.addEventListener("fileinnout-session-cleared", resetSecretSession);
+    if (typeof onScopeDispose === "function") {
+      onScopeDispose(() => {
+        globalThis.window?.removeEventListener?.("fileinnout-session-cleared", resetSecretSession);
+      });
+    }
+  }
 
   return {
     vaultMode,

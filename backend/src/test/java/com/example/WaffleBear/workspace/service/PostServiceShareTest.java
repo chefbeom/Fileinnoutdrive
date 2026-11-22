@@ -232,6 +232,44 @@ class PostServiceShareTest {
         verify(userPostRepository, never()).deleteByUser_IdxAndWorkspace_Idx(any(), any());
     }
 
+    @Test
+    void publicWorkspaceSelfJoinForcesReadRoleEvenWhenWriteRequested() {
+        User visitor = user(5L, "visitor@example.com");
+        Post publicWorkspace = Post.builder()
+                .idx(99L)
+                .title("Public Board")
+                .contents("{}")
+                .type(true)
+                .status(isShare.Public)
+                .UUID("public-uuid")
+                .build();
+        when(postRepository.findByUUID("public-uuid")).thenReturn(Optional.of(publicWorkspace));
+        when(userRepository.findByEmail("visitor@example.com")).thenReturn(Optional.of(visitor));
+        when(userPostRepository.findByUser_IdxAndWorkspace_Idx(5L, 99L)).thenReturn(Optional.empty());
+
+        postService.invite("public-uuid", null, authUser(visitor), AccessRole.WRITE);
+
+        ArgumentCaptor<UserPost> captor = ArgumentCaptor.forClass(UserPost.class);
+        verify(userPostRepository).save(captor.capture());
+        assertThat(captor.getValue().getLevel()).isEqualTo(AccessRole.READ);
+    }
+
+    @Test
+    void changeSingleRoleRejectsAdminPromotionAndInvalidRole() {
+        User admin = user(1L, "admin@example.com");
+        User member = user(2L, "member@example.com");
+        Post workspace = sharedWorkspace();
+        when(userPostRepository.findByUser_IdxAndWorkspace_Idx(1L, 42L))
+                .thenReturn(Optional.of(relation(admin, workspace, AccessRole.ADMIN)));
+        when(userPostRepository.findByUser_IdxAndWorkspace_Idx(2L, 42L))
+                .thenReturn(Optional.of(relation(member, workspace, AccessRole.READ)));
+
+        assertThatThrownBy(() -> postService.changeSingleRole(42L, authUser(admin), 2L, "ADMIN"))
+                .isInstanceOf(BaseException.class);
+        assertThatThrownBy(() -> postService.changeSingleRole(42L, authUser(admin), 2L, "SUPERUSER"))
+                .isInstanceOf(BaseException.class);
+    }
+
     private User user(Long idx, String email) {
         return User.builder()
                 .idx(idx)

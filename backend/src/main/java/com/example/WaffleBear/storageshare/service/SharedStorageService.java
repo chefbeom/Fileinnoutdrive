@@ -156,9 +156,18 @@ public class SharedStorageService {
         return fileUpDownloadRepository.saveAndFlush(created);
     }
 
+    private boolean isActiveMember(Long storageIdx, Long userIdx) {
+        if (storageIdx == null || storageIdx <= 0L || userIdx == null || userIdx <= 0L) {
+            return false;
+        }
+        return sharedStorageMemberRepository.findByStorage_IdxAndUser_Idx(storageIdx, userIdx)
+                .map(SharedStorageMember::isActive)
+                .orElse(false);
+    }
+
     @Transactional
     public boolean handleDriveFolderMoveToTrash(Long userIdx, Long storageIdx, LocalDateTime deletedAt) {
-        if (storageIdx == null || storageIdx <= 0L) {
+        if (storageIdx == null || storageIdx <= 0L || !isActiveMember(storageIdx, userIdx)) {
             return true;
         }
         SharedStorage storage = sharedStorageRepository.findById(storageIdx).orElse(null);
@@ -238,12 +247,24 @@ public class SharedStorageService {
 
     @Transactional
     public void handleDriveFolderRestore(Long userIdx, Long storageIdx) {
-        if (storageIdx == null || storageIdx <= 0L) {
+        if (storageIdx == null || storageIdx <= 0L || !isActiveMember(storageIdx, userIdx)) {
             return;
         }
         SharedStorage storage = sharedStorageRepository.findById(storageIdx).orElse(null);
         if (storage == null || storage.getStatus() != SharedStorageStatus.TRASHED) {
             return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        List<SharedStorageMember> activeMembers = sharedStorageMemberRepository
+                .findAllByStorage_IdxAndStatus(storageIdx, MemberStatus.ACTIVE);
+        for (SharedStorageMember member : activeMembers) {
+            long contribution = member.safeContributionBytes();
+            if (contribution > 0L && member.getUser() != null) {
+                long available = storageGrantService.calculateAvailableBytesForUser(member.getUser().getIdx(), now);
+                if (available < contribution) {
+                    throw BaseException.from(BaseResponseStatus.STORAGE_GRANT_INSUFFICIENT_CAPACITY);
+                }
+            }
         }
         storage.restore();
         sharedStorageRepository.saveAndFlush(storage);
@@ -261,7 +282,7 @@ public class SharedStorageService {
 
     @Transactional
     public void handleDriveFolderPermanentDelete(Long userIdx, Long storageIdx) {
-        if (storageIdx == null || storageIdx <= 0L) {
+        if (storageIdx == null || storageIdx <= 0L || !isActiveMember(storageIdx, userIdx)) {
             return;
         }
         SharedStorage storage = sharedStorageRepository.findById(storageIdx).orElse(null);
@@ -297,7 +318,8 @@ public class SharedStorageService {
 
     @Transactional
     public void handleDriveFolderRename(Long userIdx, Long storageIdx, String newName) {
-        if (storageIdx == null || storageIdx <= 0L || newName == null || newName.isBlank()) {
+        if (storageIdx == null || storageIdx <= 0L || newName == null || newName.isBlank()
+                || !isActiveMember(storageIdx, userIdx)) {
             return;
         }
         SharedStorage storage = sharedStorageRepository.findById(storageIdx).orElse(null);
@@ -1276,6 +1298,12 @@ public class SharedStorageService {
 
         sharedStorageMemberRepository.delete(targetMember);
         sharedStorageMemberRepository.flush();
+        fileUpDownloadRepository
+                .findFirstByUser_IdxAndFileSaveNameStartingWithOrderByIdxAsc(
+                        targetUserIdx,
+                        buildDriveFolderSaveNamePrefix(storage.getIdx())
+                )
+                .ifPresent(fileUpDownloadRepository::delete);
     }
 
     private void purgeSharedStorageCompletely(SharedStorage storage) {

@@ -11,6 +11,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -21,6 +22,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -33,6 +35,9 @@ public class JwtFilter extends OncePerRequestFilter {
     private final JwtUtil jwtUtil;
     private final UserRepository userRepository;
     private final Map<Long, CachedUserSnapshot> userSnapshotCache = new ConcurrentHashMap<>();
+
+    @Value("${app.admin-only:false}")
+    private boolean adminOnly;
 
     private record CachedUserSnapshot(
             String name,
@@ -113,6 +118,10 @@ public class JwtFilter extends OncePerRequestFilter {
 
         String email = jwtUtil.getEmail(token);
         String role = userSnapshot.role();
+        if (adminOnly && !isAdminRole(role)) {
+            writeError(response, HttpServletResponse.SC_FORBIDDEN, "admin account required");
+            return;
+        }
         String id = jwtUtil.getId(token);
         if (id == null || id.isBlank()) {
             id = email;
@@ -181,6 +190,16 @@ public class JwtFilter extends OncePerRequestFilter {
     private String resolveRole(User user) {
         String role = user.getRole();
         return (role == null || role.isBlank()) ? "ROLE_USER" : role.trim();
+    }
+
+    public void evictUserSnapshot(Long idx) {
+        if (idx != null) {
+            userSnapshotCache.remove(idx);
+        }
+    }
+
+    private boolean isAdminRole(String role) {
+        return role != null && role.toUpperCase(Locale.ROOT).contains("ADMIN");
     }
 
     private UserAccountStatus resolveStatus(User user) {

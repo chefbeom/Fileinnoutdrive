@@ -128,6 +128,38 @@ class WebSocketConfigTest {
                 .hasMessage("No chat room access");
     }
 
+    @Test
+    void adminOnlyRejectsNonAdminStompConnectAndSubscriptionUsesExplicitAllowlist() {
+        when(jwtUtil.getCategory("access-token")).thenReturn("access");
+        when(jwtUtil.getUserIdx("access-token")).thenReturn(7L);
+        when(userRepository.findById(7L)).thenReturn(Optional.of(user(true, UserAccountStatus.ACTIVE)));
+        when(jwtUtil.getEmail("access-token")).thenReturn("user@example.com");
+        when(jwtUtil.getRole("access-token")).thenReturn("ROLE_USER");
+        Authentication auth = config.authenticate(connectAccessor("access-token"));
+
+        StompHeaderAccessor lobbySub = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        lobbySub.setDestination("/sub/game/openhexagon/lobby");
+        lobbySub.setUser(auth);
+        config.authorizeInboundMessage(lobbySub);
+
+        StompHeaderAccessor rpsSub = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        rpsSub.setDestination("/sub/game/rps/room/room-1");
+        rpsSub.setUser(auth);
+        config.authorizeInboundMessage(rpsSub);
+
+        StompHeaderAccessor unknownSub = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        unknownSub.setDestination("/sub/unknown/channel");
+        unknownSub.setUser(auth);
+        assertThatThrownBy(() -> config.authorizeInboundMessage(unknownSub))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Unsupported subscription destination");
+
+        org.springframework.test.util.ReflectionTestUtils.setField(config, "adminOnly", true);
+        assertThatThrownBy(() -> config.authenticate(connectAccessor("access-token")))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Invalid websocket access token");
+    }
+
     private static User user(boolean enabled, UserAccountStatus status) {
         return User.builder()
                 .idx(7L)

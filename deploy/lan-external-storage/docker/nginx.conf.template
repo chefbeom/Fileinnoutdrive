@@ -1,7 +1,13 @@
 server {
     listen 80;
     server_name _;
+    server_tokens off;
     client_max_body_size 0;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
 
     gzip on;
     gzip_vary on;
@@ -20,6 +26,10 @@ server {
         add_header Cache-Control "no-cache, no-store, must-revalidate" always;
         add_header Pragma "no-cache" always;
         add_header Expires "0" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
         try_files $uri =404;
     }
 
@@ -28,12 +38,20 @@ server {
         add_header Cache-Control "no-cache, no-store, must-revalidate" always;
         add_header Pragma "no-cache" always;
         add_header Expires "0" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
         try_files $uri =404;
     }
 
     location ^~ /assets/ {
         root /usr/share/nginx/html;
         add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
         try_files $uri =404;
     }
 
@@ -42,6 +60,10 @@ server {
         add_header Cache-Control "no-cache, no-store, must-revalidate" always;
         add_header Pragma "no-cache" always;
         add_header Expires "0" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
         try_files $uri =404;
     }
 
@@ -51,6 +73,10 @@ server {
         add_header Cache-Control "no-cache, no-store, must-revalidate" always;
         add_header Pragma "no-cache" always;
         add_header Expires "0" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
         try_files $uri $uri/ /index.html;
     }
 
@@ -116,6 +142,7 @@ server {
 server {
     listen 9000;
     server_name _;
+    server_tokens off;
     client_max_body_size 0;
     proxy_buffering off;
     proxy_request_buffering off;
@@ -148,12 +175,17 @@ server {
         add_header 'Access-Control-Allow-Methods' 'GET, PUT, POST, DELETE, HEAD, OPTIONS' always;
         add_header 'Access-Control-Allow-Headers' '*' always;
         add_header 'Access-Control-Expose-Headers' 'ETag, Content-Length, Content-Type, x-amz-request-id, x-amz-id-2' always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Content-Security-Policy "default-src 'none'; img-src 'self' data: blob:; media-src 'self' blob:; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self' __MINIO_CORS_ORIGIN__;" always;
 
         proxy_pass __MINIO_INTERNAL_ORIGIN__;
         proxy_http_version 1.1;
         proxy_socket_keepalive on;
         proxy_set_header Host $http_host;
         proxy_set_header Origin "";
+        proxy_set_header Cookie "";
+        proxy_set_header Authorization "";
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;

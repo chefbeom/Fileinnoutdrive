@@ -153,6 +153,38 @@ class AuthServiceTest {
         assertThat(authService.resolveUserByRefreshToken(refreshToken)).isNull();
     }
 
+    @Test
+    void reissueRejectsNonAdminWhenAdminOnlyEnabled() {
+        String refreshToken = "user-refresh-token";
+        RefreshToken storedToken = RefreshToken.builder()
+                .id(41L)
+                .email("user@example.com")
+                .tokenHash(hash(refreshToken))
+                .expiryDate(LocalDateTime.now().plusDays(1))
+                .build();
+        User user = User.builder()
+                .idx(7L)
+                .email("user@example.com")
+                .name("User")
+                .role("ROLE_USER")
+                .enable(true)
+                .accountStatus(UserAccountStatus.ACTIVE)
+                .build();
+
+        org.springframework.test.util.ReflectionTestUtils.setField(authService, "adminOnly", true);
+        when(jwtUtil.isExpired(refreshToken)).thenReturn(false);
+        when(jwtUtil.getCategory(refreshToken)).thenReturn("refresh");
+        when(refreshTokenRepository.findFirstByTokenHashOrderByIdDesc(hash(refreshToken)))
+                .thenReturn(Optional.of(storedToken));
+        when(refreshTokenRepository.findAllByTokenHash(hash(refreshToken))).thenReturn(List.of(storedToken));
+        when(jwtUtil.getEmail(refreshToken)).thenReturn(user.getEmail());
+        when(userRepository.findByEmail(user.getEmail())).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> authService.reissue(refreshToken))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Administrator only mode is enabled.");
+    }
+
     private static String hash(String value) {
         try {
             return HexFormat.of().formatHex(

@@ -78,4 +78,37 @@ class JwtFilterTest {
         assertThat(auth.getAuthorities()).extracting("authority").containsExactly("ROLE_USER");
         assertThat(((AuthUserDetails) auth.getPrincipal()).getRole()).isEqualTo("ROLE_USER");
     }
+
+    @Test
+    void adminOnlyRejectsAuthenticatedNonAdminTokenAndEvictsSnapshot() throws Exception {
+        String key = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("wafflebear-jwt-filter-unit-test-key-32b!".getBytes(StandardCharsets.UTF_8));
+        JwtUtil jwtUtil = new JwtUtil(key);
+        UserRepository userRepository = mock(UserRepository.class);
+        JwtFilter filter = new JwtFilter(jwtUtil, userRepository);
+        org.springframework.test.util.ReflectionTestUtils.setField(filter, "adminOnly", true);
+
+        String token = jwtUtil.createToken("access", 8L, "user@test.local", "user@test.local", "User", "ROLE_USER", 60_000L);
+        User regularUser = User.builder()
+                .idx(8L)
+                .email("user@test.local")
+                .name("User")
+                .role("ROLE_USER")
+                .enable(true)
+                .accountStatus(UserAccountStatus.ACTIVE)
+                .build();
+        when(userRepository.findById(8L)).thenReturn(Optional.of(regularUser));
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/file/list");
+        request.addHeader("Authorization", "Bearer " + token);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(403);
+        verify(chain, org.mockito.Mockito.never()).doFilter(request, response);
+
+        filter.evictUserSnapshot(8L);
+    }
 }

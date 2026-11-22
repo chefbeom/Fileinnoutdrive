@@ -88,6 +88,10 @@ public class OrderService {
             throw new BaseException(BaseResponseStatus.FAIL);
         }
 
+        if (order.getPaymentId() != null && !order.getPaymentId().isBlank()) {
+            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
+
         if (orderRepository.existsByPaymentIdAndOrderIdNot(requestDto.paymentId(), order.getOrderId())) {
             throw new BaseException(BaseResponseStatus.FAIL);
         }

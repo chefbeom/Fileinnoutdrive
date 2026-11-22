@@ -2,6 +2,7 @@ package com.example.WaffleBear.file.share;
 
 import com.example.WaffleBear.common.exception.BaseException;
 import com.example.WaffleBear.file.FileUpDownloadRepository;
+import com.example.WaffleBear.file.manage.dto.FileManageDto;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
 import com.example.WaffleBear.file.share.model.FileShare;
@@ -378,6 +379,47 @@ class ShareFileAccessServiceTest {
         verify(shareFileObjectStorageService).putObject(any(), anyString(), anyLong(), anyString());
         verify(shareFileObjectStorageService).deleteObjectQuietly(anyString());
         verify(fileUpDownloadRepository, never()).save(any(FileInfo.class));
+    }
+
+    @Test
+    void sharedFileMovedIntoSecretOrVaultFolderIsBlocked() {
+        User owner = user(1L, "owner@example.com");
+        User recipient = user(2L, "recipient@example.com");
+        FileInfo hiddenParent = FileInfo.builder()
+                .idx(99L)
+                .user(owner)
+                .nodeType(FileNodeType.FOLDER)
+                .spaceType(com.example.WaffleBear.file.model.FileSpaceType.DRIVE)
+                .hiddenFolder(true)
+                .build();
+        FileInfo movedFile = file(10L, owner, hiddenParent, "secret.txt", false);
+        FileShare share = share(movedFile, owner, recipient, FileSharePermission.WRITE, FileShareStatus.ACCEPTED);
+
+        when(shareRepository.findByFile_IdxAndRecipient_Idx(10L, 2L)).thenReturn(Optional.of(share));
+
+        assertThatThrownBy(() -> shareFileAccessService.getSharedFileDownloadUrl(2L, 10L))
+                .isInstanceOf(BaseException.class);
+        assertThatThrownBy(() -> shareFileAccessService.getSharedTextPreview(2L, 10L))
+                .isInstanceOf(BaseException.class);
+        assertThatThrownBy(() -> shareFileAccessService.moveSharedFileToTrash(2L, 10L))
+                .isInstanceOf(BaseException.class);
+    }
+
+    @Test
+    void createFolderInSharedFolderRejectsPathTraversalName() {
+        User owner = user(1L, "owner@example.com");
+        User recipient = user(2L, "recipient@example.com");
+        FileInfo sharedFolder = folder(10L, owner, null, "Team", false);
+        FileShare folderShare = share(sharedFolder, owner, recipient, FileSharePermission.WRITE, FileShareStatus.ACCEPTED);
+
+        when(shareRepository.findByFile_IdxAndRecipient_Idx(10L, 2L)).thenReturn(Optional.of(folderShare));
+
+        FileManageDto.FolderReq req = new FileManageDto.FolderReq();
+        org.springframework.test.util.ReflectionTestUtils.setField(req, "folderName", "../evil");
+
+        assertThatThrownBy(() -> shareFileAccessService.createFolderInSharedFolder(2L, 10L, req))
+                .isInstanceOf(BaseException.class);
+        verify(uploadFolderService, never()).findOrCreateCommittedFolder(anyLong(), anyLong(), anyString());
     }
 
     private void startTransactionSynchronization() {

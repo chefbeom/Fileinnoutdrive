@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
+import java.util.Locale;
 
 @Component
 @RequiredArgsConstructor
@@ -26,10 +27,26 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
     @Value("${app.frontend-url}")
     private String frontendUrl;
 
+    @Value("${app.admin-only:false}")
+    private boolean adminOnly;
+
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response, Authentication authentication)
             throws IOException, ServletException {
         AuthUserDetails user = (AuthUserDetails) authentication.getPrincipal();
+
+        if (!user.isEnabled() || (adminOnly && !isAdmin(user))) {
+            clearAuthenticationAttributes(request);
+            String errorCode = adminOnly ? "admin_only" : "account_disabled";
+            String errorRedirectUrl = UriComponentsBuilder
+                    .fromUriString(frontendUrl)
+                    .path("/login")
+                    .queryParam("oauthError", errorCode)
+                    .build()
+                    .toUriString();
+            getRedirectStrategy().sendRedirect(request, response, errorRedirectUrl);
+            return;
+        }
 
         TokenDto.AuthTokenResponse tokens = authService.issueTokens(
                 user.getIdx(),
@@ -49,5 +66,10 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
                 .build()
                 .toUriString();
         getRedirectStrategy().sendRedirect(request, response, redirectUrl);
+    }
+
+    private boolean isAdmin(AuthUserDetails user) {
+        String role = user != null ? user.getRole() : null;
+        return role != null && role.toUpperCase(Locale.ROOT).contains("ADMIN");
     }
 }

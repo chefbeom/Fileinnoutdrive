@@ -3,6 +3,7 @@ package com.example.WaffleBear.administrator;
 import com.example.WaffleBear.administrator.model.AdministratorDto;
 import com.example.WaffleBear.common.exception.BaseException;
 import com.example.WaffleBear.common.model.BaseResponseStatus;
+import com.example.WaffleBear.config.Filter.JwtFilter;
 import com.example.WaffleBear.file.FileUpDownloadRepository;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
@@ -16,6 +17,7 @@ import com.example.WaffleBear.user.model.UserAccountStatus;
 import com.example.WaffleBear.user.repository.RefreshTokenRepository;
 import com.example.WaffleBear.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -38,6 +40,9 @@ public class AdministratorService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final StoragePlanService storagePlanService;
     private final ShareAuditService shareAuditService;
+
+    @Autowired(required = false)
+    private JwtFilter jwtFilter;
 
     public AdministratorDto.DashboardRes getDashboard(AuthUserDetails adminUser) {
         validateAdministrator(adminUser);
@@ -157,6 +162,10 @@ public class AdministratorService {
 
         if (targetStatus != UserAccountStatus.ACTIVE) {
           refreshTokenRepository.deleteByEmail(targetUser.getEmail());
+        }
+
+        if (jwtFilter != null) {
+            jwtFilter.evictUserSnapshot(targetUser.getIdx());
         }
 
         UserFileStat stat = loadDashboardStat(targetUser.getIdx());

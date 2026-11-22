@@ -6,6 +6,7 @@ import com.example.WaffleBear.file.FileUpDownloadRepository;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.secret.PinAttemptLimiter;
 import com.example.WaffleBear.file.secret.SecretAccessGuard;
+import com.example.WaffleBear.file.secret.SecretTreeRules;
 import com.example.WaffleBear.file.share.ShareRepository;
 import com.example.WaffleBear.file.share.model.FileShare;
 import lombok.RequiredArgsConstructor;
@@ -77,7 +78,7 @@ public class FileThumbnailQueryService {
             if (candidate.isEmpty()) {
                 throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
             }
-            if (passwordEncoder != null && !passwordEncoder.matches(candidate, share.getPasswordHash())) {
+            if (passwordEncoder == null || !passwordEncoder.matches(candidate, share.getPasswordHash())) {
                 pinAttemptLimiter.recordFailure(scopeKey);
                 throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
             }
@@ -85,7 +86,11 @@ public class FileThumbnailQueryService {
         }
 
         FileInfo file = share.getFile();
-        if (file == null || file.isTrashed() || file.isLockedFile()) {
+        if (file == null
+                || file.isTrashed()
+                || file.isLockedFile()
+                || SecretTreeRules.hasVaultAncestor(file)
+                || SecretTreeRules.hasHiddenAncestor(file)) {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
         }
         return fileThumbnailService.loadThumbnail(file);

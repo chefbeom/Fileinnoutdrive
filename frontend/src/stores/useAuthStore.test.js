@@ -4,6 +4,13 @@ import { createPinia, setActivePinia } from 'pinia'
 import { logoutSession, refreshAccessToken } from '@/api/authSession.js'
 import postApi from '@/api/postApi.js'
 import sseApi from '@/api/sseApi.js'
+import {
+  getSecretFolderTokensHeader,
+  getSecretVaultToken,
+  setSecretFolderToken,
+  setSecretVaultToken,
+} from '@/stores/secretSessionHeaders.js'
+import { useSecretFolderStore } from '@/stores/useSecretFolderStore.js'
 import { useAuthStore } from './useAuthStore.js'
 
 vi.mock('@/api/authSession.js', () => ({
@@ -256,5 +263,28 @@ describe('useAuthStore', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('clears secret vault tokens and resets secret folder session state on logout', async () => {
+    const store = useAuthStore()
+    const secretStore = useSecretFolderStore()
+    store.login(createToken({ idx: 33, email: 'vault@example.com', exp: futureExp() }))
+    setSecretVaultToken('vault-token-123')
+    setSecretFolderToken(88, 'folder-token-456')
+    secretStore.vaultMode = true
+    secretStore.vaultUnlocked = true
+    secretStore.showHiddenFolders = true
+    secretStore.unlockedFolderIds = { '88': true }
+
+    postApi.unsubscribeWebPush.mockResolvedValueOnce({})
+    logoutSession.mockResolvedValueOnce({})
+    await store.logout()
+
+    expect(getSecretVaultToken()).toBe('')
+    expect(getSecretFolderTokensHeader()).toBe('')
+    expect(secretStore.vaultMode).toBe(false)
+    expect(secretStore.vaultUnlocked).toBe(false)
+    expect(secretStore.showHiddenFolders).toBe(false)
+    expect(secretStore.unlockedFolderIds).toEqual({})
   })
 })

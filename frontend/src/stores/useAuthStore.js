@@ -3,6 +3,8 @@ import { computed, ref, shallowRef } from 'vue'
 import { logoutSession, refreshAccessToken } from '@/api/authSession.js'
 import postApi from '@/api/postApi.js'
 import sseApi from '@/api/sseApi.js'
+import { clearAllSecretTokens } from '@/stores/secretSessionHeaders.js'
+import { clearVaultThumbnails } from '@/utils/fileThumbnailCache.js'
 import { apiPath } from '@/utils/backendUrl.js'
 
 const TOKEN_REFRESH_SKEW_MS = 30 * 1000
@@ -189,6 +191,9 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     token.value = null
     clearLegacyLocalSession()
+    clearAllSecretTokens()
+    clearVaultThumbnails()
+    globalThis.window?.dispatchEvent?.(new CustomEvent('fileinnout-session-cleared'))
   }
 
   const applyAccessToken = (accessToken) => {

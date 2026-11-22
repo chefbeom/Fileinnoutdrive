@@ -22,6 +22,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/auth")
@@ -96,7 +97,13 @@ public class AuthController {
             }
         }
 
-        TokenDto.AuthTokenResponse tokens = authService.reissue(refreshToken);
+        TokenDto.AuthTokenResponse tokens;
+        try {
+            tokens = authService.reissue(refreshToken);
+        } catch (IllegalStateException exception) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "admin account required"));
+        }
 
         response.setHeader("Authorization", "Bearer " + tokens.accessToken());
         cookieResponseWriter.addRefreshCookie(response, tokens.refreshToken());

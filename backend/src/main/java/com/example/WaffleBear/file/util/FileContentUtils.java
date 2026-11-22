@@ -7,6 +7,20 @@ import java.util.Set;
 public final class FileContentUtils {
 
     private static final String THUMBNAIL_DIRECTORY_NAME = "thumbnails";
+    private static final Set<String> ACTIVE_WEB_EXTENSIONS = Set.of(
+            "html", "htm", "xhtml", "svg", "svgz", "xml", "js", "mjs", "swf", "mhtml", "mht"
+    );
+    private static final Set<String> ACTIVE_WEB_CONTENT_TYPES = Set.of(
+            "text/html",
+            "application/xhtml+xml",
+            "image/svg+xml",
+            "text/xml",
+            "application/xml",
+            "text/javascript",
+            "application/javascript",
+            "application/x-javascript",
+            "application/x-shockwave-flash"
+    );
 
     private FileContentUtils() {
     }
@@ -79,9 +93,39 @@ public final class FileContentUtils {
         return "text/plain";
     }
 
+    public static boolean isActiveWebFile(String fileNameOrFormat) {
+        if (fileNameOrFormat == null || fileNameOrFormat.isBlank()) {
+            return false;
+        }
+        String candidate = fileNameOrFormat.trim().toLowerCase(Locale.ROOT);
+        int slashIndex = Math.max(candidate.lastIndexOf('/'), candidate.lastIndexOf('\\'));
+        if (slashIndex >= 0 && slashIndex < candidate.length() - 1) {
+            candidate = candidate.substring(slashIndex + 1);
+        }
+        int dotIndex = candidate.lastIndexOf('.');
+        String extension = dotIndex >= 0 && dotIndex < candidate.length() - 1
+                ? candidate.substring(dotIndex + 1)
+                : candidate;
+        return ACTIVE_WEB_EXTENSIONS.contains(extension);
+    }
+
+    public static boolean isActiveWebContentType(String contentType) {
+        if (contentType == null || contentType.isBlank()) {
+            return false;
+        }
+        String baseType = contentType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
+        return ACTIVE_WEB_CONTENT_TYPES.contains(baseType);
+    }
+
     public static String resolveDownloadContentType(String fileName) {
+        if (isActiveWebFile(fileName)) {
+            return "application/octet-stream";
+        }
         String contentType = URLConnection.guessContentTypeFromName(fileName == null ? "" : fileName);
-        return (contentType == null || contentType.isBlank()) ? "application/octet-stream" : contentType;
+        if (contentType == null || contentType.isBlank() || isActiveWebContentType(contentType)) {
+            return "application/octet-stream";
+        }
+        return contentType;
     }
 
     public static String sanitizeDownloadFileName(String preferredName, String fallbackName) {

@@ -784,15 +784,8 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
     res.end(
       JSON.stringify({
-        websocketName: NODE_ID,
-        websocketHost: HOST,
-        websocketPort: PORT,
-        redisName: redisDisplayName(),
-        redisEndpoint: redisEndpointLabel(),
-        redisMode: REDIS_SENTINELS.length > 0 && REDIS_SENTINEL_MASTER ? 'sentinel' : 'standalone',
+        status: 'ok',
         redisAvailable: isRedisReady(),
-        redisPubStatus: redisPub.status,
-        redisSubStatus: redisSub.status,
       }),
     )
     return

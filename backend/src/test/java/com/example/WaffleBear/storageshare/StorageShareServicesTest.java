@@ -438,6 +438,70 @@ class StorageShareServicesTest {
         verify(uploadObjectStorageService, never()).deleteObjectKeys(anyList());
     }
 
+    @Test
+    void removedMemberCannotRenameTrashRestoreOrDeleteSharedStorageViaStaleDriveFolder() {
+        User exMember = User.builder().idx(99L).email("ex@example.com").name("탈퇴멤버").build();
+        SharedStorage storage = SharedStorage.builder()
+                .idx(50L)
+                .name("공동 저장소")
+                .creator(exMember)
+                .status(SharedStorageStatus.ACTIVE)
+                .build();
+
+        when(sharedStorageMemberRepository.findByStorage_IdxAndUser_Idx(50L, 99L)).thenReturn(Optional.empty());
+
+        sharedStorageService.handleDriveFolderRename(99L, 50L, "탈취이름");
+        boolean moved = sharedStorageService.handleDriveFolderMoveToTrash(99L, 50L, LocalDateTime.now());
+        sharedStorageService.handleDriveFolderRestore(99L, 50L);
+        sharedStorageService.handleDriveFolderPermanentDelete(99L, 50L);
+
+        assertTrue(moved);
+        assertEquals("공동 저장소", storage.getName());
+        assertEquals(SharedStorageStatus.ACTIVE, storage.getStatus());
+        verify(sharedStorageRepository, never()).delete(any());
+        verify(sharedStorageRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void removeMemberApprovalDeletesRemovedMembersLinkedDriveFolder() {
+        User owner = User.builder().idx(1L).email("owner@example.com").name("소유자").build();
+        User removed = User.builder().idx(2L).email("removed@example.com").name("제외멤버").build();
+        SharedStorage storage = SharedStorage.builder()
+                .idx(50L)
+                .name("팀 저장소")
+                .creator(owner)
+                .status(SharedStorageStatus.ACTIVE)
+                .build();
+        SharedStorageMember ownerMember = SharedStorageMember.builder()
+                .idx(501L).storage(storage).user(owner).role(MemberRole.OWNER).status(MemberStatus.ACTIVE).contributionBytes(10L * GB).build();
+        SharedStorageMember targetMember = SharedStorageMember.builder()
+                .idx(502L).storage(storage).user(removed).role(MemberRole.MEMBER).status(MemberStatus.ACTIVE).contributionBytes(0L).build();
+        SharedStorageApproval approval = SharedStorageApproval.builder()
+                .idx(901L).storage(storage).approvalType(ApprovalType.REMOVE_MEMBER).status(ApprovalStatus.PENDING)
+                .requester(owner).targetUserIdx(2L).targetLabel("제외").expiresAt(LocalDateTime.now().plusDays(7)).build();
+        SharedStorageApprovalVote vote1 = SharedStorageApprovalVote.builder().approval(approval).voter(owner).approved(true).build();
+        SharedStorageApprovalVote vote2 = SharedStorageApprovalVote.builder().approval(approval).voter(removed).approved(true).build();
+        FileInfo staleDriveFolder = FileInfo.builder()
+                .idx(777L).user(removed).nodeType(FileNodeType.FOLDER).fileSaveName("shared-storage-50-uuid").build();
+
+        when(userRepository.findById(2L)).thenReturn(Optional.of(removed));
+        when(sharedStorageRepository.findWithCreatorByIdx(50L)).thenReturn(Optional.of(storage));
+        when(sharedStorageMemberRepository.findByStorage_IdxAndUser_Idx(50L, 2L))
+                .thenReturn(Optional.of(targetMember), Optional.of(targetMember), Optional.empty());
+        when(sharedStorageApprovalRepository.findByIdxAndStorage_Idx(901L, 50L)).thenReturn(Optional.of(approval));
+        when(sharedStorageApprovalVoteRepository.findByApproval_IdxAndVoter_Idx(901L, 2L)).thenReturn(Optional.empty());
+        when(sharedStorageMemberRepository.findAllByStorage_IdxAndStatus(50L, MemberStatus.ACTIVE))
+                .thenReturn(List.of(ownerMember, targetMember), List.of(ownerMember));
+        when(sharedStorageApprovalVoteRepository.findAllByApproval_Idx(901L)).thenReturn(List.of(vote1, vote2));
+        when(fileUpDownloadRepository.findFirstByUser_IdxAndFileSaveNameStartingWithOrderByIdxAsc(2L, "shared-storage-50-"))
+                .thenReturn(Optional.of(staleDriveFolder));
+
+        sharedStorageService.voteApproval(2L, 50L, 901L, new StorageShareDto.VoteApprovalReq(true));
+
+        verify(sharedStorageMemberRepository).delete(targetMember);
+        verify(fileUpDownloadRepository).delete(staleDriveFolder);
+    }
+
     private static StoragePlanService.StorageQuota quota(long totalBytes) {
         return new StoragePlanService.StorageQuota(
                 "PREMIUM",

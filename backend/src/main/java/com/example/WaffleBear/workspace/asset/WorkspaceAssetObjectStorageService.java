@@ -4,6 +4,7 @@ import com.example.WaffleBear.common.exception.BaseException;
 import com.example.WaffleBear.common.model.BaseResponseStatus;
 import com.example.WaffleBear.config.MinioPresignedUrlService;
 import com.example.WaffleBear.config.MinioProperties;
+import com.example.WaffleBear.file.util.FileContentUtils;
 import io.minio.CopyObjectArgs;
 import io.minio.CopySource;
 import io.minio.GetObjectArgs;
@@ -45,13 +46,16 @@ class WorkspaceAssetObjectStorageService {
     }
 
     void putCloudObject(String objectKey, MultipartFile file, String contentType) {
+        String safeContentType = (FileContentUtils.isActiveWebFile(objectKey) || FileContentUtils.isActiveWebContentType(contentType))
+                ? "application/octet-stream"
+                : (StringUtils.hasText(contentType) ? contentType : "application/octet-stream");
         try {
             minioClient.putObject(
                     PutObjectArgs.builder()
                             .bucket(resolveCloudBucketName())
                             .object(objectKey)
                             .stream(file.getInputStream(), file.getSize(), -1)
-                            .contentType(contentType)
+                            .contentType(safeContentType)
                             .build()
             );
         } catch (Exception exception) {
@@ -95,14 +99,24 @@ class WorkspaceAssetObjectStorageService {
         }
 
         try {
-            return minioPresignedUrlService.getPresignedObjectUrl(
-                    GetPresignedObjectUrlArgs.builder()
-                            .method(Method.GET)
-                            .bucket(resolveCloudBucketName())
-                            .object(objectKey)
-                            .expiry(minioProperties.getPresignedUrlExpirySeconds())
-                            .build()
-            );
+            GetPresignedObjectUrlArgs.Builder builder = GetPresignedObjectUrlArgs.builder()
+                    .method(Method.GET)
+                    .bucket(resolveCloudBucketName())
+                    .object(objectKey)
+                    .expiry(minioProperties.getPresignedUrlExpirySeconds());
+            if (FileContentUtils.isActiveWebFile(objectKey)) {
+                Map<String, String> queryParams = new LinkedHashMap<>();
+                queryParams.put(
+                        "response-content-disposition",
+                        ContentDisposition.attachment()
+                                .filename(FileContentUtils.sanitizeDownloadFileName(objectKey, "asset"), StandardCharsets.UTF_8)
+                                .build()
+                                .toString()
+                );
+                queryParams.put("response-content-type", "application/octet-stream");
+                builder.extraQueryParams(queryParams);
+            }
+            return minioPresignedUrlService.getPresignedObjectUrl(builder.build());
         } catch (Exception exception) {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
         }
@@ -122,10 +136,12 @@ class WorkspaceAssetObjectStorageService {
                             .build()
                             .toString()
             );
-            queryParams.put(
-                    "response-content-type",
-                    StringUtils.hasText(contentType) ? contentType : "application/octet-stream"
-            );
+            String safeResponseContentType = (!StringUtils.hasText(contentType)
+                    || FileContentUtils.isActiveWebFile(fileName)
+                    || FileContentUtils.isActiveWebContentType(contentType))
+                    ? "application/octet-stream"
+                    : contentType;
+            queryParams.put("response-content-type", safeResponseContentType);
 
             return minioPresignedUrlService.getPresignedObjectUrl(
                     GetPresignedObjectUrlArgs.builder()

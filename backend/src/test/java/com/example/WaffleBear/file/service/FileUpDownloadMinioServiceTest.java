@@ -796,6 +796,102 @@ class FileUpDownloadMinioServiceTest {
                 .containsExactlyInAnyOrder(20L, 21L);
     }
 
+    @Test
+    void fileListPageRootSearchExcludesLockedPinHiddenFoldersEvenWhenIncludeHiddenIsTrue() {
+        SecretAccessGuard guard = mock(SecretAccessGuard.class);
+        ReflectionTestUtils.setField(fileService, "secretAccessGuard", guard);
+        User owner = User.builder().idx(7L).build();
+        FileInfo normalFolder = folder(10L, owner, null, FileSpaceType.DRIVE);
+        normalFolder.rename("Docs");
+        FileInfo lockedHiddenFolder = FileInfo.builder()
+                .idx(12L)
+                .user(owner)
+                .nodeType(FileNodeType.FOLDER)
+                .spaceType(FileSpaceType.DRIVE)
+                .hiddenFolder(true)
+                .folderPinEnabled(true)
+                .folderPinHash("$2a$10$hash")
+                .fileOriginName("LockedHidden")
+                .fileFormat("folder")
+                .fileSaveName("folder-12")
+                .trashed(false)
+                .build();
+
+        org.mockito.Mockito.doThrow(BaseException.from(BaseResponseStatus.SECRET_FOLDER_UNLOCK_REQUIRED))
+                .when(guard).assertNodeAccess(7L, lockedHiddenFolder, true);
+        when(fileUpDownloadRepository.findActiveFoldersByUserAndSpace(7L, FileNodeType.FOLDER, false))
+                .thenReturn(List.of(normalFolder, lockedHiddenFolder));
+        when(fileUpDownloadRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+        when(fileUpDownloadRepository.findDistinctFileFormatsByUserInRootOrParents(
+                eq(7L), any(), eq(FileNodeType.FILE), eq(false), eq(true)
+        )).thenReturn(List.of());
+
+        fileService.fileListPage(7L, FileManageDto.ListPageReq.builder()
+                .searchScope("root")
+                .includeHidden(true)
+                .vaultMode(false)
+                .build());
+
+        ArgumentCaptor<java.util.Collection<Long>> parentIdsCaptor = ArgumentCaptor.forClass(java.util.Collection.class);
+        verify(fileUpDownloadRepository).findDistinctFileFormatsByUserInRootOrParents(
+                eq(7L), parentIdsCaptor.capture(), eq(FileNodeType.FILE), eq(false), eq(true)
+        );
+        assertThat(parentIdsCaptor.getValue()).containsExactly(10L);
+    }
+
+    @Test
+    void downloadFolderZipSkipsLockedNestedHiddenSubfolder() throws Exception {
+        SecretAccessGuard guard = mock(SecretAccessGuard.class);
+        ReflectionTestUtils.setField(fileService, "secretAccessGuard", guard);
+        User owner = User.builder().idx(7L).build();
+        FileInfo rootFolder = folder(100L, owner, null, FileSpaceType.DRIVE);
+        rootFolder.rename("docs");
+        FileInfo publicFile = fileWithParent(101L, owner, rootFolder, FileSpaceType.DRIVE, false, false);
+        FileInfo lockedSubfolder = FileInfo.builder()
+                .idx(102L)
+                .user(owner)
+                .parent(rootFolder)
+                .nodeType(FileNodeType.FOLDER)
+                .spaceType(FileSpaceType.DRIVE)
+                .hiddenFolder(true)
+                .folderPinEnabled(true)
+                .folderPinHash("$2a$10$hash")
+                .fileOriginName("SecretSub")
+                .fileFormat("folder")
+                .fileSaveName("folder-102")
+                .trashed(false)
+                .build();
+        FileInfo lockedSecretFile = fileWithParent(103L, owner, lockedSubfolder, FileSpaceType.DRIVE, false, false);
+
+        org.mockito.Mockito.doAnswer(invocation -> {
+            FileInfo node = invocation.getArgument(1);
+            if (node != null && Long.valueOf(102L).equals(node.getIdx())) {
+                throw BaseException.from(BaseResponseStatus.SECRET_FOLDER_UNLOCK_REQUIRED);
+            }
+            return null;
+        }).when(guard).assertNodeAccess(eq(7L), any(FileInfo.class), eq(true));
+        when(fileUpDownloadRepository.findByIdxAndUser_Idx(100L, 7L)).thenReturn(Optional.of(rootFolder));
+        when(fileUpDownloadRepository.findAllByUser_Idx(7L))
+                .thenReturn(List.of(rootFolder, publicFile, lockedSubfolder, lockedSecretFile));
+        when(fileObjectDownloadService.openObjectStream("7/saved-101.txt"))
+                .thenReturn(new ByteArrayInputStream("public".getBytes(StandardCharsets.UTF_8)));
+
+        FileCommonDto.FolderZipDownloadPayload payload = fileService.downloadFolderZip(7L, 100L);
+        ByteArrayOutputStream zipOut = new ByteArrayOutputStream();
+        payload.streamingBody().writeTo(zipOut);
+
+        List<String> entryNames = new ArrayList<>();
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipOut.toByteArray()))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                entryNames.add(entry.getName());
+            }
+        }
+
+        assertThat(entryNames).containsExactly("docs/", "docs/file-101.txt");
+    }
+
     private void runTransactionTemplateCallbacksWithActiveTransaction() {
         doAnswer(invocation -> {
             TransactionCallback<?> callback = invocation.getArgument(0);

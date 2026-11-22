@@ -14,6 +14,7 @@ import io.jsonwebtoken.JwtException;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -22,6 +23,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.time.LocalDateTime;
 
 @Service
@@ -33,6 +35,9 @@ public class AuthService {
 
     @Autowired(required = false)
     private SecretTokenService secretTokenService;
+
+    @Value("${app.admin-only:false}")
+    private boolean adminOnly;
 
     @Transactional
     public TokenDto.AuthTokenResponse issueTokens(Long userIdx, String userId, String email, String name, String role) {
@@ -82,6 +87,10 @@ public class AuthService {
             throw new IllegalArgumentException("User is not allowed to access.");
         }
 
+        if (adminOnly && !isAdminRole(user.getRole())) {
+            throw new IllegalStateException("Administrator only mode is enabled.");
+        }
+
         String resolvedUserId = jwtUtil.getId(refreshToken);
         if (resolvedUserId == null || resolvedUserId.isBlank()) {
             resolvedUserId = user.getEmail();
@@ -113,6 +122,10 @@ public class AuthService {
 
     private UserAccountStatus resolveStatus(User user) {
         return user.getAccountStatus() == null ? UserAccountStatus.ACTIVE : user.getAccountStatus();
+    }
+
+    private boolean isAdminRole(String role) {
+        return role != null && role.toUpperCase(Locale.ROOT).contains("ADMIN");
     }
 
     private void removeDuplicateRefreshTokenRows(String refreshTokenHash, RefreshToken retainedToken) {

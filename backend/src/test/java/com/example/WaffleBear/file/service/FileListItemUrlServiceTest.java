@@ -89,6 +89,33 @@ class FileListItemUrlServiceTest {
         assertThat(item.getPresignedUrlExpiresIn()).isEqualTo(1800);
     }
 
+    @Test
+    void forcesAttachmentOctetStreamOnPresignedDownloadUrlForActiveWebFiles() throws Exception {
+        when(minioProperties.getBucket_cloud()).thenReturn("fileinnout-test");
+        when(minioProperties.getPresignedUrlExpirySeconds()).thenReturn(1800);
+        when(minioPresignedUrlService.getPresignedObjectUrl(any(GetPresignedObjectUrlArgs.class)))
+                .thenReturn("https://download.example/page.html");
+
+        var htmlItem = FileCommonDto.FileListItemRes.builder()
+                .idx(11L)
+                .nodeType(FileNodeType.FILE.name())
+                .lockedFile(false)
+                .fileOriginName("evil.html")
+                .fileSaveName("stored.html")
+                .fileSavePath("7/stored.html")
+                .fileFormat("html")
+                .build();
+
+        service.attachUrls(htmlItem);
+
+        ArgumentCaptor<GetPresignedObjectUrlArgs> argsCaptor = ArgumentCaptor.forClass(GetPresignedObjectUrlArgs.class);
+        verify(minioPresignedUrlService).getPresignedObjectUrl(argsCaptor.capture());
+        assertThat(argsCaptor.getValue().extraQueryParams().get("response-content-type"))
+                .containsExactly("application/octet-stream");
+        assertThat(argsCaptor.getValue().extraQueryParams().get("response-content-disposition"))
+                .anySatisfy(value -> assertThat(value).startsWith("attachment;"));
+    }
+
     private static FileCommonDto.FileListItemRes fileItem(boolean locked, String objectKey) {
         return FileCommonDto.FileListItemRes.builder()
                 .idx(10L)

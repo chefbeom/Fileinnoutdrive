@@ -174,22 +174,13 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
         List<FileCommonDto.FileListItemRes> items = allFiles.stream()
                 .filter(FileInfo::isVaultSpace)
                 .filter(file -> !file.isTrashed() && !FileTreeRules.hasTrashedAncestor(file, fileById))
-                .filter(file -> isVaultNodeAccessibleForCatalog(normalizedUserIdx, file))
+                .filter(file -> isSecretNodeAccessibleForCatalog(normalizedUserIdx, file))
                 .map(this::toFileListItemMetadata)
                 .toList();
         fileListItemUrlService.prepareThumbnailUrls(items);
         return items.stream()
                 .map(fileListItemUrlService::attachUrls)
                 .toList();
-    }
-
-    private boolean isVaultNodeAccessibleForCatalog(Long userIdx, FileInfo file) {
-        try {
-            assertSecretNodeAccess(userIdx, file, true);
-            return true;
-        } catch (BaseException ignored) {
-            return false;
-        }
     }
 
     @Override
@@ -433,6 +424,7 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                 .stream()
                 .filter(FileInfo::isTrashed)
                 .filter(file -> file.isVaultSpace() == vaultMode)
+                .filter(file -> isSecretNodeAccessibleForCatalog(userIdx, file))
                 .toList();
 
         if (trashedFiles.isEmpty()) {
@@ -761,9 +753,11 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                 .stream()
                 .filter(file -> !file.isTrashed())
                 .toList();
-        Set<Long> hiddenSkipIds = (!folder.isHiddenFolder() && !folder.isVaultSpace())
-                ? SecretTreeRules.collectHiddenSubtreeIds(userFiles)
-                : Set.of();
+        Set<Long> hiddenSkipIds = new HashSet<>();
+        if (!folder.isHiddenFolder() && !folder.isVaultSpace()) {
+            hiddenSkipIds.addAll(SecretTreeRules.collectHiddenSubtreeIds(userFiles));
+        }
+        hiddenSkipIds.addAll(collectLockedHiddenSubtreeIds(userIdx, userFiles, folderIdx));
         List<FileInfo> directChildren = userFiles.stream()
                 .filter(file -> file.getParent() != null && folderIdx.equals(file.getParent().getIdx()))
                 .filter(file -> file.getIdx() == null || !hiddenSkipIds.contains(file.getIdx()))
@@ -873,9 +867,11 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
 
         List<FileInfo> userFiles = fileUpDownloadRepository.findAllByUser_Idx(userIdx);
         List<FileInfo> targetTree = FileTreeRules.collectTargetTree(rootFolder, userFiles);
-        Set<Long> hiddenZipSkip = (rootFolder.isHiddenFolder() || rootFolder.isVaultSpace())
-                ? Set.of()
-                : SecretTreeRules.collectHiddenSubtreeIds(targetTree);
+        Set<Long> hiddenZipSkip = new HashSet<>();
+        if (!rootFolder.isHiddenFolder() && !rootFolder.isVaultSpace()) {
+            hiddenZipSkip.addAll(SecretTreeRules.collectHiddenSubtreeIds(targetTree));
+        }
+        hiddenZipSkip.addAll(collectLockedHiddenSubtreeIds(userIdx, targetTree, rootFolder.getIdx()));
 
         Map<Long, FileInfo> fileMap = targetTree.stream()
                 .filter(f -> f.getIdx() != null)
@@ -1399,13 +1395,13 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                 return new SearchScopeResolution(
                         "subtree",
                         true,
-                        collectAllowedSubtreeIds(null, folderTree, includeHidden)
+                        collectAllowedSubtreeIds(userIdx, null, folderTree, includeHidden)
                 );
             }
             return new SearchScopeResolution(
                     "subtree",
                     false,
-                    collectAllowedSubtreeIds(parentId, folderTree, includeHidden)
+                    collectAllowedSubtreeIds(userIdx, parentId, folderTree, includeHidden)
             );
         }
 
@@ -1429,18 +1425,19 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
             return new SearchScopeResolution(
                     "root",
                     false,
-                    collectAllowedSubtreeIds(searchRootFolderId, folderTree, includeHidden)
+                    collectAllowedSubtreeIds(userIdx, searchRootFolderId, folderTree, includeHidden)
             );
         }
 
         return new SearchScopeResolution(
                 "root",
                 true,
-                collectAllowedSubtreeIds(null, folderTree, includeHidden)
+                collectAllowedSubtreeIds(userIdx, null, folderTree, includeHidden)
         );
     }
 
     private Set<Long> collectAllowedSubtreeIds(
+            Long userIdx,
             Long anchorFolderId,
             FolderTreeSnapshot folderTree,
             boolean includeHidden
@@ -1452,7 +1449,7 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
         if (anchorFolderId == null) {
             for (FileInfo rootFolder : folderTree.rootLevelFolders()) {
                 if (rootFolder.getIdx() != null && visited.add(rootFolder.getIdx())) {
-                    if (includeHidden || !rootFolder.isHiddenFolder()) {
+                    if (canTraverseFolderSubtree(userIdx, rootFolder, includeHidden)) {
                         allowed.add(rootFolder.getIdx());
                         queue.add(rootFolder.getIdx());
                     }
@@ -1470,7 +1467,7 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                 if (child == null || child.getIdx() == null || !visited.add(child.getIdx())) {
                     continue;
                 }
-                if (!includeHidden && child.isHiddenFolder()) {
+                if (!canTraverseFolderSubtree(userIdx, child, includeHidden)) {
                     continue;
                 }
                 allowed.add(child.getIdx());
@@ -1479,6 +1476,67 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
         }
 
         return allowed;
+    }
+
+    private boolean canTraverseFolderSubtree(Long userIdx, FileInfo folder, boolean includeHidden) {
+        if (folder == null) {
+            return false;
+        }
+        if (folder.isHiddenFolder()) {
+            if (!includeHidden) {
+                return false;
+            }
+            return isSecretNodeAccessibleForCatalog(userIdx, folder);
+        }
+        return true;
+    }
+
+    private boolean isSecretNodeAccessibleForCatalog(Long userIdx, FileInfo node) {
+        if (secretAccessGuard == null || node == null) {
+            return true;
+        }
+        try {
+            secretAccessGuard.assertNodeAccess(userIdx, node, true);
+            return true;
+        } catch (BaseException ignored) {
+            return false;
+        }
+    }
+
+    private Set<Long> collectLockedHiddenSubtreeIds(Long userIdx, List<FileInfo> nodes, Long excludeRootIdx) {
+        if (secretAccessGuard == null || nodes == null || nodes.isEmpty()) {
+            return Set.of();
+        }
+        Map<Long, List<FileInfo>> childrenByParent = new HashMap<>();
+        Queue<Long> queue = new ArrayDeque<>();
+        Set<Long> lockedIds = new HashSet<>();
+
+        for (FileInfo node : nodes) {
+            if (node == null || node.getIdx() == null) {
+                continue;
+            }
+            if (node.getParent() != null && node.getParent().getIdx() != null) {
+                childrenByParent
+                        .computeIfAbsent(node.getParent().getIdx(), ignored -> new ArrayList<>())
+                        .add(node);
+            }
+            if (!Objects.equals(node.getIdx(), excludeRootIdx)
+                    && node.isHiddenFolder()
+                    && !isSecretNodeAccessibleForCatalog(userIdx, node)
+                    && lockedIds.add(node.getIdx())) {
+                queue.add(node.getIdx());
+            }
+        }
+
+        while (!queue.isEmpty()) {
+            Long currentId = queue.poll();
+            for (FileInfo child : childrenByParent.getOrDefault(currentId, List.of())) {
+                if (child != null && child.getIdx() != null && lockedIds.add(child.getIdx())) {
+                    queue.add(child.getIdx());
+                }
+            }
+        }
+        return lockedIds;
     }
 
     private boolean hasHiddenAncestorInMap(FileInfo node, Map<Long, FileInfo> folderMap) {

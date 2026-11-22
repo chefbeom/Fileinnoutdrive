@@ -83,7 +83,7 @@ final class ShareUploadPathRules {
         return finalObjectKey.substring(separatorIndex + 1);
     }
 
-    private static String sanitizeFolderName(String folderName) {
+    static String sanitizeFolderName(String folderName) {
         String normalized = folderName == null ? "" : folderName.trim();
         if (normalized.isEmpty() || normalized.length() > 255) {
             throw BaseException.from(BaseResponseStatus.FILE_NAME_WRONG);

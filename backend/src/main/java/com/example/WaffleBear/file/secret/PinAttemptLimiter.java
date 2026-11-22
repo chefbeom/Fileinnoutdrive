@@ -59,9 +59,14 @@ public class PinAttemptLimiter {
     }
 
     public void recordFailure(String scopeKey) {
+        recordFailure(scopeKey, MAX_ATTEMPTS);
+    }
+
+    public void recordFailure(String scopeKey, int maxAttempts) {
         if (scopeKey == null || scopeKey.isBlank()) {
             return;
         }
+        int effectiveMaxAttempts = Math.max(1, maxAttempts);
         StringRedisTemplate redis = getRedis();
         if (redis != null) {
             try {
@@ -70,7 +75,7 @@ public class PinAttemptLimiter {
                 if (count != null && count == 1L) {
                     redis.expire(countKey, LOCK_DURATION);
                 }
-                if (count != null && count >= MAX_ATTEMPTS) {
+                if (count != null && count >= effectiveMaxAttempts) {
                     redis.opsForValue().set(REDIS_LOCK_PREFIX + scopeKey, "1", LOCK_DURATION);
                     redis.delete(countKey);
                 }
@@ -88,7 +93,7 @@ public class PinAttemptLimiter {
             int nextFailures = (current == null || current.lockedUntilMs() > 0 && current.lockedUntilMs() <= now)
                     ? 1
                     : current.failures() + 1;
-            if (nextFailures >= MAX_ATTEMPTS) {
+            if (nextFailures >= effectiveMaxAttempts) {
                 return new LocalAttemptState(0, now + LOCK_DURATION.toMillis());
             }
             return new LocalAttemptState(nextFailures, 0L);

@@ -29,6 +29,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -236,6 +237,10 @@ public class PostService {
         }
 
         // Public 워크스페이스 → 현재 사용자 즉시 참여
+        // Public 워크스페이스 → 현재 사용자 즉시 참여
+        if (user == null || user.getEmail() == null) {
+            throw new BaseException(WORKSPACE_ACCESS_DENIED);
+        }
         User checkUser = ur.findByEmail(user.getEmail())
                 .orElseThrow(() -> new BaseException(USER_NOT_FOUND));
 
@@ -253,7 +258,7 @@ public class PostService {
             upr.save(UserPost.builder()
                     .user(checkUser)
                     .workspace(post)
-                    .Level(requestedRole == null ? AccessRole.READ : normalizeShareRole(requestedRole))
+                    .Level((email == null || email.isBlank() || requestedRole == null) ? AccessRole.READ : normalizeShareRole(requestedRole))
                     .build());
             return SUCCESS;
         }
@@ -359,10 +364,11 @@ public class PostService {
             throw new BaseException(ADMIN_ONLY_ACTION);
         }
 
-        targetPost.updateLevel(AccessRole.valueOf(newRole));
+        AccessRole parsedRole = parseAssignableMemberRole(newRole);
+        targetPost.updateLevel(parsedRole);
 
         // 3. SSE로 해당 유저에게 알림 (본인이 같은 페이지에 있으면 새로고침)
-        sseService.sendRoleChanged(targetUserIdx, postIdx, newRole);
+        sseService.sendRoleChanged(targetUserIdx, postIdx, parsedRole.name());
 
         return SUCCESS;
     }
@@ -415,7 +421,7 @@ public class PostService {
         updateRole.forEach(userPost -> {
             Long userIdx = userPost.getUser().getIdx();
             AccessRole newRole = role.get(userIdx);
-            userPost.updateLevel(newRole);
+            userPost.updateLevel(requireAssignableMemberRole(newRole));
         });
 
         return SUCCESS;
@@ -478,6 +484,27 @@ public class PostService {
         }
 
         return affectedCount;
+    }
+
+    private AccessRole parseAssignableMemberRole(String rawRole) {
+        if (rawRole == null || rawRole.isBlank()) {
+            throw BaseException.from(REQUEST_ERROR);
+        }
+        String normalized = rawRole.trim().toUpperCase(Locale.ROOT);
+        if ("READ".equals(normalized)) {
+            return AccessRole.READ;
+        }
+        if ("WRITE".equals(normalized)) {
+            return AccessRole.WRITE;
+        }
+        throw BaseException.from(REQUEST_ERROR);
+    }
+
+    private AccessRole requireAssignableMemberRole(AccessRole role) {
+        if (role != AccessRole.READ && role != AccessRole.WRITE) {
+            throw BaseException.from(REQUEST_ERROR);
+        }
+        return role;
     }
 
     private AccessRole normalizeShareRole(AccessRole requestedRole) {

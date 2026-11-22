@@ -10,6 +10,7 @@ import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
 import com.example.WaffleBear.file.secret.PinAttemptLimiter;
 import com.example.WaffleBear.file.secret.SecretAccessGuard;
+import com.example.WaffleBear.file.secret.SecretTreeRules;
 import com.example.WaffleBear.file.share.model.FileShare;
 import com.example.WaffleBear.file.share.model.FileShareAuditAction;
 import com.example.WaffleBear.file.share.model.FileShareStatus;
@@ -28,6 +29,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import static com.example.WaffleBear.file.util.FileContentUtils.isActiveWebContentType;
+import static com.example.WaffleBear.file.util.FileContentUtils.isActiveWebFile;
 import static com.example.WaffleBear.file.util.FileContentUtils.isTextPreviewable;
 import static com.example.WaffleBear.file.util.FileContentUtils.resolveDownloadContentType;
 import static com.example.WaffleBear.file.util.FileContentUtils.sanitizeDownloadFileName;
@@ -206,13 +209,12 @@ class ShareFileAccessService {
             FileManageDto.FolderReq request
     ) {
         FileInfo parentFolder = getWritableSharedFolder(actorUserIdx, folderIdx);
-        String folderName = request != null ? request.getFolderName() : null;
-        if (folderName == null || folderName.isBlank()) {
-            throw BaseException.from(BaseResponseStatus.FILE_NAME_WRONG);
-        }
+        String sanitizedFolderName = ShareUploadPathRules.sanitizeFolderName(
+                request != null ? request.getFolderName() : null
+        );
 
         Long ownerIdx = parentFolder.getUser().getIdx();
-        FileInfo folder = uploadFolderService.findOrCreateCommittedFolder(ownerIdx, parentFolder.getIdx(), folderName.trim());
+        FileInfo folder = uploadFolderService.findOrCreateCommittedFolder(ownerIdx, parentFolder.getIdx(), sanitizedFolderName);
         propagateParentFolderShares(parentFolder, folder);
         folder.changeSharedFile(true);
         fileUpDownloadRepository.save(folder);
@@ -260,7 +262,11 @@ class ShareFileAccessService {
         }
 
         FileInfo target = share.getFile();
-        if (target == null || target.isTrashed() || target.isLockedFile()) {
+        if (target == null
+                || target.isTrashed()
+                || target.isLockedFile()
+                || SecretTreeRules.hasVaultAncestor(target)
+                || SecretTreeRules.hasHiddenAncestor(target)) {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
         }
 
@@ -382,9 +388,13 @@ class ShareFileAccessService {
         ShareUploadPathRules.extractFolderSegments(relativePath, fileOriginName);
         Long ownerIdx = parentFolder.getUser().getIdx();
         String objectKey = ownerIdx + "/" + UUID.randomUUID() + "." + fileFormat;
-        String contentType = file.getContentType() == null || file.getContentType().isBlank()
+        String rawContentType = file.getContentType();
+        String contentType = rawContentType == null
+                || rawContentType.isBlank()
+                || isActiveWebFile(fileOriginName)
+                || isActiveWebContentType(rawContentType)
                 ? resolveDownloadContentType(fileOriginName)
-                : file.getContentType();
+                : rawContentType;
 
         return new SharedFolderUploadPlan(
                 actorUserIdx,
@@ -453,7 +463,12 @@ class ShareFileAccessService {
         }
 
         FileInfo folder = share.getFile();
-        if (folder == null || folder.isTrashed() || folder.isLockedFile() || ShareFileTree.resolveNodeType(folder) != FileNodeType.FOLDER) {
+        if (folder == null
+                || folder.isTrashed()
+                || folder.isLockedFile()
+                || SecretTreeRules.hasVaultAncestor(folder)
+                || SecretTreeRules.hasHiddenAncestor(folder)
+                || ShareFileTree.resolveNodeType(folder) != FileNodeType.FOLDER) {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
         }
         return folder;
@@ -486,7 +501,12 @@ class ShareFileAccessService {
     }
 
     private void ensureAccessibleSharedFile(FileInfo file) {
-        if (file == null || file.isTrashed() || file.isLockedFile() || ShareFileTree.resolveNodeType(file) != FileNodeType.FILE) {
+        if (file == null
+                || file.isTrashed()
+                || file.isLockedFile()
+                || SecretTreeRules.hasVaultAncestor(file)
+                || SecretTreeRules.hasHiddenAncestor(file)
+                || ShareFileTree.resolveNodeType(file) != FileNodeType.FILE) {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
         }
     }

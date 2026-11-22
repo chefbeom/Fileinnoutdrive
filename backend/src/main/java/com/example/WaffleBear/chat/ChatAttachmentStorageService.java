@@ -25,6 +25,9 @@ public class ChatAttachmentStorageService {
     private static final Set<String> IMAGE_TYPES = Set.of(
             "image/png", "image/jpeg", "image/jpg"
     );
+    private static final Set<String> IMAGE_EXTENSIONS = Set.of(
+            "png", "jpg", "jpeg"
+    );
 
     private final MinioClient minioClient;
     private final MinioPresignedUrlService minioPresignedUrlService;
@@ -35,11 +38,11 @@ public class ChatAttachmentStorageService {
             throw new IllegalArgumentException("업로드할 파일이 비어 있습니다.");
         }
 
+        String safeFileName = sanitizeFileName(file.getOriginalFilename());
         String normalizedContentType = normalizeContentType(file.getContentType());
-        boolean isImage = IMAGE_TYPES.contains(normalizedContentType);
+        boolean isImage = IMAGE_TYPES.contains(normalizedContentType) && hasAllowedImageExtension(safeFileName);
         validateSize(file, isImage);
 
-        String safeFileName = sanitizeFileName(file.getOriginalFilename());
         String storedContentType = isImage ? normalizedContentType : "application/octet-stream";
 
         try {
@@ -109,5 +112,17 @@ public class ChatAttachmentStorageService {
             throw new IllegalArgumentException("유효하지 않은 파일명입니다.");
         }
         return sanitized;
+    }
+
+    private boolean hasAllowedImageExtension(String fileName) {
+        if (fileName == null) {
+            return false;
+        }
+        int dotIndex = fileName.lastIndexOf('.');
+        if (dotIndex < 0 || dotIndex >= fileName.length() - 1) {
+            return false;
+        }
+        String ext = fileName.substring(dotIndex + 1).trim().toLowerCase(Locale.ROOT);
+        return IMAGE_EXTENSIONS.contains(ext);
     }
 }

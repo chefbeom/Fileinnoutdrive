@@ -3,6 +3,7 @@ package com.example.WaffleBear.file.service;
 import com.example.WaffleBear.config.MinioProperties;
 import com.example.WaffleBear.config.MinioPresignedUrlService;
 import com.example.WaffleBear.file.dto.FileCommonDto;
+import com.example.WaffleBear.file.util.FileContentUtils;
 import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.http.Method;
 import lombok.RequiredArgsConstructor;
@@ -51,12 +52,19 @@ class FileListItemUrlService {
         }
 
         try {
-            return minioPresignedUrlService.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+            GetPresignedObjectUrlArgs.Builder builder = GetPresignedObjectUrlArgs.builder()
                     .method(Method.GET)
                     .bucket(minioProperties.getBucket_cloud())
                     .object(item.getFileSavePath())
-                    .expiry(minioProperties.getPresignedUrlExpirySeconds())
-                    .build());
+                    .expiry(minioProperties.getPresignedUrlExpirySeconds());
+            if (FileContentUtils.isActiveWebFile(item.getFileOriginName())
+                    || FileContentUtils.isActiveWebFile(item.getFileFormat())) {
+                builder.extraQueryParams(FileDownloadRules.attachmentQueryParams(
+                        FileDownloadRules.downloadFileName(item.getFileOriginName(), item.getFileSaveName()),
+                        "application/octet-stream"
+                ));
+            }
+            return minioPresignedUrlService.getPresignedObjectUrl(builder.build());
         } catch (Exception e) {
             return null;
         }

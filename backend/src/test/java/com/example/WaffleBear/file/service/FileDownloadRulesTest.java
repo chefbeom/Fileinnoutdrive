@@ -17,6 +17,8 @@ class FileDownloadRulesTest {
         assertThat(FileDownloadRules.attachmentQueryParams(fileName, "text/custom"))
                 .containsEntry("response-content-type", "text/custom")
                 .containsKey("response-content-disposition");
+        assertThat(FileDownloadRules.downloadContentType("evil.html")).isEqualTo("application/octet-stream");
+        assertThat(FileDownloadRules.downloadContentType("vector.svg")).isEqualTo("application/octet-stream");
     }
 
     @Test
