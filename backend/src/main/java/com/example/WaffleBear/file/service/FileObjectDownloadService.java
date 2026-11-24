@@ -13,7 +13,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
@@ -28,6 +30,27 @@ public class FileObjectDownloadService {
     private final MinioPresignedUrlService minioPresignedUrlService;
 
     private static final int MAX_TEXT_PREVIEW_BYTES = 64 * 1024;
+
+    public void streamObjectRange(String objectKey, long start, long end, OutputStream out) throws IOException {
+        if (objectKey == null || objectKey.isBlank() || out == null || start < 0L || end < start) {
+            throw new IllegalArgumentException("Invalid object range request");
+        }
+        long length = end - start + 1L;
+        try (var objectStream = minioClient.getObject(
+                GetObjectArgs.builder()
+                        .bucket(minioProperties.getBucket_cloud())
+                        .object(objectKey)
+                        .offset(start)
+                        .length(length)
+                        .build()
+        )) {
+            objectStream.transferTo(out);
+        } catch (IOException ioException) {
+            throw ioException;
+        } catch (Exception exception) {
+            throw new IOException("Failed to stream object range", exception);
+        }
+    }
 
     InputStream openObjectStream(String objectKey) {
         if (objectKey == null || objectKey.isBlank()) {
@@ -74,6 +97,26 @@ public class FileObjectDownloadService {
                         .object(objectKey)
                         .build()
         )) {
+            return readTextPreviewFromStream(fileIdx, objectStream, fileOriginName, fileFormat, fileSize);
+        } catch (BaseException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
+    }
+
+    public FileInfoDto.TextPreviewRes readTextPreviewFromStream(
+            Long fileIdx,
+            InputStream objectStream,
+            String fileOriginName,
+            String fileFormat,
+            Long fileSize
+    ) {
+        if (objectStream == null) {
+            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
+
+        try {
             ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
             byte[] buffer = new byte[4096];
             int totalRead = 0;

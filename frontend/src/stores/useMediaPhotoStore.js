@@ -611,14 +611,20 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
       if (!existing) {
         map.set(key, file);
       } else {
-        map.set(key, {
-          ...existing,
-          ...file,
-          downloadUrl: file.downloadUrl || existing.downloadUrl || "",
-          presignedDownloadUrl: file.presignedDownloadUrl || existing.presignedDownloadUrl || "",
-          thumbnailUrl: file.thumbnailUrl || existing.thumbnailUrl || "",
-          thumbnailPresignedUrl: file.thumbnailPresignedUrl || existing.thumbnailPresignedUrl || "",
-        });
+      const mergedEncrypted = Boolean(file.encrypted ?? existing.encrypted);
+      const mergedEncryptionMode = String(
+        file.encryptionMode || existing.encryptionMode || (mergedEncrypted ? "SERVER_ENVELOPE_V1" : "NONE"),
+      ).toUpperCase();
+      map.set(key, {
+        ...existing,
+        ...file,
+        encrypted: mergedEncrypted,
+        encryptionMode: mergedEncryptionMode,
+        downloadUrl: file.downloadUrl || existing.downloadUrl || "",
+        presignedDownloadUrl: file.presignedDownloadUrl || existing.presignedDownloadUrl || "",
+        thumbnailUrl: mergedEncrypted ? "" : (file.thumbnailUrl || existing.thumbnailUrl || ""),
+        thumbnailPresignedUrl: mergedEncrypted ? "" : (file.thumbnailPresignedUrl || existing.thumbnailPresignedUrl || ""),
+      });
       }
     }
 

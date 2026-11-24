@@ -36,6 +36,8 @@ public class FileCommonDto {
         private LocalDateTime uploadDate;
         private LocalDateTime lastModifyDate;
         private String locationPath;
+        private Boolean encrypted;
+        private String encryptionMode;
         private String presignedDownloadUrl;
         private String thumbnailPresignedUrl;
         private Integer presignedUrlExpiresIn;

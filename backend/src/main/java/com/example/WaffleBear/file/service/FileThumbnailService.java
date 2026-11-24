@@ -4,8 +4,12 @@ import com.example.WaffleBear.common.exception.BaseException;
 import com.example.WaffleBear.common.model.BaseResponseStatus;
 import com.example.WaffleBear.config.MinioProperties;
 import com.example.WaffleBear.config.MinioPresignedUrlService;
+import com.example.WaffleBear.file.crypto.VaultFileCryptoService;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
+import com.example.WaffleBear.file.util.FileContentUtils;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
 import io.minio.GetObjectArgs;
 import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.ListObjectsArgs;
@@ -16,11 +20,18 @@ import io.minio.StatObjectArgs;
 import io.minio.http.Method;
 import io.minio.messages.Item;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.security.SecureRandom;
 import java.time.ZoneId;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Locale;
@@ -51,6 +62,11 @@ public class FileThumbnailService {
     private final VideoThumbnailService videoThumbnailService;
     private final ImageThumbnailService imageThumbnailService;
     private final ThumbnailTaskExecutor thumbnailTaskExecutor;
+
+    @Autowired(required = false)
+    private VaultFileCryptoService vaultFileCryptoService;
+
+    private static final SecureRandom EPHEMERAL_RANDOM = new SecureRandom();
     private final Set<String> thumbnailGenerationInProgress = ConcurrentHashMap.newKeySet();
     private final Set<String> existingThumbnailKeys = ConcurrentHashMap.newKeySet();
     private final Set<String> failedThumbnailKeys = ConcurrentHashMap.newKeySet();
@@ -66,6 +82,9 @@ public class FileThumbnailService {
         }
 
         String normalizedExtension = resolveExtension(file);
+        if (file.isEncrypted()) {
+            return loadEncryptedThumbnail(file, objectKey, normalizedExtension);
+        }
         if (VIDEO_EXTENSIONS.contains(normalizedExtension)) {
             return loadVideoThumbnail(file, objectKey);
         }
@@ -74,6 +93,205 @@ public class FileThumbnailService {
         }
 
         return null;
+    }
+
+    private ThumbnailPayload loadEncryptedThumbnail(FileInfo file, String objectKey, String extension) {
+        if (vaultFileCryptoService == null) {
+            return null;
+        }
+        boolean isVideo = VIDEO_EXTENSIONS.contains(extension);
+        boolean isImage = IMAGE_EXTENSIONS.contains(extension);
+        if (!isVideo && !isImage) {
+            return null;
+        }
+
+        if (isImage && NON_TRANSCODABLE_IMAGE_EXTENSIONS.contains(extension)) {
+            if (file.getFileSize() != null && file.getFileSize() > MAX_IMAGE_THUMBNAIL_SOURCE_BYTES) {
+                return null;
+            }
+            try {
+                byte[] original = vaultFileCryptoService.readDecryptedBytes(file);
+                if (original == null || original.length == 0) {
+                    return null;
+                }
+                return new ThumbnailPayload(
+                        original,
+                        resolveImageContentType(extension),
+                        buildEtag(file),
+                        resolveLastModifiedEpochMillis(file),
+                        true
+                );
+            } catch (Exception ignored) {
+                return null;
+            }
+        }
+
+        String encryptedThumbKey = FileContentUtils.buildEncryptedThumbnailObjectKey(objectKey);
+        if (failedThumbnailKeys.contains(encryptedThumbKey)) {
+            return null;
+        }
+
+        if (objectExists(encryptedThumbKey)) {
+            byte[] cached = vaultFileCryptoService.loadDecryptedThumbnail(file, encryptedThumbKey);
+            if (cached != null && cached.length > 0) {
+                return new ThumbnailPayload(
+                        cached,
+                        "image/jpeg",
+                        buildEtag(file),
+                        resolveLastModifiedEpochMillis(file),
+                        true
+                );
+            }
+        }
+
+        if (isVideo && !videoThumbnailService.supports(extension)) {
+            failedThumbnailKeys.add(encryptedThumbKey);
+            return null;
+        }
+        if (!isVideo && !isPresignedRasterImage(file, extension)) {
+            return null;
+        }
+
+        if (!thumbnailGenerationInProgress.add(encryptedThumbKey)) {
+            return null;
+        }
+
+        try {
+            if (objectExistsDirect(encryptedThumbKey)) {
+                byte[] existing = vaultFileCryptoService.loadDecryptedThumbnail(file, encryptedThumbKey);
+                if (existing != null && existing.length > 0) {
+                    return new ThumbnailPayload(
+                            existing,
+                            "image/jpeg",
+                            buildEtag(file),
+                            resolveLastModifiedEpochMillis(file),
+                            true
+                    );
+                }
+            }
+
+            byte[] generatedBytes;
+            if (isVideo) {
+                generatedBytes = createEncryptedVideoThumbnailBytes(file, extension);
+            } else {
+                try (var plainStream = vaultFileCryptoService.openDecryptedInputStream(file)) {
+                    generatedBytes = imageThumbnailService.createThumbnail(plainStream);
+                }
+            }
+
+            if (generatedBytes != null && generatedBytes.length > 0) {
+                vaultFileCryptoService.encryptAndStoreThumbnail(file, encryptedThumbKey, generatedBytes);
+                existingThumbnailKeys.add(encryptedThumbKey);
+                missingThumbnailKeys.remove(encryptedThumbKey);
+                failedThumbnailKeys.remove(encryptedThumbKey);
+                return new ThumbnailPayload(
+                        generatedBytes,
+                        "image/jpeg",
+                        buildEtag(file),
+                        resolveLastModifiedEpochMillis(file),
+                        true
+                );
+            }
+            failedThumbnailKeys.add(encryptedThumbKey);
+            return null;
+        } catch (Exception ignored) {
+            failedThumbnailKeys.add(encryptedThumbKey);
+            return null;
+        } finally {
+            thumbnailGenerationInProgress.remove(encryptedThumbKey);
+        }
+    }
+
+    private byte[] createEncryptedVideoThumbnailBytes(FileInfo file, String extension) throws IOException {
+        long plainSize = Math.max(0L, file.getFileSize() == null ? 0L : file.getFileSize());
+        if (plainSize == 0L) {
+            return new byte[0];
+        }
+
+        byte[] tokenBytes = new byte[24];
+        EPHEMERAL_RANDOM.nextBytes(tokenBytes);
+        String expectedPath = "/" + Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes) + "." + extension;
+
+        HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 4);
+        server.createContext(expectedPath, exchange -> handleLoopbackVideoRange(exchange, expectedPath, file, plainSize));
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            String sourceUrl = "http://127.0.0.1:" + port + expectedPath;
+            return videoThumbnailService.createThumbnailFromSource(sourceUrl);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    private void handleLoopbackVideoRange(
+            HttpExchange exchange,
+            String expectedPath,
+            FileInfo file,
+            long plainSize
+    ) throws IOException {
+        try {
+            String method = exchange.getRequestMethod();
+            String path = exchange.getRequestURI() != null ? exchange.getRequestURI().getPath() : "";
+            if (!expectedPath.equals(path) || (!"GET".equalsIgnoreCase(method) && !"HEAD".equalsIgnoreCase(method))) {
+                exchange.sendResponseHeaders(404, -1);
+                return;
+            }
+
+            long start = 0L;
+            long end = plainSize - 1L;
+            int statusCode = 200;
+            String rangeHeader = exchange.getRequestHeaders().getFirst("Range");
+            if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
+                String spec = rangeHeader.substring("bytes=".length()).split(",", 2)[0].trim();
+                int dash = spec.indexOf('-');
+                if (dash >= 0) {
+                    String startStr = spec.substring(0, dash).trim();
+                    String endStr = spec.substring(dash + 1).trim();
+                    try {
+                        if (startStr.isEmpty() && !endStr.isEmpty()) {
+                            long suffix = Long.parseLong(endStr);
+                            start = Math.max(0L, plainSize - suffix);
+                            end = plainSize - 1L;
+                        } else if (!startStr.isEmpty()) {
+                            start = Long.parseLong(startStr);
+                            end = endStr.isEmpty() ? (plainSize - 1L) : Math.min(plainSize - 1L, Long.parseLong(endStr));
+                        }
+                        if (start < 0L || end < start || start >= plainSize) {
+                            exchange.getResponseHeaders().set("Content-Range", "bytes */" + plainSize);
+                            exchange.sendResponseHeaders(416, -1);
+                            return;
+                        }
+                        statusCode = 206;
+                    } catch (NumberFormatException ignored) {
+                        statusCode = 200;
+                        start = 0L;
+                        end = plainSize - 1L;
+                    }
+                }
+            }
+
+            long length = end - start + 1L;
+            exchange.getResponseHeaders().set("Accept-Ranges", "bytes");
+            exchange.getResponseHeaders().set("Content-Type", "application/octet-stream");
+            if (statusCode == 206) {
+                exchange.getResponseHeaders().set("Content-Range", "bytes " + start + "-" + end + "/" + plainSize);
+            }
+            if ("HEAD".equalsIgnoreCase(method)) {
+                exchange.getResponseHeaders().set("Content-Length", String.valueOf(length));
+                exchange.sendResponseHeaders(statusCode, -1);
+                return;
+            }
+
+            exchange.sendResponseHeaders(statusCode, length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                vaultFileCryptoService.streamDecryptedRange(file, start, end, out);
+            } catch (IOException ignored) {
+                // ffmpeg closes stream as soon as keyframe/moov atom is decoded
+            }
+        } finally {
+            exchange.close();
+        }
     }
 
     public void warmThumbnailsForFiles(Collection<FileInfo> files) {
@@ -525,7 +743,9 @@ public class FileThumbnailService {
         if (file == null
                 || resolveNodeType(file) != FileNodeType.FILE
                 || file.isLockedFile()
-                || file.isTrashed()) {
+                || file.isTrashed()
+                || file.isEncrypted()
+                || file.isVaultSpace()) {
             return false;
         }
 
@@ -623,7 +843,11 @@ public class FileThumbnailService {
             byte[] bytes,
             String contentType,
             String eTag,
-            long lastModifiedEpochMillis
+            long lastModifiedEpochMillis,
+            boolean privateNoStore
     ) {
+        public ThumbnailPayload(byte[] bytes, String contentType, String eTag, long lastModifiedEpochMillis) {
+            this(bytes, contentType, eTag, lastModifiedEpochMillis, false);
+        }
     }
 }

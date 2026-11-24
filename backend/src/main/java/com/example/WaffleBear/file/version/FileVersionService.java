@@ -96,6 +96,7 @@ public class FileVersionService {
                 && resolveNodeType(file) == FileNodeType.FILE
                 && !file.isTrashed()
                 && !file.isLockedFile()
+                && !file.isEncrypted()
                 && file.getFileSavePath() != null
                 && !file.getFileSavePath().isBlank();
     }

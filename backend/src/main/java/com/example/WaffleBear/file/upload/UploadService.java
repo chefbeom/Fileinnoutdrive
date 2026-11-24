@@ -6,6 +6,7 @@ import com.example.WaffleBear.administrator.storage.DataTransferStatus;
 import com.example.WaffleBear.common.exception.BaseException;
 import com.example.WaffleBear.common.model.BaseResponseStatus;
 import com.example.WaffleBear.file.FileUpDownloadRepository;
+import com.example.WaffleBear.file.crypto.VaultFileCryptoService;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
 import com.example.WaffleBear.file.service.StoragePlanService;
@@ -15,6 +16,7 @@ import com.example.WaffleBear.file.upload.dto.UploadDto;
 import com.example.WaffleBear.user.model.User;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -43,11 +45,15 @@ public class UploadService {
     private final FileVersionLifecycleService fileVersionLifecycleService;
     private final TransactionTemplate transactionTemplate;
 
+    @Autowired(required = false)
+    private VaultFileCryptoService vaultFileCryptoService;
+
     private record CompleteUploadPlan(
             Optional<FileInfo> existingFile,
             Long replaceFileId,
             String replacedObjectKey,
-            long replacedBytes
+            long replacedBytes,
+            boolean vaultDestination
     ) {
     }
 
@@ -124,7 +130,7 @@ public class UploadService {
         cleanupExpiredUploadReservations();
 
         CompleteUploadPlan uploadPlan = transactionTemplate.execute(status ->
-                prepareCompleteUpload(userIdx, finalObjectKey, request.getReplaceFileId())
+                prepareCompleteUpload(userIdx, finalObjectKey, request.getReplaceFileId(), request)
         );
         if (uploadPlan != null && uploadPlan.existingFile().isPresent()) {
             releaseUploadQuota(finalObjectKey);
@@ -148,9 +154,14 @@ public class UploadService {
         }
 
         long actualFileSize;
+        VaultFileCryptoService.VaultEncryptionResult encryptionResult = null;
         try {
             actualFileSize = uploadObjectStorageService.resolveCompletedObjectSize(finalObjectKey, expectedFileSize);
-            long storedFileSize = actualFileSize;
+            if (uploadPlan != null && uploadPlan.vaultDestination() && vaultFileCryptoService != null) {
+                encryptionResult = vaultFileCryptoService.encryptPlaintextObject(userIdx, finalObjectKey, actualFileSize);
+            }
+            final long storedFileSize = actualFileSize;
+            final VaultFileCryptoService.VaultEncryptionResult finalizedEncryption = encryptionResult;
             transactionTemplate.execute(status -> {
                 persistCompletedUpload(
                         userIdx,
@@ -160,37 +171,53 @@ public class UploadService {
                         storedFileSize,
                         finalObjectKey,
                         chunkObjectKeys,
-                        uploadPlan
+                        uploadPlan,
+                        finalizedEncryption
                 );
                 return null;
             });
         } catch (RuntimeException exception) {
+            if (encryptionResult != null) {
+                UploadObjectCleanupScheduler.deleteQuietly(
+                        uploadObjectStorageService,
+                        List.of(encryptionResult.encryptedObjectKey())
+                );
+            }
             UploadObjectCleanupScheduler.deleteQuietly(uploadObjectStorageService, List.of(finalObjectKey));
             UploadObjectCleanupScheduler.deleteQuietly(uploadObjectStorageService, chunkObjectKeys);
             releaseUploadQuota(finalObjectKey);
             throw exception;
         }
+        String persistedObjectKey = encryptionResult != null ? encryptionResult.encryptedObjectKey() : finalObjectKey;
+        String persistedSaveName = encryptionResult != null
+                ? encryptionResult.encryptedSaveName()
+                : UploadObjectRules.extractFileSaveName(finalObjectKey);
         releaseUploadQuota(finalObjectKey);
         recordDriveIngressQuietly(
                 userIdx,
                 DataTransferStatus.COMPLETED,
                 actualFileSize,
-                finalObjectKey,
+                persistedObjectKey,
                 fileOriginName
         );
 
         return UploadDto.CompleteRes.builder()
                 .fileOriginName(fileOriginName)
-                .fileSaveName(UploadObjectRules.extractFileSaveName(finalObjectKey))
+                .fileSaveName(persistedSaveName)
                 .fileFormat(fileFormat)
-                .finalObjectKey(finalObjectKey)
+                .finalObjectKey(persistedObjectKey)
                 .build();
     }
 
-    private CompleteUploadPlan prepareCompleteUpload(Long userIdx, String finalObjectKey, Long replaceFileId) {
+    private CompleteUploadPlan prepareCompleteUpload(
+            Long userIdx,
+            String finalObjectKey,
+            Long replaceFileId,
+            UploadDto.CompleteReq request
+    ) {
         Optional<FileInfo> existing = fileUpDownloadRepository.findByUser_IdxAndFileSavePath(userIdx, finalObjectKey);
         if (existing.isPresent()) {
-            return new CompleteUploadPlan(existing, null, null, 0L);
+            return new CompleteUploadPlan(existing, null, null, 0L, false);
         }
 
         FileInfo replaceTarget = resolveReplaceTarget(userIdx, replaceFileId).orElse(null);
@@ -198,7 +225,9 @@ public class UploadService {
         long replacedBytes = replaceTarget != null
                 ? Math.max(0L, replaceTarget.getFileSize() == null ? 0L : replaceTarget.getFileSize())
                 : 0L;
-        return new CompleteUploadPlan(Optional.empty(), replaceFileId, replacedObjectKey, replacedBytes);
+        boolean vaultDestination = (replaceTarget != null && replaceTarget.isVaultSpace())
+                || uploadFolderService.isVaultUploadDestination(userIdx, request);
+        return new CompleteUploadPlan(Optional.empty(), replaceFileId, replacedObjectKey, replacedBytes, vaultDestination);
     }
 
     private void persistCompletedUpload(
@@ -209,13 +238,20 @@ public class UploadService {
             long actualFileSize,
             String finalObjectKey,
             List<String> chunkObjectKeys,
-            CompleteUploadPlan uploadPlan
+            CompleteUploadPlan uploadPlan,
+            VaultFileCryptoService.VaultEncryptionResult encryptionResult
     ) {
         CompleteUploadPlan safePlan = uploadPlan == null
-                ? new CompleteUploadPlan(Optional.empty(), null, null, 0L)
+                ? new CompleteUploadPlan(Optional.empty(), null, null, 0L, false)
                 : uploadPlan;
         UploadObjectCleanupScheduler.deleteAfterRollback(uploadObjectStorageService, List.of(finalObjectKey));
         UploadObjectCleanupScheduler.deleteAfterRollback(uploadObjectStorageService, chunkObjectKeys);
+        if (encryptionResult != null) {
+            UploadObjectCleanupScheduler.deleteAfterRollback(
+                    uploadObjectStorageService,
+                    List.of(encryptionResult.encryptedObjectKey())
+            );
+        }
         ensureWithinStorageQuota(userIdx, Math.max(0L, actualFileSize - safePlan.replacedBytes()), finalObjectKey);
 
         if (safePlan.replaceFileId() != null) {
@@ -223,10 +259,14 @@ public class UploadService {
                     .orElseThrow(() -> BaseException.from(BaseResponseStatus.REQUEST_ERROR));
             fileVersionService.snapshotCurrent(replaceTarget);
         }
-        saveFinalFileInfo(userIdx, request, fileOriginName, fileFormat, actualFileSize, finalObjectKey);
+        saveFinalFileInfo(userIdx, request, fileOriginName, fileFormat, actualFileSize, finalObjectKey, encryptionResult);
         UploadObjectCleanupScheduler.deleteAfterCommit(uploadObjectStorageService, chunkObjectKeys);
+        if (encryptionResult != null) {
+            UploadObjectCleanupScheduler.deleteAfterCommit(uploadObjectStorageService, List.of(finalObjectKey));
+        }
+        String storedObjectKey = encryptionResult != null ? encryptionResult.encryptedObjectKey() : finalObjectKey;
         if (safePlan.replaceFileId() != null) {
-            deleteReplacedObjectAfterCommit(safePlan.replacedObjectKey(), finalObjectKey);
+            deleteReplacedObjectAfterCommit(safePlan.replacedObjectKey(), storedObjectKey);
         }
     }
 
@@ -547,15 +587,27 @@ public class UploadService {
             String fileOriginName,
             String fileFormat,
             long fileSize,
-            String finalObjectKey
+            String finalObjectKey,
+            VaultFileCryptoService.VaultEncryptionResult encryptionResult
     ) {
+        if (encryptionResult == null) {
+            return uploadFolderService.saveCompletedUpload(
+                    userIdx,
+                    request,
+                    fileOriginName,
+                    fileFormat,
+                    fileSize,
+                    finalObjectKey
+            );
+        }
         return uploadFolderService.saveCompletedUpload(
                 userIdx,
                 request,
                 fileOriginName,
                 fileFormat,
                 fileSize,
-                finalObjectKey
+                finalObjectKey,
+                encryptionResult
         );
     }
 

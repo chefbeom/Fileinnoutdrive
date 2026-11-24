@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
+import static com.example.WaffleBear.file.util.FileContentUtils.buildEncryptedThumbnailObjectKey;
 import static com.example.WaffleBear.file.util.FileContentUtils.buildThumbnailObjectKey;
 import static com.example.WaffleBear.file.util.FileContentUtils.isVideoFile;
 
@@ -63,6 +64,9 @@ final class FileObjectRemovalRules {
             objectKeys.add(fileObjectKey);
             if (isVideoFile(entity.getFileFormat())) {
                 objectKeys.add(buildThumbnailObjectKey(fileObjectKey));
+            }
+            if (entity.isEncrypted()) {
+                objectKeys.add(buildEncryptedThumbnailObjectKey(fileObjectKey));
             }
         }
         return objectKeys;

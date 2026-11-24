@@ -93,7 +93,8 @@ public class SecurityConfig {
                     .requestMatchers("/auth/demo-login", "/auth/reissue", "/auth/logout", "/auth/oauth2/providers").permitAll()
                     .requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()
                     .requestMatchers("/user/signup", "/user/verify/**").permitAll()
-                    .requestMatchers("/file/share-links/public/**").permitAll();
+                    .requestMatchers("/file/share-links/public/**").permitAll()
+                    .requestMatchers("/file/secret/stream/**").permitAll();
             if (publicOpenApi) {
                 auth.requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll();
             }

@@ -1,12 +1,19 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useMediaPhotoStore, formatDurationClock } from "@/stores/useMediaPhotoStore.js";
+import {
+  isEncryptedVaultFile,
+  refreshEncryptedStreamUrl,
+  resolveFilePlaybackUrl,
+} from "@/utils/fileMediaUrl.js";
 
 const mediaPhotoStore = useMediaPhotoStore();
 const miniVideoRef = ref(null);
 const currentTime = ref(0);
 const duration = ref(0);
 const isPlaying = ref(true);
+const refreshedStreamUrl = ref("");
+const hasRetriedStreamToken = ref(false);
 
 const activeFile = computed(() => {
   if (!mediaPhotoStore.miniPlayer.active || !mediaPhotoStore.miniPlayer.fileId) {
@@ -16,10 +23,24 @@ const activeFile = computed(() => {
 });
 
 const streamUrl = computed(() => (
-  activeFile.value?.downloadUrl ||
-  activeFile.value?.presignedDownloadUrl ||
-  ""
+  refreshedStreamUrl.value ||
+  resolveFilePlaybackUrl(activeFile.value)
 ));
+
+const onMiniVideoError = async () => {
+  if (!isEncryptedVaultFile(activeFile.value) || hasRetriedStreamToken.value) {
+    return;
+  }
+  hasRetriedStreamToken.value = true;
+  try {
+    const freshUrl = await refreshEncryptedStreamUrl(activeFile.value);
+    if (freshUrl) {
+      refreshedStreamUrl.value = freshUrl;
+    }
+  } catch {
+    // Ignore mini-player refresh error
+  }
+};
 
 let progressTimer = null;
 
@@ -84,8 +105,20 @@ const handleClose = () => {
 };
 
 watch(
+  () => mediaPhotoStore.miniPlayer.fileId,
+  () => {
+    refreshedStreamUrl.value = "";
+    hasRetriedStreamToken.value = false;
+  },
+);
+
+watch(
   () => mediaPhotoStore.miniPlayer.active,
   (active) => {
+    if (!active) {
+      refreshedStreamUrl.value = "";
+      hasRetriedStreamToken.value = false;
+    }
     if (!active && progressTimer) {
       clearTimeout(progressTimer);
       progressTimer = null;
@@ -117,6 +150,7 @@ onBeforeUnmount(() => {
           @timeupdate="onTimeUpdate"
           @play="isPlaying = true"
           @pause="isPlaying = false"
+          @error="onMiniVideoError"
         ></video>
 
         <div class="absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-black/80 to-transparent px-2.5 py-1.5">

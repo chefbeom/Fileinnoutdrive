@@ -3,6 +3,7 @@ package com.example.WaffleBear.file.service;
 import com.example.WaffleBear.common.exception.BaseException;
 import com.example.WaffleBear.common.model.BaseResponseStatus;
 import com.example.WaffleBear.file.FileUpDownloadRepository;
+import com.example.WaffleBear.file.crypto.VaultFileCryptoService;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.dto.FileCommonDto;
 import com.example.WaffleBear.file.info.dto.FileInfoDto;
@@ -11,10 +12,12 @@ import com.example.WaffleBear.file.model.FileNodeType;
 import com.example.WaffleBear.file.model.FileSpaceType;
 import com.example.WaffleBear.file.secret.SecretAccessGuard;
 import com.example.WaffleBear.file.secret.SecretFolderService;
+import com.example.WaffleBear.file.secret.SecretTokenService;
 import com.example.WaffleBear.file.secret.SecretTreeRules;
 import com.example.WaffleBear.file.share.ShareInheritanceService;
 import com.example.WaffleBear.file.share.ShareRepository;
 import com.example.WaffleBear.file.sharelink.FileDownloadShareLinkRepository;
+import com.example.WaffleBear.file.util.FileContentUtils;
 import com.example.WaffleBear.file.version.FileVersionLifecycleService;
 import com.example.WaffleBear.storageshare.service.SharedStorageService;
 import com.example.WaffleBear.user.model.User;
@@ -84,6 +87,12 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
     @Autowired(required = false)
     private FileDownloadShareLinkRepository fileDownloadShareLinkRepository;
 
+    @Autowired(required = false)
+    private VaultFileCryptoService vaultFileCryptoService;
+
+    @Autowired(required = false)
+    private SecretTokenService secretTokenService;
+
     private record FileListPageReadResult(
             List<FileCommonDto.FileListItemRes> fileList,
             List<FileCommonDto.FileBreadcrumbRes> breadcrumbs,
@@ -109,6 +118,7 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
     ) {}
 
     private record FileObjectReadMetadata(
+            FileInfo file,
             String objectKey,
             String fileOriginName,
             String fileSaveName,
@@ -157,7 +167,7 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                 .toList();
         fileListItemUrlService.prepareThumbnailUrls(items);
         return items.stream()
-                .map(fileListItemUrlService::attachUrls)
+                .map(item -> attachItemUrl(userIdx, item))
                 .toList();
     }
 
@@ -179,18 +189,19 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                 .toList();
         fileListItemUrlService.prepareThumbnailUrls(items);
         return items.stream()
-                .map(fileListItemUrlService::attachUrls)
+                .map(item -> attachItemUrl(normalizedUserIdx, item))
                 .toList();
     }
 
     @Override
     public FileCommonDto.FileListPageRes fileListPage(Long userIdx, FileManageDto.ListPageReq request) {
+        Long normalizedUserIdx = userIdx == null ? 0L : userIdx;
         FileListPageReadResult readResult = transactionTemplate.execute(status -> loadFileListPageReadResult(userIdx, request));
         List<FileCommonDto.FileListItemRes> items = readResult.fileList();
         fileListItemUrlService.prepareThumbnailUrls(items);
 
         return FileCommonDto.FileListPageRes.builder()
-                .fileList(items.stream().map(fileListItemUrlService::attachUrls).toList())
+                .fileList(items.stream().map(item -> attachItemUrl(normalizedUserIdx, item)).toList())
                 .breadcrumbs(readResult.breadcrumbs())
                 .rootFolders(readResult.rootFolders())
                 .availableExtensions(readResult.availableExtensions())
@@ -457,27 +468,31 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
     }
 
     @Override
-    @Transactional
     public FileCommonDto.FileActionRes moveToFolder(Long userIdx, Long fileIdx, Long targetParentId) {
         return moveFilesToFolder(userIdx, fileIdx == null ? List.of() : List.of(fileIdx), targetParentId);
     }
 
     @Override
-    @Transactional
     public FileCommonDto.FileActionRes moveFilesToFolder(Long userIdx, List<Long> fileIdxList, Long targetParentId) {
         return moveFilesToTargetSpace(userIdx, fileIdxList, targetParentId, null);
     }
 
     @Override
-    @Transactional
     public FileCommonDto.FileActionRes moveToVault(Long userIdx, Long fileIdx, Long targetParentId) {
         return moveFilesToVault(userIdx, fileIdx == null ? List.of() : List.of(fileIdx), targetParentId);
     }
 
     @Override
-    @Transactional
     public FileCommonDto.FileActionRes moveFilesToVault(Long userIdx, List<Long> fileIdxList, Long targetParentId) {
         return moveFilesToTargetSpace(userIdx, fileIdxList, targetParentId, FileSpaceType.VAULT);
+    }
+
+    private record MoveSubtreePlan(
+            FileInfo source,
+            boolean movingIntoVault,
+            List<FileInfo> activeSubtreeNodes,
+            List<FileInfo> trashedDescendants
+    ) {
     }
 
     private FileCommonDto.FileActionRes moveFilesToTargetSpace(
@@ -546,8 +561,9 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
         boolean explicitVaultDestination = requestedTargetSpace == FileSpaceType.VAULT
                 || (targetParent != null && targetParent.isVaultSpace());
 
-        List<FileInfo> nodesToSave = new ArrayList<>();
-        Set<Long> queuedNodeIds = new HashSet<>();
+        List<MoveSubtreePlan> movePlans = new ArrayList<>();
+        List<FileInfo> filesToEncrypt = new ArrayList<>();
+        Set<Long> queuedEncryptionIds = new HashSet<>();
 
         for (FileInfo source : topLevelSources) {
             if (source.isTrashed()) {
@@ -597,28 +613,96 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                 ensureNoSharedNodesInSubtree(activeSubtreeNodes);
             }
 
-            source.changeParent(targetParent);
-            queueNodeForSave(nodesToSave, queuedNodeIds, source);
-
-            if (movingIntoVault) {
+            if (movingIntoVault && vaultFileCryptoService != null) {
                 for (FileInfo activeNode : activeSubtreeNodes) {
-                    activeNode.changeSpaceType(FileSpaceType.VAULT);
-                    if (activeNode.isHiddenFolder() || activeNode.isFolderPinEnabled() || activeNode.hasFolderPin()) {
-                        activeNode.updateHiddenSettings(false, false, null);
-                    }
-                    queueNodeForSave(nodesToSave, queuedNodeIds, activeNode);
-                }
-                for (FileInfo trashedDescendant : trashedDescendants) {
-                    FileInfo descendantParent = trashedDescendant.getParent();
-                    if (descendantParent != null && !descendantParent.isTrashed()) {
-                        trashedDescendant.changeParent(null);
-                        queueNodeForSave(nodesToSave, queuedNodeIds, trashedDescendant);
+                    if (FileTreeRules.resolveNodeType(activeNode) == FileNodeType.FILE
+                            && !activeNode.isEncrypted()
+                            && activeNode.getFileSavePath() != null
+                            && !activeNode.getFileSavePath().isBlank()
+                            && (activeNode.getIdx() == null || queuedEncryptionIds.add(activeNode.getIdx()))) {
+                        filesToEncrypt.add(activeNode);
                     }
                 }
             }
+
+            movePlans.add(new MoveSubtreePlan(source, movingIntoVault, activeSubtreeNodes, trashedDescendants));
         }
 
-        fileUpDownloadRepository.saveAll(nodesToSave);
+        // Encrypt files outside DB transaction so large streams never hold DB locks.
+        Map<FileInfo, VaultFileCryptoService.VaultEncryptionResult> encryptionResults = new java.util.IdentityHashMap<>();
+        try {
+            for (FileInfo fileNode : filesToEncrypt) {
+                long plainSize = Math.max(0L, fileNode.getFileSize() == null ? 0L : fileNode.getFileSize());
+                VaultFileCryptoService.VaultEncryptionResult enc = vaultFileCryptoService.encryptPlaintextObject(
+                        userIdx,
+                        fileNode.getFileSavePath(),
+                        plainSize
+                );
+                encryptionResults.put(fileNode, enc);
+            }
+        } catch (RuntimeException exception) {
+            if (vaultFileCryptoService != null) {
+                encryptionResults.values().forEach(enc -> vaultFileCryptoService.deleteObjectQuietly(enc.encryptedObjectKey()));
+            }
+            throw exception;
+        }
+
+        try {
+            transactionTemplate.execute(status -> {
+                List<FileInfo> nodesToSave = new ArrayList<>();
+                Set<Long> queuedNodeIds = new HashSet<>();
+                List<String> oldPlaintextKeys = new ArrayList<>();
+
+                for (MoveSubtreePlan plan : movePlans) {
+                    plan.source().changeParent(targetParent);
+                    queueNodeForSave(nodesToSave, queuedNodeIds, plan.source());
+
+                    if (plan.movingIntoVault()) {
+                        for (FileInfo activeNode : plan.activeSubtreeNodes()) {
+                            activeNode.changeSpaceType(FileSpaceType.VAULT);
+                            if (activeNode.isHiddenFolder() || activeNode.isFolderPinEnabled() || activeNode.hasFolderPin()) {
+                                activeNode.updateHiddenSettings(false, false, null);
+                            }
+                            VaultFileCryptoService.VaultEncryptionResult enc = encryptionResults.get(activeNode);
+                            if (enc != null) {
+                                String oldKey = activeNode.getFileSavePath();
+                                if (oldKey != null && !oldKey.isBlank()) {
+                                    oldPlaintextKeys.add(oldKey);
+                                    oldPlaintextKeys.add(FileContentUtils.buildThumbnailObjectKey(oldKey));
+                                }
+                                activeNode.updateStorageObject(enc.encryptedSaveName(), enc.encryptedObjectKey());
+                                activeNode.applyServerEnvelopeEncryption(
+                                        enc.keyVersion(),
+                                        enc.wrappedDek(),
+                                        enc.noncePrefixBase64(),
+                                        enc.chunkSize(),
+                                        enc.encryptedFileSize()
+                                );
+                            }
+                            queueNodeForSave(nodesToSave, queuedNodeIds, activeNode);
+                        }
+                        for (FileInfo trashedDescendant : plan.trashedDescendants()) {
+                            FileInfo descendantParent = trashedDescendant.getParent();
+                            if (descendantParent != null && !descendantParent.isTrashed()) {
+                                trashedDescendant.changeParent(null);
+                                queueNodeForSave(nodesToSave, queuedNodeIds, trashedDescendant);
+                            }
+                        }
+                    }
+                }
+
+                fileUpDownloadRepository.saveAll(nodesToSave);
+                if (!oldPlaintextKeys.isEmpty()) {
+                    FileObjectCleanupScheduler.deleteAfterCommit(fileObjectDeletionService, oldPlaintextKeys);
+                }
+                return null;
+            });
+        } catch (RuntimeException exception) {
+            if (vaultFileCryptoService != null) {
+                encryptionResults.values().forEach(enc -> vaultFileCryptoService.deleteObjectQuietly(enc.encryptedObjectKey()));
+            }
+            throw exception;
+        }
 
         return FileCommonDto.FileActionRes.builder()
                 .targetIdx(targetParentId)
@@ -819,6 +903,22 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
     public FileInfoDto.TextPreviewRes getTextPreview(Long userIdx, Long fileIdx) {
         FileObjectReadMetadata metadata = resolveFileObjectReadMetadata(userIdx, fileIdx, true);
 
+        if (metadata.file() != null && metadata.file().isEncrypted() && vaultFileCryptoService != null) {
+            try (InputStream decrypted = vaultFileCryptoService.openDecryptedPrefixStream(metadata.file(), 64 * 1024L)) {
+                return fileObjectDownloadService.readTextPreviewFromStream(
+                        fileIdx,
+                        decrypted,
+                        metadata.fileOriginName(),
+                        metadata.fileFormat(),
+                        metadata.fileSize()
+                );
+            } catch (BaseException exception) {
+                throw exception;
+            } catch (Exception exception) {
+                throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+            }
+        }
+
         return fileObjectDownloadService.readTextPreview(
                 fileIdx,
                 metadata.objectKey(),
@@ -832,8 +932,12 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
     public FileCommonDto.FileDownloadPayload downloadFile(Long userIdx, Long fileIdx) {
         FileObjectReadMetadata metadata = resolveFileObjectReadMetadata(userIdx, fileIdx, false);
 
+        byte[] contentBytes = (metadata.file() != null && metadata.file().isEncrypted() && vaultFileCryptoService != null)
+                ? vaultFileCryptoService.readDecryptedBytes(metadata.file())
+                : fileObjectDownloadService.readObjectBytes(metadata.objectKey());
+
         return new FileCommonDto.FileDownloadPayload(
-                fileObjectDownloadService.readObjectBytes(metadata.objectKey()),
+                contentBytes,
                 FileDownloadRules.downloadContentType(metadata.fileOriginName()),
                 FileDownloadRules.downloadFileName(metadata.fileOriginName(), metadata.fileSaveName()),
                 metadata.fileSize()
@@ -843,6 +947,17 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
     @Override
     public String getDownloadUrl(Long userIdx, Long fileIdx) {
         FileObjectReadMetadata metadata = resolveFileObjectReadMetadata(userIdx, fileIdx, false);
+
+        if (metadata.file() != null && metadata.file().isEncrypted()) {
+            if (secretTokenService == null) {
+                throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+            }
+            String token = secretTokenService.createVaultStreamToken(userIdx, fileIdx);
+            if (token == null || token.isBlank()) {
+                throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+            }
+            return "/api/file/secret/stream/" + fileIdx + "?st=" + token + "&download=1";
+        }
 
         return fileObjectDownloadService.generateAttachmentDownloadUrl(
                 metadata.objectKey(),
@@ -881,7 +996,7 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
         Set<String> addedEntries = new HashSet<>();
 
         String rootEntryPath = rootFolderName + "/";
-        itemsToZip.add(new FolderZipItem(true, rootEntryPath, null, rootFolder.getLastModifyDate()));
+        itemsToZip.add(new FolderZipItem(true, rootEntryPath, null, null, rootFolder.getLastModifyDate()));
         addedEntries.add(rootEntryPath);
 
         for (FileInfo item : targetTree) {
@@ -901,7 +1016,7 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
             if (nodeType == FileNodeType.FOLDER) {
                 String dirPath = rootFolderName + "/" + relativePath + "/";
                 if (addedEntries.add(dirPath)) {
-                    itemsToZip.add(new FolderZipItem(true, dirPath, null, item.getLastModifyDate()));
+                    itemsToZip.add(new FolderZipItem(true, dirPath, null, null, item.getLastModifyDate()));
                 }
             } else if (nodeType == FileNodeType.FILE && !item.isLockedFile()) {
                 String objectKey = item.getFileSavePath();
@@ -911,7 +1026,7 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
 
                 String filePath = rootFolderName + "/" + relativePath;
                 filePath = ensureUniqueZipEntry(filePath, addedEntries);
-                itemsToZip.add(new FolderZipItem(false, filePath, objectKey, item.getLastModifyDate()));
+                itemsToZip.add(new FolderZipItem(false, filePath, objectKey, item, item.getLastModifyDate()));
             }
         }
 
@@ -928,7 +1043,11 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                             zos.putNextEntry(zipEntry);
                             zos.closeEntry();
                         } else {
-                            try (InputStream is = fileObjectDownloadService.openObjectStream(zipItem.fileSavePath())) {
+                            try (InputStream is = (zipItem.fileEntity() != null
+                                    && zipItem.fileEntity().isEncrypted()
+                                    && vaultFileCryptoService != null)
+                                    ? vaultFileCryptoService.openDecryptedInputStream(zipItem.fileEntity())
+                                    : fileObjectDownloadService.openObjectStream(zipItem.fileSavePath())) {
                                 zos.putNextEntry(zipEntry);
                                 is.transferTo(zos);
                                 zos.closeEntry();
@@ -1003,6 +1122,7 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
             boolean directory,
             String entryPath,
             String fileSavePath,
+            FileInfo fileEntity,
             LocalDateTime lastModifyDate
     ) {}
 
@@ -1021,6 +1141,7 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                 throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
             }
             return new FileObjectReadMetadata(
+                    file,
                     objectKey,
                     file.getFileOriginName(),
                     file.getFileSaveName(),
@@ -1621,7 +1742,15 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
     }
 
     private FileCommonDto.FileListItemRes toFileListItem(FileInfo entity) {
-        return fileListItemUrlService.attachUrls(toFileListItemMetadata(entity));
+        Long ownerIdx = entity != null && entity.getUser() != null ? entity.getUser().getIdx() : null;
+        return attachItemUrl(ownerIdx, toFileListItemMetadata(entity));
+    }
+
+    private FileCommonDto.FileListItemRes attachItemUrl(Long userIdx, FileCommonDto.FileListItemRes item) {
+        if (item != null && Boolean.TRUE.equals(item.getEncrypted())) {
+            return fileListItemUrlService.attachUrls(userIdx, item);
+        }
+        return fileListItemUrlService.attachUrls(item);
     }
 
     private FileCommonDto.FileListItemRes toFileListItemMetadata(FileInfo entity) {
@@ -1649,6 +1778,8 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                 .sharedFile(entity.isSharedFile())
                 .trashed(entity.isTrashed())
                 .spaceType(entity.resolveSpaceType().name())
+                .encrypted(entity.isEncrypted())
+                .encryptionMode(entity.resolveEncryptionMode().name())
                 .hiddenFolder(entity.isHiddenFolder())
                 .pinEnabled(entity.isFolderPinEnabled())
                 .pinRegistered(entity.hasFolderPin())

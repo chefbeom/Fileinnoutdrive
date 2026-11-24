@@ -1,8 +1,10 @@
 package com.example.WaffleBear.file.service;
 
 import com.example.WaffleBear.file.dto.FileCommonDto;
+import com.example.WaffleBear.file.model.FileEncryptionMode;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
+import com.example.WaffleBear.file.model.FileSpaceType;
 import org.springframework.http.ContentDisposition;
 
 import java.nio.charset.StandardCharsets;
@@ -56,6 +58,8 @@ final class FileDownloadRules {
         return FileInfo.builder()
                 .idx(item.getIdx())
                 .nodeType(parseNodeType(item.getNodeType()))
+                .spaceType(parseSpaceType(item.getSpaceType()))
+                .encryptionMode(parseEncryptionMode(item.getEncryptionMode(), item.getEncrypted()))
                 .fileOriginName(item.getFileOriginName())
                 .fileSaveName(item.getFileSaveName())
                 .fileSavePath(item.getFileSavePath())
@@ -65,6 +69,24 @@ final class FileDownloadRules {
                 .sharedFile(Boolean.TRUE.equals(item.getSharedFile()))
                 .trashed(Boolean.TRUE.equals(item.getTrashed()))
                 .build();
+    }
+
+    static FileSpaceType parseSpaceType(String spaceType) {
+        try {
+            return spaceType == null ? FileSpaceType.DRIVE : FileSpaceType.valueOf(spaceType);
+        } catch (IllegalArgumentException exception) {
+            return FileSpaceType.DRIVE;
+        }
+    }
+
+    static FileEncryptionMode parseEncryptionMode(String encryptionMode, Boolean encryptedFlag) {
+        if (encryptionMode != null && !encryptionMode.isBlank()) {
+            try {
+                return FileEncryptionMode.valueOf(encryptionMode.trim());
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+        return Boolean.TRUE.equals(encryptedFlag) ? FileEncryptionMode.SERVER_ENVELOPE_V1 : FileEncryptionMode.NONE;
     }
 
     static FileNodeType parseNodeType(String nodeType) {

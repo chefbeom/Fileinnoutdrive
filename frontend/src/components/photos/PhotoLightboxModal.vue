@@ -4,6 +4,12 @@ import { useRouter } from "vue-router";
 import { useMediaPhotoStore } from "@/stores/useMediaPhotoStore.js";
 import { downloadFileAsset } from "@/api/filesApi.js";
 import { ModalBackHistoryManager } from "@/utils/modalBackHistory.js";
+import {
+  isEncryptedVaultFile,
+  refreshEncryptedStreamUrl,
+  resolveFilePlaybackUrl,
+  resolveFileThumbnailFallbackUrl,
+} from "@/utils/fileMediaUrl.js";
 
 const props = defineProps({
   photoId: {
@@ -32,6 +38,8 @@ const isAlbumPopoverOpen = ref(false);
 const isSlideshowPlaying = ref(false);
 const isDownloading = ref(false);
 const newAlbumName = ref("");
+const refreshedImageUrl = ref("");
+const hasRetriedImageToken = ref(false);
 
 let slideshowTimer = null;
 let touchStartX = 0;
@@ -67,12 +75,25 @@ const hasPrev = computed(() => currentIndex.value > 0);
 const hasNext = computed(() => currentIndex.value >= 0 && currentIndex.value < photoPool.value.length - 1);
 
 const imageUrl = computed(() => (
-  currentPhoto.value?.downloadUrl ||
-  currentPhoto.value?.presignedDownloadUrl ||
-  currentPhoto.value?.thumbnailPresignedUrl ||
-  currentPhoto.value?.thumbnailUrl ||
-  ""
+  refreshedImageUrl.value ||
+  resolveFilePlaybackUrl(currentPhoto.value) ||
+  resolveFileThumbnailFallbackUrl(currentPhoto.value)
 ));
+
+const onImageError = async () => {
+  if (!isEncryptedVaultFile(currentPhoto.value) || hasRetriedImageToken.value) {
+    return;
+  }
+  hasRetriedImageToken.value = true;
+  try {
+    const freshUrl = await refreshEncryptedStreamUrl(currentPhoto.value);
+    if (freshUrl) {
+      refreshedImageUrl.value = freshUrl;
+    }
+  } catch {
+    // Ignore image token refresh error
+  }
+};
 
 const albums = computed(() => mediaPhotoStore.resolvedPhotoAlbums);
 
@@ -326,6 +347,8 @@ const handleKeydown = (event) => {
 watch(
   () => props.photoId,
   (newId, oldId) => {
+    refreshedImageUrl.value = "";
+    hasRetriedImageToken.value = false;
     resetTransform();
     if (newId != null) {
       if (oldId != null) {
@@ -618,7 +641,7 @@ onBeforeUnmount(() => {
 
           <img
             v-if="imageUrl"
-            :key="currentPhoto.id"
+            :key="`${currentPhoto.id}:${imageUrl}`"
             :src="imageUrl"
             :alt="currentPhoto.name"
             class="max-h-full max-w-full object-contain transition-transform duration-200 cursor-zoom-in"
@@ -627,6 +650,7 @@ onBeforeUnmount(() => {
             }"
             @click="handleImageTap"
             @load="onImageLoad"
+            @error="onImageError"
           />
 
           <!-- Next Button -->

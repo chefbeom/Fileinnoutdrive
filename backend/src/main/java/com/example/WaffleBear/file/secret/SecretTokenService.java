@@ -20,6 +20,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,9 +29,11 @@ import java.util.concurrent.ConcurrentHashMap;
 public class SecretTokenService {
 
     private static final String TOKEN_CATEGORY = "secret-unlock";
+    private static final String STREAM_TOKEN_CATEGORY = "vault-stream";
     private static final String SCOPE_VAULT = "VAULT";
     private static final String SCOPE_FOLDER = "FOLDER";
     private static final long UNLOCK_TTL_MS = 2L * 60L * 60L * 1000L;
+    private static final long DEFAULT_STREAM_TTL_SECONDS = 3600L;
     private static final Duration EPOCH_TTL = Duration.ofHours(4);
     private static final String REDIS_VAULT_EPOCH_PREFIX = "secret:epoch:vault:";
     private static final String REDIS_FOLDER_EPOCH_PREFIX = "secret:epoch:folder:";
@@ -38,6 +41,9 @@ public class SecretTokenService {
     private final SecretKey secretKey;
     private final ObjectProvider<StringRedisTemplate> redisTemplateProvider;
     private final Map<String, Long> localEpochs = new ConcurrentHashMap<>();
+
+    @Value("${app.vault.encryption.stream-token-ttl-seconds:3600}")
+    private long streamTokenTtlSeconds = DEFAULT_STREAM_TTL_SECONDS;
 
     public SecretTokenService(String key) {
         this(key, null);
@@ -132,6 +138,57 @@ public class SecretTokenService {
         return unlocked;
     }
 
+    public void setStreamTokenTtlSeconds(long streamTokenTtlSeconds) {
+        this.streamTokenTtlSeconds = Math.max(60L, streamTokenTtlSeconds);
+    }
+
+    public long getStreamTokenTtlSeconds() {
+        return Math.max(60L, streamTokenTtlSeconds);
+    }
+
+    public String createVaultStreamToken(Long userIdx, Long fileIdx) {
+        if (userIdx == null || userIdx <= 0 || fileIdx == null || fileIdx <= 0) {
+            return null;
+        }
+        long epoch = currentEpoch(vaultEpochKey(userIdx));
+        long now = System.currentTimeMillis();
+        long ttlMs = getStreamTokenTtlSeconds() * 1000L;
+        return Jwts.builder()
+                .claim("category", STREAM_TOKEN_CATEGORY)
+                .claim("userIdx", userIdx)
+                .claim("fileIdx", fileIdx)
+                .claim("epoch", epoch)
+                .id(UUID.randomUUID().toString())
+                .issuedAt(new Date(now))
+                .expiration(new Date(now + ttlMs))
+                .signWith(secretKey)
+                .compact();
+    }
+
+    public Optional<Long> verifyVaultStreamToken(String token, Long expectedFileIdx) {
+        if (expectedFileIdx == null || expectedFileIdx <= 0) {
+            return Optional.empty();
+        }
+        Claims claims = parseValidClaims(token, STREAM_TOKEN_CATEGORY);
+        if (claims == null) {
+            return Optional.empty();
+        }
+        Number tokenUserIdx = claims.get("userIdx", Number.class);
+        Number tokenFileIdx = claims.get("fileIdx", Number.class);
+        Number epochClaim = claims.get("epoch", Number.class);
+        if (tokenUserIdx == null || tokenFileIdx == null || epochClaim == null) {
+            return Optional.empty();
+        }
+        long userIdx = tokenUserIdx.longValue();
+        if (userIdx <= 0 || tokenFileIdx.longValue() != expectedFileIdx) {
+            return Optional.empty();
+        }
+        if (epochClaim.longValue() != currentEpoch(vaultEpochKey(userIdx))) {
+            return Optional.empty();
+        }
+        return Optional.of(userIdx);
+    }
+
     private String createToken(Long userIdx, String scope, Long folderIdx, long epoch) {
         long now = System.currentTimeMillis();
         var builder = Jwts.builder()
@@ -201,6 +258,10 @@ public class SecretTokenService {
     }
 
     private Claims parseValidClaims(String token) {
+        return parseValidClaims(token, TOKEN_CATEGORY);
+    }
+
+    private Claims parseValidClaims(String token, String expectedCategory) {
         if (token == null || token.isBlank()) {
             return null;
         }
@@ -210,7 +271,7 @@ public class SecretTokenService {
                     .build()
                     .parseSignedClaims(token.trim())
                     .getPayload();
-            if (!TOKEN_CATEGORY.equals(claims.get("category", String.class))) {
+            if (!expectedCategory.equals(claims.get("category", String.class))) {
                 return null;
             }
             Date exp = claims.getExpiration();

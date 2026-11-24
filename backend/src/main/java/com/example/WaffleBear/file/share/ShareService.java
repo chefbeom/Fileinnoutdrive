@@ -560,7 +560,7 @@ public class ShareService {
         Optional<FileInfo> owned = fileUpDownloadRepository.findByIdxAndUser_Idx(fileIdx, actorUserIdx);
         if (owned != null && owned.isPresent()) {
             FileInfo file = owned.get();
-            if (SecretTreeRules.hasVaultAncestor(file) || SecretTreeRules.hasHiddenAncestor(file)) {
+            if (file.isEncrypted() || SecretTreeRules.hasVaultAncestor(file) || SecretTreeRules.hasHiddenAncestor(file)) {
                 throw BaseException.from(BaseResponseStatus.SECRET_FOLDER_NOT_ALLOWED);
             }
             return file;

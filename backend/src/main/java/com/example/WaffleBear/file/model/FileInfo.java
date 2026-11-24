@@ -38,6 +38,22 @@ public class FileInfo {
     @Enumerated(EnumType.STRING)
     private FileSpaceType spaceType;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 32)
+    private FileEncryptionMode encryptionMode;
+
+    private Integer encryptionKeyVersion;
+
+    @Column(length = 255)
+    private String wrappedDek;
+
+    @Column(length = 32)
+    private String encryptionNoncePrefix;
+
+    private Integer encryptionChunkSize;
+
+    private Long encryptedFileSize;
+
     private Boolean hiddenFolder;
     private Boolean folderPinEnabled;
     private String folderPinHash;
@@ -70,6 +86,9 @@ public class FileInfo {
             this.spaceType = (this.parent != null && this.parent.isVaultSpace())
                     ? FileSpaceType.VAULT
                     : FileSpaceType.DRIVE;
+        }
+        if (this.encryptionMode == null) {
+            this.encryptionMode = FileEncryptionMode.NONE;
         }
         if (this.hiddenFolder == null) {
             this.hiddenFolder = false;
@@ -178,5 +197,42 @@ public class FileInfo {
 
     public void changeSharedFile(boolean sharedFile) {
         this.sharedFile = sharedFile;
+    }
+
+    public FileEncryptionMode resolveEncryptionMode() {
+        return this.encryptionMode == null ? FileEncryptionMode.NONE : this.encryptionMode;
+    }
+
+    public boolean isEncrypted() {
+        return resolveEncryptionMode() != FileEncryptionMode.NONE;
+    }
+
+    public void applyServerEnvelopeEncryption(
+            int keyVersion,
+            String wrappedDek,
+            String noncePrefix,
+            int chunkSize,
+            long encryptedFileSize
+    ) {
+        this.encryptionMode = FileEncryptionMode.SERVER_ENVELOPE_V1;
+        this.encryptionKeyVersion = keyVersion;
+        this.wrappedDek = wrappedDek;
+        this.encryptionNoncePrefix = noncePrefix;
+        this.encryptionChunkSize = chunkSize;
+        this.encryptedFileSize = encryptedFileSize;
+    }
+
+    public void clearEncryptionMetadata() {
+        this.encryptionMode = FileEncryptionMode.NONE;
+        this.encryptionKeyVersion = null;
+        this.wrappedDek = null;
+        this.encryptionNoncePrefix = null;
+        this.encryptionChunkSize = null;
+        this.encryptedFileSize = null;
+    }
+
+    public void updateStorageObject(String fileSaveName, String fileSavePath) {
+        this.fileSaveName = fileSaveName;
+        this.fileSavePath = fileSavePath;
     }
 }

@@ -1,5 +1,6 @@
 package com.example.WaffleBear.file.service;
 
+import com.example.WaffleBear.file.model.FileEncryptionMode;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
 import org.junit.jupiter.api.Test;
@@ -27,6 +28,26 @@ class FileObjectRemovalRulesTest {
                 "7/thumbnails/video.jpg",
                 "7/report.txt",
                 "7/version/report-v1.txt"
+        );
+    }
+
+    @Test
+    void includesEncryptedThumbnailObjectKeyForEncryptedVaultFiles() {
+        FileInfo encryptedPhoto = FileInfo.builder()
+                .idx(9L)
+                .nodeType(FileNodeType.FILE)
+                .fileOriginName("secret.png")
+                .fileSaveName("vault-uuid.enc")
+                .fileSavePath("7/vault/vault-uuid.enc")
+                .fileFormat("png")
+                .encryptionMode(FileEncryptionMode.SERVER_ENVELOPE_V1)
+                .build();
+
+        List<String> objectKeys = FileObjectRemovalRules.collectObjectKeysForRemoval(List.of(encryptedPhoto), List.of());
+
+        assertThat(objectKeys).containsExactly(
+                "7/vault/vault-uuid.enc",
+                "7/vault/thumbnails/vault-uuid.vthumb"
         );
     }
 

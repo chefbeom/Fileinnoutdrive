@@ -277,6 +277,15 @@ public class FileManageController {
                     .build();
         }
 
+        if (payload.privateNoStore()) {
+            return ResponseEntity.ok()
+                    .cacheControl(CacheControl.noStore())
+                    .header("Pragma", "no-cache")
+                    .header("X-Content-Type-Options", "nosniff")
+                    .contentType(MediaType.parseMediaType(payload.contentType()))
+                    .body(payload.bytes());
+        }
+
         CacheControl cacheControl = CacheControl.maxAge(Duration.ofDays(1)).cachePrivate().mustRevalidate();
         if (matchesEtag(ifNoneMatch, payload.eTag())) {
             return ResponseEntity.status(304)

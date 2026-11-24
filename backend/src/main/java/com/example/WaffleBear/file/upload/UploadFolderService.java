@@ -3,6 +3,8 @@ package com.example.WaffleBear.file.upload;
 import com.example.WaffleBear.common.exception.BaseException;
 import com.example.WaffleBear.common.model.BaseResponseStatus;
 import com.example.WaffleBear.file.FileUpDownloadRepository;
+import com.example.WaffleBear.file.crypto.VaultFileCryptoService;
+import com.example.WaffleBear.file.model.FileEncryptionMode;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
 import com.example.WaffleBear.file.model.FileSpaceType;
@@ -124,6 +126,23 @@ public class UploadFolderService {
         }
     }
 
+    public boolean isVaultUploadDestination(Long userIdx, UploadDto.CompleteReq request) {
+        if (request == null) {
+            return false;
+        }
+        FileSpaceType requestedSpace = resolveRequestedSpace(request.getSpaceType(), request.getVaultMode());
+        if (requestedSpace == FileSpaceType.VAULT) {
+            return true;
+        }
+        Long parentId = request.getParentId();
+        if (parentId == null || parentId <= 0L || userIdx == null || userIdx <= 0L) {
+            return false;
+        }
+        return fileUpDownloadRepository.findByIdxAndUser_Idx(parentId, userIdx)
+                .map(FileInfo::isVaultSpace)
+                .orElse(false);
+    }
+
     @Transactional
     public FileInfo saveCompletedUpload(
             Long userIdx,
@@ -133,8 +152,26 @@ public class UploadFolderService {
             long fileSize,
             String finalObjectKey
     ) {
+        return saveCompletedUpload(userIdx, request, fileOriginName, fileFormat, fileSize, finalObjectKey, null);
+    }
+
+    @Transactional
+    public FileInfo saveCompletedUpload(
+            Long userIdx,
+            UploadDto.CompleteReq request,
+            String fileOriginName,
+            String fileFormat,
+            long fileSize,
+            String finalObjectKey,
+            VaultFileCryptoService.VaultEncryptionResult encryptionResult
+    ) {
         synchronized (folderCreationMonitor) {
-            Optional<FileInfo> existing = fileUpDownloadRepository.findByUser_IdxAndFileSavePath(userIdx, finalObjectKey);
+            String storedObjectKey = encryptionResult != null ? encryptionResult.encryptedObjectKey() : finalObjectKey;
+            String storedSaveName = encryptionResult != null
+                    ? encryptionResult.encryptedSaveName()
+                    : extractFileSaveName(finalObjectKey);
+
+            Optional<FileInfo> existing = fileUpDownloadRepository.findByUser_IdxAndFileSavePath(userIdx, storedObjectKey);
             if (existing.isPresent()) {
                 return existing.get();
             }
@@ -168,11 +205,22 @@ public class UploadFolderService {
                 target.replaceContent(
                         fileOriginName,
                         fileFormat,
-                        extractFileSaveName(finalObjectKey),
-                        finalObjectKey,
+                        storedSaveName,
+                        storedObjectKey,
                         fileSize,
                         parent
                 );
+                if (encryptionResult != null) {
+                    target.applyServerEnvelopeEncryption(
+                            encryptionResult.keyVersion(),
+                            encryptionResult.wrappedDek(),
+                            encryptionResult.noncePrefixBase64(),
+                            encryptionResult.chunkSize(),
+                            encryptionResult.encryptedFileSize()
+                    );
+                } else {
+                    target.clearEncryptionMetadata();
+                }
                 FileInfo saved = fileUpDownloadRepository.saveAndFlush(target);
                 shareInheritanceService.inheritParentShares(parent, saved);
                 return saved;
@@ -181,11 +229,12 @@ public class UploadFolderService {
             FileInfo entity = FileInfo.builder()
                     .fileOriginName(fileOriginName)
                     .fileFormat(fileFormat)
-                    .fileSaveName(extractFileSaveName(finalObjectKey))
-                    .fileSavePath(finalObjectKey)
+                    .fileSaveName(storedSaveName)
+                    .fileSavePath(storedObjectKey)
                     .fileSize(fileSize)
                     .nodeType(FileNodeType.FILE)
                     .spaceType(effectiveSpace)
+                    .encryptionMode(encryptionResult != null ? FileEncryptionMode.SERVER_ENVELOPE_V1 : FileEncryptionMode.NONE)
                     .hiddenFolder(false)
                     .folderPinEnabled(false)
                     .parent(parent)
@@ -195,6 +244,15 @@ public class UploadFolderService {
                     .deletedAt(null)
                     .user(User.builder().idx(userIdx).build())
                     .build();
+            if (encryptionResult != null) {
+                entity.applyServerEnvelopeEncryption(
+                        encryptionResult.keyVersion(),
+                        encryptionResult.wrappedDek(),
+                        encryptionResult.noncePrefixBase64(),
+                        encryptionResult.chunkSize(),
+                        encryptionResult.encryptedFileSize()
+                );
+            }
 
             FileInfo saved = fileUpDownloadRepository.saveAndFlush(entity);
             shareInheritanceService.inheritParentShares(parent, saved);

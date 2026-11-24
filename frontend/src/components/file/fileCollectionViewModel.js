@@ -1,5 +1,9 @@
 import { IMAGE_EXTENSIONS, VIDEO_EXTENSIONS } from "@/constants/fileTypes.js";
 import { formatBytes } from "@/utils/formatBytes.js";
+import {
+  resolveFilePlaybackUrl,
+  resolveFileThumbnailFallbackUrl,
+} from "@/utils/fileMediaUrl.js";
 
 const MAX_MANAGED_IMAGE_THUMBNAIL_BYTES = 50 * 1024 * 1024;
 
@@ -158,8 +162,8 @@ export function getCollectionSentShareLabel(file) {
   return recipientLabel;
 }
 
-export const getCollectionPreviewUrl = (file) => file?.downloadUrl || file?.presignedDownloadUrl || "";
-export const getCollectionThumbnailUrl = (file) => file?.thumbnailUrl || file?.thumbnailPresignedUrl || "";
+export const getCollectionPreviewUrl = (file) => resolveFilePlaybackUrl(file);
+export const getCollectionThumbnailUrl = (file) => resolveFileThumbnailFallbackUrl(file);
 export const getCollectionContentType = (file) => String(file?.contentType || file?.raw?.contentType || "").toLowerCase();
 export const isCollectionLocked = (file) => Boolean(file?.lockedFile);
 export const isCollectionSharedFolder = (file) => {

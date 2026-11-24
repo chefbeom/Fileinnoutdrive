@@ -250,7 +250,7 @@ public class DownloadShareLinkService {
         if (file.isTrashed() || file.isLockedFile() || !hasStoredObjectKey(file)) {
             throw BaseException.from(BaseResponseStatus.SHARE_LINK_FILE_UNAVAILABLE);
         }
-        if (SecretTreeRules.hasVaultAncestor(file) || SecretTreeRules.hasHiddenAncestor(file)) {
+        if (file.isEncrypted() || SecretTreeRules.hasVaultAncestor(file) || SecretTreeRules.hasHiddenAncestor(file)) {
             throw BaseException.from(BaseResponseStatus.SECRET_FOLDER_NOT_ALLOWED);
         }
     }
@@ -369,6 +369,7 @@ public class DownloadShareLinkService {
                 && file.getNodeType() != FileNodeType.FOLDER
                 && !file.isTrashed()
                 && !file.isLockedFile()
+                && !file.isEncrypted()
                 && hasStoredObjectKey(file)
                 && !SecretTreeRules.hasVaultAncestor(file)
                 && !SecretTreeRules.hasHiddenAncestor(file);

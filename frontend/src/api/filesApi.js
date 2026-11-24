@@ -1,4 +1,8 @@
 import { api } from "@/plugins/axiosinterceptor.js";
+import {
+  normalizeApiAssetUrl,
+  resolveFilePlaybackUrl,
+} from "@/utils/fileMediaUrl.js";
 
 const normalizeFileFormat = (file) => {
   if (typeof file?.name !== "string") return "bin";
@@ -62,8 +66,7 @@ export const parseUploadResponse = (responseData) => {
 };
 
 const resolveDownloadUrl = (fileOrUrl) => {
-  if (typeof fileOrUrl === "string") return fileOrUrl;
-  return fileOrUrl?.downloadUrl || fileOrUrl?.presignedDownloadUrl || "";
+  return resolveFilePlaybackUrl(fileOrUrl);
 };
 
 const resolveDownloadFileName = (fileOrUrl, fallbackFileName = "file") => {
@@ -161,7 +164,7 @@ export async function downloadFileAsset(fileOrUrl, fallbackFileName = "file", op
   }
 
   const response = await api.get(downloadLinkPath, requestConfig);
-  const attachmentDownloadUrl = extractDownloadLink(response?.data);
+  const attachmentDownloadUrl = normalizeApiAssetUrl(extractDownloadLink(response?.data));
   if (!attachmentDownloadUrl) {
     throw new Error("\uB2E4\uC6B4\uB85C\uB4DC \uB9C1\uD06C\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.");
   }
@@ -520,5 +523,15 @@ export async function fetchMyDownloadShareLinks() {
 
 export async function revokeDownloadShareLink(linkIdx) {
   const response = await api.delete(`/file/share-links/${linkIdx}`);
+  return extractObjectResult(response?.data);
+}
+
+export async function fetchVaultStreamToken(fileId) {
+  const response = await api.post(`/file/secret/stream-token/${fileId}`);
+  return extractObjectResult(response?.data);
+}
+
+export async function migrateVaultEncryption() {
+  const response = await api.post("/file/secret/vault/migrate-encryption");
   return extractObjectResult(response?.data);
 }

@@ -1,3 +1,8 @@
+import {
+  resolveFilePlaybackUrl,
+  resolveFileThumbnailFallbackUrl,
+} from "@/utils/fileMediaUrl.js";
+
 export const FILE_TABLE_PARENT_DROP_TARGET_ID = "__parent__";
 
 export const IMAGE_EXTENSIONS = new Set([
@@ -134,8 +139,7 @@ export function canDownloadFileTableFile(file = {}) {
     return !file?.lockedFile && !file?.isTrash;
   }
   return Boolean(
-    file?.downloadUrl ||
-    file?.presignedDownloadUrl ||
+    resolveFilePlaybackUrl(file) ||
     (file?.sharedWithMe && file?.downloadable),
   );
 }
@@ -162,14 +166,14 @@ export function isFileTableMovable(file = {}, deleteMode = "trash") {
 export const isFileTableFolderDropTarget = canManageFileTableFolder;
 
 export function getFileTablePreviewUrl(file = {}) {
-  return file?.downloadUrl || file?.presignedDownloadUrl || "";
+  return resolveFilePlaybackUrl(file);
 }
 
 export const getFileTableContentType = (file = {}) =>
   String(file?.contentType || file?.raw?.contentType || "").toLowerCase();
 
 export const getFileTableVideoThumbnailUrl = (file = {}) =>
-  file?.thumbnailUrl || file?.thumbnailPresignedUrl || "";
+  resolveFileThumbnailFallbackUrl(file);
 
 export function hasFileTablePreviewSource(file = {}) {
   return file?.type !== "folder" && Boolean(getFileTablePreviewUrl(file));

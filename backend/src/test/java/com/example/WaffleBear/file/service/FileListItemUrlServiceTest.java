@@ -3,12 +3,15 @@ package com.example.WaffleBear.file.service;
 import com.example.WaffleBear.config.MinioProperties;
 import com.example.WaffleBear.config.MinioPresignedUrlService;
 import com.example.WaffleBear.file.dto.FileCommonDto;
+import com.example.WaffleBear.file.model.FileEncryptionMode;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
+import com.example.WaffleBear.file.secret.SecretTokenService;
 import io.minio.GetPresignedObjectUrlArgs;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -114,6 +117,37 @@ class FileListItemUrlServiceTest {
                 .containsExactly("application/octet-stream");
         assertThat(argsCaptor.getValue().extraQueryParams().get("response-content-disposition"))
                 .anySatisfy(value -> assertThat(value).startsWith("attachment;"));
+    }
+
+    @Test
+    void emitsSignedStreamUrlAndSkipsMinioPresignedUrlsForEncryptedVaultItems() throws Exception {
+        SecretTokenService secretTokenService = new SecretTokenService("test-jwt-secret-key-at-least-32-characters-long");
+        ReflectionTestUtils.setField(service, "secretTokenService", secretTokenService);
+
+        var encryptedVaultItem = FileCommonDto.FileListItemRes.builder()
+                .idx(42L)
+                .nodeType(FileNodeType.FILE.name())
+                .spaceType("VAULT")
+                .encrypted(true)
+                .encryptionMode(FileEncryptionMode.SERVER_ENVELOPE_V1.name())
+                .lockedFile(false)
+                .trashed(false)
+                .fileOriginName("secret.mp4")
+                .fileSaveName("vault.enc")
+                .fileSavePath("7/vault/vault.enc")
+                .fileFormat("mp4")
+                .fileSize(4096L)
+                .build();
+
+        service.attachUrls(7L, encryptedVaultItem);
+
+        assertThat(encryptedVaultItem.getThumbnailPresignedUrl()).isNull();
+        assertThat(encryptedVaultItem.getPresignedDownloadUrl())
+                .startsWith("/api/file/secret/stream/42?st=");
+        String st = encryptedVaultItem.getPresignedDownloadUrl().substring("/api/file/secret/stream/42?st=".length());
+        assertThat(secretTokenService.verifyVaultStreamToken(st, 42L)).contains(7L);
+        verify(minioPresignedUrlService, never()).getPresignedObjectUrl(any(GetPresignedObjectUrlArgs.class));
+        verify(fileThumbnailService, never()).generatePresignedThumbnailUrl(any(FileInfo.class));
     }
 
     private static FileCommonDto.FileListItemRes fileItem(boolean locked, String objectKey) {

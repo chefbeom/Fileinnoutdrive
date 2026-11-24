@@ -6,6 +6,11 @@ import { useHeaderSearchStore } from "@/stores/useHeaderSearchStore.js";
 import { useMediaPhotoStore } from "@/stores/useMediaPhotoStore.js";
 import { downloadFileAsset } from "@/api/filesApi.js";
 import { getCachedFileThumbnailUrl, loadFileThumbnailUrl } from "@/utils/fileThumbnailCache.js";
+import {
+  isEncryptedVaultFile,
+  resolveFilePlaybackUrl,
+  resolveFileThumbnailFallbackUrl,
+} from "@/utils/fileMediaUrl.js";
 import { triggerDesktopUpload } from "@/utils/desktopDropUpload.js";
 import { matchesSearchItem } from "@/utils/fileSearch.js";
 import BaseFileShareDialog from "@/components/BaseFileShareDialog.vue";
@@ -444,10 +449,8 @@ const primeThumbnails = async () => {
 
     const cached =
       getCachedFileThumbnailUrl(photo) ||
-      photo.thumbnailPresignedUrl ||
-      photo.thumbnailUrl ||
-      photo.downloadUrl ||
-      photo.presignedDownloadUrl;
+      resolveFileThumbnailFallbackUrl(photo) ||
+      (!isEncryptedVaultFile(photo) ? resolveFilePlaybackUrl(photo) : "");
     if (cached) {
       cachedUpdates[key] = cached;
       continue;
@@ -455,11 +458,19 @@ const primeThumbnails = async () => {
 
     loadFileThumbnailUrl(photo, { signal: controller.signal })
       .then((url) => {
-        if (url && !controller.signal.aborted) {
-          thumbnailMap.value = { ...thumbnailMap.value, [key]: url };
+        const resolved = url || (isEncryptedVaultFile(photo) ? resolveFilePlaybackUrl(photo) : "");
+        if (resolved && !controller.signal.aborted) {
+          thumbnailMap.value = { ...thumbnailMap.value, [key]: resolved };
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (isEncryptedVaultFile(photo) && !controller.signal.aborted) {
+          const fallbackUrl = resolveFilePlaybackUrl(photo);
+          if (fallbackUrl) {
+            thumbnailMap.value = { ...thumbnailMap.value, [key]: fallbackUrl };
+          }
+        }
+      });
   }
   if (Object.keys(cachedUpdates).length > 0) {
     thumbnailMap.value = { ...thumbnailMap.value, ...cachedUpdates };

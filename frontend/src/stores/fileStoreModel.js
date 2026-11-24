@@ -1,5 +1,10 @@
 import { IMAGE_EXTENSIONS, VIDEO_EXTENSIONS } from "@/constants/fileTypes.js";
 import { formatBytes as formatFileSize } from "@/utils/formatBytes.js";
+import {
+  isEncryptedVaultFile,
+  resolveFilePlaybackUrl,
+  resolveFileThumbnailFallbackUrl,
+} from "@/utils/fileMediaUrl.js";
 
 export const ROOT_LOCATION_LABEL = "홈";
 export const VAULT_ROOT_LOCATION_LABEL = "비밀 폴더";
@@ -126,8 +131,19 @@ export const normalizeFileRecord = (rawFile, options = {}) => {
     : recipientCount <= 2
       ? `공유 대상: ${recipientNames.join(", ")}`
       : `공유 대상: ${recipientNames.slice(0, 2).join(", ")} 외 ${recipientCount - 2}명`;
-  const downloadUrl = rawFile?.presignedDownloadUrl || rawFile?.downloadUrl || "";
-  const thumbnailUrl = rawFile?.thumbnailPresignedUrl || rawFile?.thumbnailUrl || "";
+  const encryptionMode = String(
+    rawFile?.encryptionMode || (rawFile?.encrypted ? "SERVER_ENVELOPE_V1" : "NONE"),
+  ).toUpperCase();
+  const encrypted = Boolean(rawFile?.encrypted || (encryptionMode && encryptionMode !== "NONE"));
+  const downloadUrl = resolveFilePlaybackUrl(rawFile);
+  const thumbnailUrl = encrypted
+    ? ""
+    : resolveFileThumbnailFallbackUrl({
+        thumbnailPresignedUrl: rawFile?.thumbnailPresignedUrl,
+        thumbnailUrl: rawFile?.thumbnailUrl,
+        encrypted,
+        encryptionMode,
+      });
   const presignedUrlExpiresIn = Number(rawFile?.presignedUrlExpiresIn ?? 0) || 0;
   const assetUrlExpiresAt = presignedUrlExpiresIn > 0
     ? Date.now() + (presignedUrlExpiresIn * 1000)
@@ -174,6 +190,8 @@ export const normalizeFileRecord = (rawFile, options = {}) => {
     lockedFile: Boolean(rawFile?.lockedFile),
     spaceType: String(rawFile?.spaceType || "DRIVE").toUpperCase(),
     isVaultSpace: String(rawFile?.spaceType || "DRIVE").toUpperCase() === "VAULT",
+    encrypted,
+    encryptionMode,
     hiddenFolder: Boolean(rawFile?.hiddenFolder),
     pinEnabled: Boolean(rawFile?.pinEnabled),
     pinRegistered: Boolean(rawFile?.pinRegistered),
@@ -182,7 +200,7 @@ export const normalizeFileRecord = (rawFile, options = {}) => {
     downloadUrl,
     presignedDownloadUrl: rawFile?.presignedDownloadUrl || "",
     thumbnailUrl,
-    thumbnailPresignedUrl: rawFile?.thumbnailPresignedUrl || "",
+    thumbnailPresignedUrl: encrypted ? "" : (rawFile?.thumbnailPresignedUrl || ""),
     contentType: rawFile?.contentType || rawFile?.mimeType || rawFile?.fileContentType || "",
     fileSaveName,
     fileSavePath: rawFile?.fileSavePath || rawFile?.objectKey || "",
@@ -293,7 +311,13 @@ export const reuseCachedAssetUrls = (previousRecords, nextRecords) => {
   );
 
   return (nextRecords || []).map((record) => {
+    if (isEncryptedVaultFile(record)) {
+      return record;
+    }
     const previous = previousById.get(String(record?.id));
+    if (isEncryptedVaultFile(previous)) {
+      return record;
+    }
     const notExpired = Number(previous?.assetUrlExpiresAt || 0) > (Date.now() + PRESIGNED_URL_SAFETY_MARGIN_MS);
     const sameObject = String(previous?.fileSavePath || "") === String(record?.fileSavePath || "");
     const sameRevision = String(previous?.updatedAt || "") === String(record?.updatedAt || "");

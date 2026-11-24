@@ -4,6 +4,11 @@ import { useFileStore } from "@/stores/useFileStore.js";
 import { useMediaPhotoStore } from "@/stores/useMediaPhotoStore.js";
 import { downloadFileAsset, fetchFileVersions, restoreFileVersion } from "@/api/filesApi.js";
 import {
+  isEncryptedVaultFile,
+  refreshEncryptedStreamUrl,
+  resolveFilePlaybackUrl,
+} from "@/utils/fileMediaUrl.js";
+import {
   ModalBackHistoryManager,
   safeExitFullscreen,
   safePauseMedia,
@@ -24,7 +29,7 @@ const emit = defineEmits(["close", "share-download-link"]);
 
 const canShareDownloadLink = computed(() => {
   const f = props.file;
-  if (!props.allowDownloadLinkShare || !f || Boolean(f.lockedFile)) {
+  if (!props.allowDownloadLinkShare || !f || Boolean(f.lockedFile) || isEncryptedVaultFile(f)) {
     return false;
   }
   const isFolder = f.nodeType === "FOLDER" || f.type === "folder";
@@ -104,10 +109,34 @@ const previewKind = computed(() => {
   return "none";
 });
 
-const previewUrl = computed(() => props.file?.downloadUrl || props.file?.presignedDownloadUrl || "");
+const refreshedPreviewUrl = ref("");
+const hasRetriedStreamToken = ref(false);
+const isEncryptedFile = computed(() => isEncryptedVaultFile(props.file));
+const previewUrl = computed(() => refreshedPreviewUrl.value || resolveFilePlaybackUrl(props.file));
 const isLockedFile = computed(() => Boolean(props.file?.lockedFile));
 const canDownload = computed(() => Boolean(!isLockedFile.value && (previewUrl.value || (props.file?.sharedWithMe && props.file?.downloadable))));
-const canManageVersions = computed(() => Boolean(props.file?.id && props.file?.type !== "folder" && !props.file?.sharedWithMe && !isLockedFile.value));
+const canManageVersions = computed(() => Boolean(
+  props.file?.id &&
+  props.file?.type !== "folder" &&
+  !props.file?.sharedWithMe &&
+  !isLockedFile.value &&
+  !isEncryptedFile.value,
+));
+
+const handlePreviewAssetError = async () => {
+  if (!isEncryptedFile.value || hasRetriedStreamToken.value || !props.file) {
+    return;
+  }
+  hasRetriedStreamToken.value = true;
+  try {
+    const freshUrl = await refreshEncryptedStreamUrl(props.file);
+    if (freshUrl) {
+      refreshedPreviewUrl.value = freshUrl;
+    }
+  } catch {
+    // Keep existing error state when token refresh fails
+  }
+};
 
 const resolveProtectedShareOptions = () => {
   if (!props.file?.sharedWithMe || !props.file?.passwordProtected) {
@@ -144,6 +173,10 @@ const statusChips = computed(() => {
 
   if (isLockedFile.value) {
     chips.push({ key: "locked", label: "잠금", icon: "lock", tone: "locked" });
+  }
+
+  if (isEncryptedFile.value) {
+    chips.push({ key: "encrypted", label: "암호화됨", icon: "lock", tone: "encrypted" });
   }
 
   if (!chips.length) {
@@ -274,6 +307,10 @@ const loadTextPreview = async () => {
 watch(
   () => props.file,
   (file, prevFile) => {
+    if ((file?.id ?? null) !== (prevFile?.id ?? null)) {
+      refreshedPreviewUrl.value = "";
+      hasRetriedStreamToken.value = false;
+    }
     window.removeEventListener("keydown", closeOnEscape);
     if (file) {
       fileStore.recordFileAccess?.(file);
@@ -338,9 +375,9 @@ onBeforeUnmount(() => {
           <p class="text-sm text-amber-200/80">조회, 다운로드, 공유 등 관련 기능이 제한됩니다.</p>
         </div>
 
-        <img v-else-if="previewKind === 'image' && previewUrl" :src="previewUrl" :alt="file.name" class="max-h-[44vh] sm:max-h-[50vh] max-w-full rounded-2xl object-contain lg:max-h-full" />
-        <video v-else-if="previewKind === 'video' && previewUrl" ref="videoPreviewRef" :src="previewUrl" controls playsinline preload="metadata" class="max-h-[44vh] sm:max-h-[50vh] max-w-full rounded-2xl bg-black lg:max-h-full"></video>
-        <audio v-else-if="previewKind === 'audio' && previewUrl" ref="audioPreviewRef" :src="previewUrl" controls class="w-full max-w-xl px-2"></audio>
+        <img v-else-if="previewKind === 'image' && previewUrl" :src="previewUrl" :alt="file.name" class="max-h-[44vh] sm:max-h-[50vh] max-w-full rounded-2xl object-contain lg:max-h-full" @error="handlePreviewAssetError" />
+        <video v-else-if="previewKind === 'video' && previewUrl" ref="videoPreviewRef" :src="previewUrl" controls playsinline preload="metadata" class="max-h-[44vh] sm:max-h-[50vh] max-w-full rounded-2xl bg-black lg:max-h-full" @error="handlePreviewAssetError"></video>
+        <audio v-else-if="previewKind === 'audio' && previewUrl" ref="audioPreviewRef" :src="previewUrl" controls class="w-full max-w-xl px-2" @error="handlePreviewAssetError"></audio>
         <iframe v-else-if="previewKind === 'pdf' && previewUrl" :src="previewUrl" class="h-[46vh] sm:h-[55vh] w-full rounded-2xl bg-white lg:h-full" title="PDF 미리보기"></iframe>
 
         <div v-else-if="previewKind === 'text'" class="flex h-[44vh] sm:h-[52vh] w-full flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 lg:h-full">
@@ -607,5 +644,15 @@ onBeforeUnmount(() => {
 
 .status-pill--normal .status-pill__icon {
   background: rgba(100, 116, 139, 0.12);
+}
+
+.status-pill--encrypted {
+  border-color: #c7d2fe;
+  background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+  color: #3730a3;
+}
+
+.status-pill--encrypted .status-pill__icon {
+  background: rgba(79, 70, 229, 0.14);
 }
 </style>

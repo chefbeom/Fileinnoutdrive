@@ -35,6 +35,16 @@ public final class FileContentUtils {
         return directory + THUMBNAIL_DIRECTORY_NAME + "/" + baseName + ".jpg";
     }
 
+    public static String buildEncryptedThumbnailObjectKey(String objectKey) {
+        int pathSeparatorIndex = objectKey.lastIndexOf('/');
+        String directory = pathSeparatorIndex >= 0 ? objectKey.substring(0, pathSeparatorIndex + 1) : "";
+        String fileName = pathSeparatorIndex >= 0 ? objectKey.substring(pathSeparatorIndex + 1) : objectKey;
+        int extensionIndex = fileName.lastIndexOf('.');
+        String baseName = extensionIndex >= 0 ? fileName.substring(0, extensionIndex) : fileName;
+
+        return directory + THUMBNAIL_DIRECTORY_NAME + "/" + baseName + ".vthumb";
+    }
+
     public static String categorizeExtension(String fileFormat) {
         String extension = normalizeExtension(fileFormat);
 
@@ -126,6 +136,53 @@ public final class FileContentUtils {
             return "application/octet-stream";
         }
         return contentType;
+    }
+
+    public static String resolveSafeMediaContentType(String fileName, String fileFormat) {
+        if (isActiveWebFile(fileName) || isActiveWebFile(fileFormat)) {
+            return "application/octet-stream";
+        }
+
+        String extension = normalizeExtension(fileFormat);
+        if (extension.startsWith(".")) {
+            extension = extension.substring(1);
+        }
+        if (extension.isBlank() && fileName != null) {
+            int dotIndex = fileName.lastIndexOf('.');
+            if (dotIndex >= 0 && dotIndex < fileName.length() - 1) {
+                extension = normalizeExtension(fileName.substring(dotIndex + 1));
+            }
+        }
+
+        return switch (extension) {
+            case "mp4", "m4v" -> "video/mp4";
+            case "mov" -> "video/quicktime";
+            case "webm" -> "video/webm";
+            case "mkv" -> "video/x-matroska";
+            case "avi" -> "video/x-msvideo";
+            case "wmv" -> "video/x-ms-wmv";
+            case "mpeg", "mpg" -> "video/mpeg";
+            case "ogv" -> "video/ogg";
+            case "3gp" -> "video/3gpp";
+            case "mp3" -> "audio/mpeg";
+            case "m4a" -> "audio/mp4";
+            case "wav" -> "audio/wav";
+            case "ogg" -> "audio/ogg";
+            case "flac" -> "audio/flac";
+            case "aac" -> "audio/aac";
+            case "jpg", "jpeg", "jfif" -> "image/jpeg";
+            case "png", "apng" -> "image/png";
+            case "gif" -> "image/gif";
+            case "webp" -> "image/webp";
+            case "bmp" -> "image/bmp";
+            case "avif" -> "image/avif";
+            case "heic" -> "image/heic";
+            case "tif", "tiff" -> "image/tiff";
+            case "pdf" -> "application/pdf";
+            case "vtt" -> "text/vtt";
+            case "srt" -> "text/plain; charset=UTF-8";
+            default -> resolveDownloadContentType(fileName);
+        };
     }
 
     public static String sanitizeDownloadFileName(String preferredName, String fallbackName) {

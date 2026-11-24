@@ -111,4 +111,36 @@ describe("fileStoreModel", () => {
     expect(reused.thumbnailUrl).toBe("old-thumbnail");
     expect(changed.downloadUrl).toBe("new-object");
   });
+
+  it("preserves vault encryption metadata and never reuses cached encrypted stream urls", () => {
+    const normalized = normalizeFileRecord({
+      idx: 55,
+      fileOriginName: "vault-movie.mp4",
+      spaceType: "VAULT",
+      encrypted: true,
+      encryptionMode: "SERVER_ENVELOPE_V1",
+      presignedDownloadUrl: "/api/file/secret/stream/55?st=fresh-st",
+      thumbnailPresignedUrl: "should-be-cleared",
+    });
+
+    expect(normalized).toMatchObject({
+      id: 55,
+      isVaultSpace: true,
+      encrypted: true,
+      encryptionMode: "SERVER_ENVELOPE_V1",
+      downloadUrl: "/api/file/secret/stream/55?st=fresh-st",
+      thumbnailUrl: "",
+      thumbnailPresignedUrl: "",
+    });
+
+    const previousEncrypted = {
+      ...normalized,
+      downloadUrl: "/api/file/secret/stream/55?st=old-st",
+      presignedDownloadUrl: "/api/file/secret/stream/55?st=old-st",
+      assetUrlExpiresAt: Date.now() + 60_000,
+    };
+
+    const [fresh] = reuseCachedAssetUrls([previousEncrypted], [normalized]);
+    expect(fresh.downloadUrl).toBe("/api/file/secret/stream/55?st=fresh-st");
+  });
 });

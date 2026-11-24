@@ -5,6 +5,12 @@ import { useMediaPhotoStore, convertSrtToVtt, formatDurationClock } from "@/stor
 import { downloadFileAsset } from "@/api/filesApi.js";
 import { getCachedFileThumbnailUrl, loadFileThumbnailUrl } from "@/utils/fileThumbnailCache.js";
 import {
+  isEncryptedVaultFile,
+  refreshEncryptedStreamUrl,
+  resolveFilePlaybackUrl,
+  resolveFileThumbnailFallbackUrl,
+} from "@/utils/fileMediaUrl.js";
+import {
   ModalBackHistoryManager,
   safeExitFullscreen,
   safePauseMedia,
@@ -50,6 +56,8 @@ const customSubtitleLabel = ref("");
 const activeSubtitleId = ref("none");
 const autoLoadedSubtitleTracks = ref([]);
 const thumbnailMap = ref({});
+const refreshedStreamUrl = ref("");
+const hasRetriedStreamToken = ref(false);
 
 let progressThrottleTimer = null;
 let resumeToastTimer = null;
@@ -64,9 +72,8 @@ const currentItem = computed(() => {
 const isImageItem = computed(() => currentItem.value?.mediaKind === "image");
 
 const streamUrl = computed(() => (
-  currentItem.value?.downloadUrl ||
-  currentItem.value?.presignedDownloadUrl ||
-  ""
+  refreshedStreamUrl.value ||
+  resolveFilePlaybackUrl(currentItem.value)
 ));
 
 const playlistItems = computed(() => {
@@ -96,7 +103,7 @@ const loadQueueThumbnails = async () => {
   for (const item of playlistItems.value.slice(0, 30)) {
     const key = String(item.id);
     if (thumbnailMap.value[key]) continue;
-    const cached = getCachedFileThumbnailUrl(item) || item.thumbnailPresignedUrl || item.thumbnailUrl;
+    const cached = getCachedFileThumbnailUrl(item) || resolveFileThumbnailFallbackUrl(item);
     if (cached) {
       thumbnailMap.value = { ...thumbnailMap.value, [key]: cached };
       continue;
@@ -135,7 +142,7 @@ const loadMatchingSubtitles = async (video) => {
     try {
       const preview = await mediaPhotoStore.ensureCatalogLoaded().then(() => null);
       void preview;
-      const subUrl = subFile.downloadUrl || subFile.presignedDownloadUrl;
+      const subUrl = resolveFilePlaybackUrl(subFile);
       if (!subUrl) continue;
       const resp = await fetch(subUrl);
       if (!resp.ok) continue;
@@ -305,7 +312,20 @@ const onEnded = () => {
   }
 };
 
-const onVideoError = () => {
+const onVideoError = async () => {
+  if (isEncryptedVaultFile(currentItem.value) && !hasRetriedStreamToken.value) {
+    hasRetriedStreamToken.value = true;
+    try {
+      const freshUrl = await refreshEncryptedStreamUrl(currentItem.value);
+      if (freshUrl) {
+        refreshedStreamUrl.value = freshUrl;
+        playbackError.value = "";
+        return;
+      }
+    } catch {
+      // Fall through to generic playback error banner
+    }
+  }
   playbackError.value = "이 영상 코덱 또는 컨테이너 형식은 현재 브라우저에서 직접 스트리밍을 지원하지 않습니다. 원본 파일을 다운로드하여 로컬 미디어 플레이어에서 재생해 주세요.";
 };
 
@@ -498,6 +518,8 @@ const handleKeydown = (event) => {
 watch(
   () => props.videoId,
   async (newId, oldId) => {
+    refreshedStreamUrl.value = "";
+    hasRetriedStreamToken.value = false;
     playbackError.value = "";
     showResumeToast.value = false;
     currentTime.value = 0;
@@ -711,6 +733,7 @@ onBeforeUnmount(() => {
               :src="streamUrl"
               :alt="currentItem.name"
               class="max-h-[70vh] max-w-full rounded-2xl object-contain shadow-2xl"
+              @error="onVideoError"
             />
           </div>
 
@@ -718,7 +741,7 @@ onBeforeUnmount(() => {
           <video
             v-else-if="streamUrl"
             ref="videoRef"
-            :key="currentItem.id"
+            :key="`${currentItem.id}:${streamUrl}`"
             :src="streamUrl"
             controls
             playsinline

@@ -6,6 +6,10 @@ import { useHeaderSearchStore } from "@/stores/useHeaderSearchStore.js";
 import { useMediaPhotoStore } from "@/stores/useMediaPhotoStore.js";
 import { downloadFileAsset } from "@/api/filesApi.js";
 import { getCachedFileThumbnailUrl, loadFileThumbnailUrl } from "@/utils/fileThumbnailCache.js";
+import {
+  resolveFilePlaybackUrl,
+  resolveFileThumbnailFallbackUrl,
+} from "@/utils/fileMediaUrl.js";
 import { triggerDesktopUpload } from "@/utils/desktopDropUpload.js";
 import { matchesSearchItem } from "@/utils/fileSearch.js";
 import BaseFileShareDialog from "@/components/BaseFileShareDialog.vue";
@@ -780,7 +784,7 @@ const primeThumbnails = async () => {
     if (seen.has(key) || thumbnailMap.value[key]) continue;
     seen.add(key);
 
-    const cached = getCachedFileThumbnailUrl(item) || item.thumbnailPresignedUrl || item.thumbnailUrl;
+    const cached = getCachedFileThumbnailUrl(item) || resolveFileThumbnailFallbackUrl(item);
     if (cached) {
       cachedUpdates[key] = cached;
       continue;
@@ -812,7 +816,7 @@ const onHoverVideoLoadedMetadata = (event, item) => {
 };
 
 const getVideoPreviewSrc = (item) => {
-  const raw = item?.downloadUrl || item?.presignedDownloadUrl || "";
+  const raw = resolveFilePlaybackUrl(item);
   if (!raw) return "";
   return raw.includes("#") ? raw : `${raw}#t=0.1`;
 };
