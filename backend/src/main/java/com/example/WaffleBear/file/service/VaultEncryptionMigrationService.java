@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Encrypts legacy plaintext files already stored inside a user's unlocked personal vault.
@@ -29,6 +30,12 @@ public class VaultEncryptionMigrationService {
 
     @Autowired(required = false)
     private SecretAccessGuard secretAccessGuard;
+
+    public enum FileMigrationOutcome {
+        MIGRATED,
+        SKIPPED,
+        FAILED
+    }
 
     public record MigrationReport(
             int scannedCount,
@@ -61,54 +68,81 @@ public class VaultEncryptionMigrationService {
             }
 
             long plainSize = Math.max(0L, candidate.getFileSize() == null ? 0L : candidate.getFileSize());
-            VaultFileCryptoService.VaultEncryptionResult encResult = null;
-            try {
-                encResult = vaultFileCryptoService.encryptPlaintextObject(userIdx, oldObjectKey, plainSize);
-                final VaultFileCryptoService.VaultEncryptionResult finalizedEnc = encResult;
-                final Long fileIdx = candidate.getIdx();
-
-                Boolean updated = transactionTemplate.execute(status -> {
-                    FileInfo managed = fileUpDownloadRepository.findByIdxAndUser_Idx(fileIdx, userIdx).orElse(null);
-                    if (managed == null
-                            || !managed.isVaultSpace()
-                            || managed.isTrashed()
-                            || FileTreeRules.resolveNodeType(managed) != FileNodeType.FILE
-                            || managed.isEncrypted()) {
-                        return Boolean.FALSE;
-                    }
-
-                    managed.updateStorageObject(finalizedEnc.encryptedSaveName(), finalizedEnc.encryptedObjectKey());
-                    managed.applyServerEnvelopeEncryption(
-                            finalizedEnc.keyVersion(),
-                            finalizedEnc.wrappedDek(),
-                            finalizedEnc.noncePrefixBase64(),
-                            finalizedEnc.chunkSize(),
-                            finalizedEnc.encryptedFileSize()
-                    );
-                    fileUpDownloadRepository.saveAndFlush(managed);
-                    FileObjectCleanupScheduler.deleteAfterCommit(
-                            fileObjectDeletionService,
-                            List.of(oldObjectKey, FileContentUtils.buildThumbnailObjectKey(oldObjectKey))
-                    );
-                    return Boolean.TRUE;
-                });
-
-                if (Boolean.TRUE.equals(updated)) {
-                    migratedCount++;
-                } else {
-                    vaultFileCryptoService.deleteObjectQuietly(encResult.encryptedObjectKey());
-                    skippedCount++;
-                }
-            } catch (Exception exception) {
-                if (encResult != null) {
-                    vaultFileCryptoService.deleteObjectQuietly(encResult.encryptedObjectKey());
-                }
-                failedCount++;
-                log.warn("Failed to migrate vault file [idx={}] for user [{}]: {}",
-                        candidate.getIdx(), userIdx, exception.getMessage());
+            FileMigrationOutcome outcome = migrateSingleVaultFile(
+                    userIdx,
+                    candidate.getIdx(),
+                    oldObjectKey,
+                    plainSize
+            );
+            switch (outcome) {
+                case MIGRATED -> migratedCount++;
+                case SKIPPED -> skippedCount++;
+                case FAILED -> failedCount++;
             }
         }
 
         return new MigrationReport(scannedCount, migratedCount, skippedCount, failedCount);
+    }
+
+    /**
+     * Encrypts a single unencrypted vault file outside the DB transaction and atomically commits
+     * the new `.enc` object pointer + wrapped DEK metadata before scheduling old plaintext cleanup.
+     */
+    public FileMigrationOutcome migrateSingleVaultFile(
+            Long userIdx,
+            Long fileIdx,
+            String expectedObjectKey,
+            long plainSize
+    ) {
+        if (userIdx == null || userIdx <= 0L || fileIdx == null || fileIdx <= 0L
+                || expectedObjectKey == null || expectedObjectKey.isBlank()) {
+            return FileMigrationOutcome.SKIPPED;
+        }
+
+        VaultFileCryptoService.VaultEncryptionResult encResult = null;
+        try {
+            encResult = vaultFileCryptoService.encryptPlaintextObject(userIdx, expectedObjectKey, Math.max(0L, plainSize));
+            final VaultFileCryptoService.VaultEncryptionResult finalizedEnc = encResult;
+
+            Boolean updated = transactionTemplate.execute(status -> {
+                FileInfo managed = fileUpDownloadRepository.findByIdxAndUser_Idx(fileIdx, userIdx).orElse(null);
+                if (managed == null
+                        || !managed.isVaultSpace()
+                        || managed.isTrashed()
+                        || FileTreeRules.resolveNodeType(managed) != FileNodeType.FILE
+                        || managed.isEncrypted()
+                        || !Objects.equals(managed.getFileSavePath(), expectedObjectKey)) {
+                    return Boolean.FALSE;
+                }
+
+                managed.updateStorageObject(finalizedEnc.encryptedSaveName(), finalizedEnc.encryptedObjectKey());
+                managed.applyServerEnvelopeEncryption(
+                        finalizedEnc.keyVersion(),
+                        finalizedEnc.wrappedDek(),
+                        finalizedEnc.noncePrefixBase64(),
+                        finalizedEnc.chunkSize(),
+                        finalizedEnc.encryptedFileSize()
+                );
+                fileUpDownloadRepository.saveAndFlush(managed);
+                FileObjectCleanupScheduler.deleteAfterCommit(
+                        fileObjectDeletionService,
+                        List.of(expectedObjectKey, FileContentUtils.buildThumbnailObjectKey(expectedObjectKey))
+                );
+                return Boolean.TRUE;
+            });
+
+            if (Boolean.TRUE.equals(updated)) {
+                return FileMigrationOutcome.MIGRATED;
+            }
+            vaultFileCryptoService.deleteObjectQuietly(encResult.encryptedObjectKey());
+            return FileMigrationOutcome.SKIPPED;
+        } catch (Exception exception) {
+            if (encResult != null) {
+                vaultFileCryptoService.deleteObjectQuietly(encResult.encryptedObjectKey());
+            }
+            log.warn("Failed to migrate vault file [idx={}] for user [{}]: {}",
+                    fileIdx, userIdx, exception.getMessage());
+            return FileMigrationOutcome.FAILED;
+        }
     }
 }

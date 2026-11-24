@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -32,6 +33,7 @@ public class AdministratorController {
     private final StorageAnalyticsService storageAnalyticsService;
     private final SocialLoginSettingsService socialLoginSettingsService;
     private final StoragePlanService storagePlanService;
+    private final AdministratorVaultEncryptionService administratorVaultEncryptionService;
 
     @GetMapping("/dashboard")
     @Operation(summary = "Get admin dashboard", description = "Returns administrator dashboard data.")
@@ -162,5 +164,25 @@ public class AdministratorController {
         AdministratorDto.StorageAnalyticsRes result =
                 storageAnalyticsService.updateProviderCapacity(userDetails, request, rangeCode);
         return ResponseEntity.ok(BaseResponse.success(result));
+    }
+
+    @GetMapping("/vault-encryption/status")
+    @Operation(summary = "Get vault encryption status", description = "Returns vault file encryption counts per user and active migration job progress.")
+    public ResponseEntity<?> getVaultEncryptionStatus(@AuthenticationPrincipal AuthUserDetails userDetails) {
+        return ResponseEntity.ok(BaseResponse.success(
+                administratorVaultEncryptionService.getStatus(userDetails)
+        ));
+    }
+
+    @PostMapping("/vault-encryption/migrate")
+    @Operation(summary = "Start bulk vault encryption migration", description = "Starts an asynchronous job to encrypt existing plaintext vault files with AES-256-GCM.")
+    public ResponseEntity<?> startVaultEncryptionMigration(
+            @AuthenticationPrincipal AuthUserDetails userDetails,
+            @RequestBody(required = false) AdministratorDto.VaultEncryptionMigrateReq request
+    ) {
+        Long targetUserIdx = request != null ? request.getUserIdx() : null;
+        return ResponseEntity.ok(BaseResponse.success(
+                administratorVaultEncryptionService.startMigration(userDetails, targetUserIdx)
+        ));
     }
 }

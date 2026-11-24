@@ -28,6 +28,7 @@ export const STORAGE_RANGE_OPTIONS = Object.freeze([
 
 export const ADMIN_SECTIONS = Object.freeze([
   { value: "users", label: "사용자 관리" },
+  { value: "vaultEncryption", label: "비밀 공간 일괄 암호화" },
   { value: "storage", label: "스토리지 통계 및 분석" },
   { value: "plans", label: "플랜 / 결제 비중 통계 분석" },
   { value: "shareAudit", label: "공유 감사 로그" },

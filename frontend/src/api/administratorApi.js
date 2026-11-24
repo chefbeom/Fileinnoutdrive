@@ -92,3 +92,18 @@ export async function forceLogoutAdministratorUserSessions(userIdx) {
   const response = await api.delete(`/administrator/users/${userIdx}/sessions`);
   return extractObjectResult(response?.data);
 }
+
+export async function fetchAdministratorVaultEncryptionStatus() {
+  const response = await api.get("/administrator/vault-encryption/status", {
+    timeout: 30000,
+  });
+  return extractObjectResult(response?.data);
+}
+
+export async function startAdministratorVaultEncryptionMigration(userIdx = null) {
+  const payload = userIdx != null ? { userIdx: Number(userIdx) } : {};
+  const response = await api.post("/administrator/vault-encryption/migrate", payload, {
+    timeout: 30000,
+  });
+  return extractObjectResult(response?.data);
+}

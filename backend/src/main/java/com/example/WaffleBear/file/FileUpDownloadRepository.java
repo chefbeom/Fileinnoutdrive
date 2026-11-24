@@ -1,5 +1,6 @@
 package com.example.WaffleBear.file;
 
+import com.example.WaffleBear.file.model.FileEncryptionMode;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
 import com.example.WaffleBear.file.model.FileSpaceType;
@@ -19,6 +20,25 @@ public interface FileUpDownloadRepository extends JpaRepository<FileInfo, Long>,
         Long getFolderCount();
         Long getUsedBytes();
         Long getSharedFileCount();
+    }
+
+    interface VaultEncryptionStatProjection {
+        Long getUserIdx();
+        String getUserEmail();
+        String getUserName();
+        Long getTotalCount();
+        Long getEncryptedCount();
+        Long getPlaintextCount();
+        Long getPlaintextBytes();
+        Long getEncryptedBytes();
+    }
+
+    interface VaultMigrationCandidateProjection {
+        Long getFileIdx();
+        Long getUserIdx();
+        String getFileOriginName();
+        String getFileSavePath();
+        Long getFileSize();
     }
 
     List<FileInfo> findAllByUser_IdxOrderByLastModifyDateDescUploadDateDesc(Long userIdx);
@@ -208,4 +228,52 @@ public interface FileUpDownloadRepository extends JpaRepository<FileInfo, Long>,
     default List<String> findStoredObjectKeys() {
         return findStoredObjectKeys(FileNodeType.FILE);
     }
+
+    @Query("""
+            select
+                u.idx as userIdx,
+                u.email as userEmail,
+                u.name as userName,
+                count(f.idx) as totalCount,
+                sum(case when f.encryptionMode is not null and f.encryptionMode <> :noneMode then 1 else 0 end) as encryptedCount,
+                sum(case when (f.encryptionMode is null or f.encryptionMode = :noneMode) and f.fileSavePath is not null and f.fileSavePath <> '' then 1 else 0 end) as plaintextCount,
+                sum(case when (f.encryptionMode is null or f.encryptionMode = :noneMode) and f.fileSavePath is not null and f.fileSavePath <> '' then coalesce(f.fileSize, 0) else 0 end) as plaintextBytes,
+                sum(case when f.encryptionMode is not null and f.encryptionMode <> :noneMode then coalesce(f.fileSize, 0) else 0 end) as encryptedBytes
+            from FileInfo f
+            join f.user u
+            where f.spaceType = :vaultSpace
+              and (f.trashed is null or f.trashed = false)
+              and (f.nodeType is null or f.nodeType = :fileNodeType)
+            group by u.idx, u.email, u.name
+            order by sum(case when (f.encryptionMode is null or f.encryptionMode = :noneMode) and f.fileSavePath is not null and f.fileSavePath <> '' then 1 else 0 end) desc, u.idx asc
+            """)
+    List<VaultEncryptionStatProjection> aggregateVaultEncryptionStats(
+            @Param("fileNodeType") FileNodeType fileNodeType,
+            @Param("vaultSpace") FileSpaceType vaultSpace,
+            @Param("noneMode") FileEncryptionMode noneMode
+    );
+
+    @Query("""
+            select
+                f.idx as fileIdx,
+                f.user.idx as userIdx,
+                f.fileOriginName as fileOriginName,
+                f.fileSavePath as fileSavePath,
+                f.fileSize as fileSize
+            from FileInfo f
+            where f.spaceType = :vaultSpace
+              and (f.trashed is null or f.trashed = false)
+              and (f.nodeType is null or f.nodeType = :fileNodeType)
+              and (f.encryptionMode is null or f.encryptionMode = :noneMode)
+              and f.fileSavePath is not null
+              and f.fileSavePath <> ''
+              and (:targetUserIdx is null or f.user.idx = :targetUserIdx)
+            order by f.user.idx asc, f.idx asc
+            """)
+    List<VaultMigrationCandidateProjection> findActivePlaintextVaultCandidates(
+            @Param("fileNodeType") FileNodeType fileNodeType,
+            @Param("vaultSpace") FileSpaceType vaultSpace,
+            @Param("noneMode") FileEncryptionMode noneMode,
+            @Param("targetUserIdx") Long targetUserIdx
+    );
 }

@@ -11,6 +11,8 @@ import {
   buildStorageVisualSummary,
   buildTopStorageUsers,
   buildTransferVisualGroups,
+  buildVaultEncryptionSummaryCards,
+  buildVaultEncryptionUserRows,
   filterAdminUsers,
 } from "./adminDashboardViewModels.js"
 
@@ -164,5 +166,27 @@ describe("adminDashboardViewModels", () => {
       statusLabel: "활성",
       enabledLabel: "사용",
     })
+  })
+
+  it("maps vault encryption summary cards and user breakdown rows", () => {
+    const cards = buildVaultEncryptionSummaryCards({
+      totalVaultFiles: 10,
+      encryptedVaultFiles: 6,
+      plaintextVaultFiles: 4,
+      plaintextBytes: 2048,
+      encryptedBytes: 4096,
+    })
+
+    expect(cards[0]).toEqual({ label: "전체 비밀 공간 파일", value: "10개" })
+    expect(cards[1]).toEqual({ label: "암호화 완료", value: "6개 (60.00%)" })
+    expect(cards[2]).toEqual({ label: "미암호화 평문 파일", value: "4개" })
+
+    const rows = buildVaultEncryptionUserRows([
+      { userIdx: 7, email: "alice@example.com", name: "Alice", totalVaultFiles: 4, encryptedVaultFiles: 1, plaintextVaultFiles: 3, plaintextBytes: 1024, encryptedBytes: 256 },
+      { userIdx: 8, email: "bob@example.com", name: "Bob", totalVaultFiles: 2, encryptedVaultFiles: 2, plaintextVaultFiles: 0, plaintextBytes: 0, encryptedBytes: 512 },
+    ])
+
+    expect(rows[0]).toMatchObject({ userLabel: "alice@example.com", progressPercent: 25, completed: false })
+    expect(rows[1]).toMatchObject({ userLabel: "bob@example.com", progressPercent: 100, completed: true })
   })
 })

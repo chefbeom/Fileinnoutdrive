@@ -756,3 +756,66 @@
 .admin-upload-setting__save {
   padding: 0.7rem 1.15rem;
 }
+
+.admin-panel--vault-migration {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-main) 92%, #eef2ff 8%), var(--bg-main));
+}
+
+.admin-vault-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 0.8rem 1.25rem;
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #ffffff;
+  background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.24);
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.admin-vault-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.admin-vault-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.admin-vault-job {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.admin-vault-job__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+}
+
+.admin-tab__count {
+  margin-left: 0.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  background: rgba(245, 158, 11, 0.2);
+  color: #b45309;
+}
+
+.admin-tab--active .admin-tab__count {
+  background: rgba(255, 255, 255, 0.24);
+  color: #ffffff;
+}

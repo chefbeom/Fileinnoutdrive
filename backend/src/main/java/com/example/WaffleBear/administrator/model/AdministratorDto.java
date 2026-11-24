@@ -262,4 +262,77 @@ public class AdministratorDto {
     public static class StorageCapacityUpdateReq {
         private Long providerCapacityBytes;
     }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class VaultEncryptionMigrateReq {
+        private Long userIdx;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class VaultEncryptionUserStatRes {
+        private Long userIdx;
+        private String email;
+        private String name;
+        private long totalVaultFiles;
+        private long encryptedVaultFiles;
+        private long plaintextVaultFiles;
+        private long plaintextBytes;
+        private long encryptedBytes;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class VaultEncryptionFailureRes {
+        private Long fileIdx;
+        private Long userIdx;
+        private String fileName;
+        private String reason;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class VaultEncryptionJobRes {
+        private boolean running;
+        private String jobId;
+        private Long targetUserIdx;
+        private LocalDateTime startedAt;
+        private LocalDateTime finishedAt;
+        private int scannedCount;
+        private int processedCount;
+        private int migratedCount;
+        private int skippedCount;
+        private int failedCount;
+        private String currentFileName;
+        private String lastError;
+        private List<VaultEncryptionFailureRes> recentFailures;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class VaultEncryptionStatusRes {
+        private long totalVaultFiles;
+        private long encryptedVaultFiles;
+        private long plaintextVaultFiles;
+        private long plaintextBytes;
+        private long encryptedBytes;
+        private List<VaultEncryptionUserStatRes> users;
+        private VaultEncryptionJobRes job;
+    }
 }

@@ -1,14 +1,16 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import {
   fetchAdministratorDashboard,
   fetchAdministratorLoginSettings,
   fetchAdministratorShareAudit,
   fetchAdministratorSessions,
   fetchAdministratorUploadSettings,
+  fetchAdministratorVaultEncryptionStatus,
   forceLogoutAdministratorSession,
   forceLogoutAdministratorUserSessions,
   fetchAdministratorStorageAnalytics,
+  startAdministratorVaultEncryptionMigration,
   updateAdministratorLoginSettings,
   updateAdministratorStorageCapacity,
   updateAdministratorUploadSettings,
@@ -27,6 +29,7 @@ import {
 } from "@/utils/storageFormat.js";
 import AdminPlanSection from "./components/AdminPlanSection.vue";
 import AdminStorageSection from "./components/AdminStorageSection.vue";
+import AdminVaultEncryptionSection from "./components/AdminVaultEncryptionSection.vue";
 import { statusBadgeClass } from "./services/adminDashboardFormat.js";
 import {
   buildPaymentMixCards,
@@ -66,6 +69,13 @@ const errorMessage = ref("");
 const storageErrorMessage = ref("");
 const shareAuditErrorMessage = ref("");
 const sessionErrorMessage = ref("");
+const vaultEncryptionStatus = ref(null);
+const isVaultEncryptionLoading = ref(false);
+const isVaultEncryptionStarting = ref(false);
+const vaultEncryptionErrorMessage = ref("");
+let vaultPollTimerId = null;
+const vaultPlaintextFileCount = computed(() => Number(vaultEncryptionStatus.value?.plaintextVaultFiles || 0));
+const vaultEncryptionJobRunning = computed(() => Boolean(vaultEncryptionStatus.value?.job?.running));
 const searchQuery = ref("");
 const statusFilter = ref("ALL");
 const storageDisplayUnit = ref("GB");
@@ -366,8 +376,83 @@ const handleForceLogoutUserSessions = async (session) => {
   }
 };
 
+const clearVaultPollTimer = () => {
+  if (vaultPollTimerId != null) {
+    window.clearTimeout(vaultPollTimerId);
+    vaultPollTimerId = null;
+  }
+};
+
+const loadVaultEncryptionStatus = async (options = {}) => {
+  const silent = Boolean(options?.silent);
+  if (!silent) {
+    isVaultEncryptionLoading.value = true;
+    vaultEncryptionErrorMessage.value = "";
+  }
+
+  const wasRunning = Boolean(vaultEncryptionStatus.value?.job?.running);
+  try {
+    const result = await fetchAdministratorVaultEncryptionStatus();
+    vaultEncryptionStatus.value = result;
+    const isNowRunning = Boolean(result?.job?.running);
+    clearVaultPollTimer();
+    if (isNowRunning) {
+      vaultPollTimerId = window.setTimeout(() => {
+        void loadVaultEncryptionStatus({ silent: true });
+      }, 2000);
+    } else if (wasRunning) {
+      await Promise.all([loadDashboard(), loadStorageAnalytics()]).catch(() => {});
+    }
+  } catch (error) {
+    clearVaultPollTimer();
+    vaultEncryptionErrorMessage.value =
+      error?.response?.data?.message ||
+      error?.message ||
+      "비밀 공간 암호화 현황을 불러오지 못했습니다.";
+  } finally {
+    if (!silent) {
+      isVaultEncryptionLoading.value = false;
+    }
+  }
+};
+
+const handleStartVaultEncryptionMigration = async (targetUserIdx = null) => {
+  const scopeLabel = targetUserIdx != null
+    ? `사용자 #${targetUserIdx}의`
+    : "전체 사용자의";
+  if (!window.confirm(`${scopeLabel} 기존 평문 비밀 공간 파일을 AES-256-GCM 암호화 포맷으로 일괄 변환할까요?\n(완료 후 기존 평문 오브젝트는 안전하게 삭제됩니다.)`)) {
+    return;
+  }
+
+  isVaultEncryptionStarting.value = true;
+  vaultEncryptionErrorMessage.value = "";
+  try {
+    const result = await startAdministratorVaultEncryptionMigration(targetUserIdx);
+    vaultEncryptionStatus.value = result;
+    clearVaultPollTimer();
+    if (result?.job?.running) {
+      vaultPollTimerId = window.setTimeout(() => {
+        void loadVaultEncryptionStatus({ silent: true });
+      }, 2000);
+    }
+  } catch (error) {
+    vaultEncryptionErrorMessage.value =
+      error?.response?.data?.message ||
+      error?.message ||
+      "비밀 공간 일괄 암호화 작업을 시작하지 못했습니다.";
+  } finally {
+    isVaultEncryptionStarting.value = false;
+  }
+};
+
 const loadAll = async () => {
-  await Promise.all([loadDashboard(), loadStorageAnalytics(), loadShareAudit(), loadSessions()]);
+  await Promise.all([
+    loadDashboard(),
+    loadStorageAnalytics(),
+    loadShareAudit(),
+    loadSessions(),
+    loadVaultEncryptionStatus(),
+  ]);
 };
 
 const applyUpdatedUserToDashboard = (updatedUser) => {
@@ -480,6 +565,10 @@ const handleCapacitySave = async () => {
 onMounted(() => {
   loadAll();
 });
+
+onBeforeUnmount(() => {
+  clearVaultPollTimer();
+});
 </script>
 
 <template>
@@ -496,7 +585,7 @@ onMounted(() => {
       <button
         type="button"
         class="admin-page__refresh"
-        :disabled="isLoading || isStorageLoading || isShareAuditLoading || isSessionLoading || isUpdating || isCapacitySaving || isLoginSettingsSaving || isUploadSettingsSaving"
+        :disabled="isLoading || isStorageLoading || isShareAuditLoading || isSessionLoading || isVaultEncryptionLoading || isUpdating || isCapacitySaving || isLoginSettingsSaving || isUploadSettingsSaving"
         @click="loadAll"
       >
         새로고침
@@ -652,7 +741,13 @@ onMounted(() => {
           :class="{ 'admin-tab--active': activeSection === section.value }"
           @click="activeSection = section.value"
         >
-          {{ section.label }}
+          <span>{{ section.label }}</span>
+          <span
+            v-if="section.value === 'vaultEncryption' && (vaultPlaintextFileCount > 0 || vaultEncryptionJobRunning)"
+            class="admin-tab__count"
+          >
+            {{ vaultEncryptionJobRunning ? "진행 중" : vaultPlaintextFileCount }}
+          </span>
         </button>
       </div>
     </section>
@@ -671,6 +766,10 @@ onMounted(() => {
 
     <div v-if="sessionErrorMessage" class="admin-alert admin-alert--info">
       {{ sessionErrorMessage }}
+    </div>
+
+    <div v-if="vaultEncryptionErrorMessage" class="admin-alert">
+      {{ vaultEncryptionErrorMessage }}
     </div>
 
     <div v-if="(isLoading && !dashboard) || (isStorageLoading && !storageAnalytics)" class="admin-panel admin-panel--empty">
@@ -776,6 +875,15 @@ onMounted(() => {
           </div>
         </section>
       </section>
+
+      <AdminVaultEncryptionSection
+        v-else-if="activeSection === 'vaultEncryption'"
+        :status="vaultEncryptionStatus"
+        :is-loading="isVaultEncryptionLoading"
+        :is-starting="isVaultEncryptionStarting"
+        @refresh="loadVaultEncryptionStatus()"
+        @start-migration="handleStartVaultEncryptionMigration"
+      />
 
       <AdminStorageSection
         v-else-if="activeSection === 'storage' && storageAnalytics"

@@ -244,3 +244,41 @@ export const buildSessionRows = (sessions) => (
     enabledLabel: item.enabled ? "\uC0AC\uC6A9" : "\uC911\uC9C0",
   }))
 )
+
+export const buildVaultEncryptionSummaryCards = (status) => {
+  if (!status) return []
+
+  const totalFiles = Number(status.totalVaultFiles || 0)
+  const encryptedFiles = Number(status.encryptedVaultFiles || 0)
+  const plaintextFiles = Number(status.plaintextVaultFiles || 0)
+  const encryptedPercent = percentValue(encryptedFiles, totalFiles)
+
+  return [
+    { label: "전체 비밀 공간 파일", value: `${totalFiles}개` },
+    { label: "암호화 완료", value: `${encryptedFiles}개 (${formatPercent(encryptedPercent)})` },
+    { label: "미암호화 평문 파일", value: `${plaintextFiles}개` },
+    { label: "미암호화 대상 용량", value: formatBytesAuto(status.plaintextBytes) },
+    { label: "암호화 보호 용량", value: formatBytesAuto(status.encryptedBytes) },
+  ]
+}
+
+export const buildVaultEncryptionUserRows = (users) => (
+  rowsOf(users).map((user) => {
+    const total = Number(user.totalVaultFiles || 0)
+    const encrypted = Number(user.encryptedVaultFiles || 0)
+    const plaintext = Number(user.plaintextVaultFiles || 0)
+    const progressPercent = total > 0 ? clampPercent(percentValue(encrypted, total)) : 100
+    return {
+      ...user,
+      userLabel: user.email || (user.userIdx ? `#${user.userIdx}` : "-"),
+      totalVaultFiles: total,
+      encryptedVaultFiles: encrypted,
+      plaintextVaultFiles: plaintext,
+      plaintextBytesLabel: formatBytesAuto(user.plaintextBytes),
+      encryptedBytesLabel: formatBytesAuto(user.encryptedBytes),
+      progressPercent,
+      progressLabel: formatPercent(progressPercent),
+      completed: plaintext === 0,
+    }
+  })
+)
