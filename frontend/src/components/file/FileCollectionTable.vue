@@ -216,21 +216,6 @@ const {
                   </svg>
                 </span>
               </div>
-              <div v-else-if="isVideo(file) && Boolean(getVideoPreviewStreamUrl(file))" class="thumb-shell relative overflow-hidden bg-slate-950">
-                <video
-                  :src="`${getVideoPreviewStreamUrl(file)}#t=0.1`"
-                  class="h-full w-full object-cover pointer-events-none"
-                  preload="metadata"
-                  muted
-                  playsinline
-                  @error="handlePreviewAssetError(file)"
-                ></video>
-                <span class="video-play-badge" aria-hidden="true">
-                  <svg class="h-3 w-3 translate-x-[0.5px]" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M6 4.5v11l9-5.5-9-5.5Z" />
-                  </svg>
-                </span>
-              </div>
               <div v-else-if="isVideo(file)" class="thumb-shell bg-slate-900 text-white">
                 <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M6 4.5v11l9-5.5-9-5.5Z" />

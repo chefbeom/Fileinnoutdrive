@@ -278,7 +278,7 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                 result.getContent().stream()
                         .map(entity -> toFileListItemMetadata(entity, folderTree, vaultMode, trashedOnly))
                         .toList(),
-                buildBreadcrumbs(normalizedUserIdx, parentId),
+                buildBreadcrumbs(normalizedUserIdx, parentId, folderTree),
                 (vaultMode && trashedOnly) ? List.of() : folderTree.rootFolderSummaries(),
                 availableExtensions,
                 result.getTotalPages(),
@@ -1588,24 +1588,39 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
         return criteriaBuilder.lessThanOrEqualTo(fileSize, maxBytes);
     }
 
-    private List<FileCommonDto.FileBreadcrumbRes> buildBreadcrumbs(Long userIdx, Long parentId) {
+    private List<FileCommonDto.FileBreadcrumbRes> buildBreadcrumbs(
+            Long userIdx,
+            Long parentId,
+            FolderTreeSnapshot folderTree
+    ) {
         if (parentId == null) {
             return List.of();
         }
 
-        List<FileCommonDto.FileBreadcrumbRes> breadcrumbs = new ArrayList<>();
-        FileInfo cursor = getOwnedFile(userIdx, parentId);
+        Map<Long, FileInfo> folderMap = folderTree != null && folderTree.folderMap() != null
+                ? folderTree.folderMap()
+                : Map.of();
+        FileInfo cursor = folderMap.get(parentId);
+        if (cursor == null) {
+            cursor = getOwnedFile(userIdx, parentId);
+        }
         if (cursor.isTrashed() || FileTreeRules.resolveNodeType(cursor) != FileNodeType.FOLDER) {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
         }
 
-        while (cursor != null) {
+        List<FileCommonDto.FileBreadcrumbRes> breadcrumbs = new ArrayList<>();
+        Set<Long> visited = new HashSet<>();
+        while (cursor != null && (cursor.getIdx() == null || visited.add(cursor.getIdx()))) {
+            FileInfo parentRef = cursor.getParent();
+            Long nextParentId = parentRef != null ? parentRef.getIdx() : null;
             breadcrumbs.add(FileCommonDto.FileBreadcrumbRes.builder()
                     .idx(cursor.getIdx())
                     .fileOriginName(cursor.getFileOriginName())
-                    .parentId(cursor.getParent() != null ? cursor.getParent().getIdx() : null)
+                    .parentId(nextParentId)
                     .build());
-            cursor = cursor.getParent();
+            cursor = nextParentId != null
+                    ? folderMap.getOrDefault(nextParentId, parentRef)
+                    : parentRef;
         }
 
         Collections.reverse(breadcrumbs);

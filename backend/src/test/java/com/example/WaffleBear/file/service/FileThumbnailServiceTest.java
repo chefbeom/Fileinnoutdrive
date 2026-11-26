@@ -21,7 +21,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Semaphore;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -267,6 +269,50 @@ class FileThumbnailServiceTest {
 
         fileThumbnailService.scheduleEncryptedThumbnailPreGeneration(encryptedVideo);
         verify(thumbnailTaskExecutor, times(1)).runAsync(any(Runnable.class));
+    }
+
+    @Test
+    void returnsPendingPayloadWhenOnDemandFfmpegPermitsAreSaturated() throws Exception {
+        ReflectionTestUtils.setField(fileThumbnailService, "vaultFileCryptoService", vaultFileCryptoService);
+        when(videoThumbnailService.supports("mp4")).thenReturn(true);
+        when(minioClient.statObject(any(StatObjectArgs.class))).thenThrow(new RuntimeException("missing"));
+        when(thumbnailTaskExecutor.runAsync(any(Runnable.class))).thenReturn(CompletableFuture.completedFuture(null));
+
+        Semaphore permits = (Semaphore) ReflectionTestUtils.getField(fileThumbnailService, "onDemandVideoFfmpegPermits");
+        int acquiredCount = permits.drainPermits();
+        try {
+            FileInfo encryptedVideo = encryptedVaultVideo(401L, "7/vault/busy-clip.enc");
+            FileThumbnailService.ThumbnailPayload payload = fileThumbnailService.loadThumbnail(encryptedVideo);
+
+            assertThat(payload).isNotNull();
+            assertThat(payload.pending()).isTrue();
+            verify(thumbnailTaskExecutor, times(1)).runAsync(any(Runnable.class));
+        } finally {
+            permits.release(acquiredCount);
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void expiredFailureCooldownAllowsThumbnailRetry() throws Exception {
+        ReflectionTestUtils.setField(fileThumbnailService, "vaultFileCryptoService", vaultFileCryptoService);
+        FileInfo encryptedVideo = encryptedVaultVideo(402L, "7/vault/retry-clip.enc");
+        String thumbKey = "7/vault/thumbnails/retry-clip.vthumb";
+
+        Map<String, Long> retryMap = (Map<String, Long>) ReflectionTestUtils.getField(
+                fileThumbnailService,
+                "failedThumbnailRetryAfter"
+        );
+        retryMap.put(thumbKey, System.currentTimeMillis() - 1000L);
+
+        when(minioClient.statObject(any(StatObjectArgs.class))).thenReturn(null);
+        when(vaultFileCryptoService.loadDecryptedThumbnail(encryptedVideo, thumbKey))
+                .thenReturn(new byte[]{7, 8, 9});
+
+        FileThumbnailService.ThumbnailPayload payload = fileThumbnailService.loadThumbnail(encryptedVideo);
+        assertThat(payload).isNotNull();
+        assertThat(payload.pending()).isFalse();
+        assertThat(payload.bytes()).containsExactly(7, 8, 9);
     }
 
     private FileInfo encryptedVaultVideo(Long idx, String objectKey) {

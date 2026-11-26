@@ -73,6 +73,8 @@ public class FileInfo {
     private boolean lockedFile;
     private boolean sharedFile;
     private Boolean favorite;
+    @Transient
+    private boolean preserveModifyDateOnNextUpdate;
     private Boolean trashed;
     private LocalDateTime deletedAt;
 
@@ -110,6 +112,10 @@ public class FileInfo {
 
     @PreUpdate
     public void preUpdate() {
+        if (this.preserveModifyDateOnNextUpdate) {
+            this.preserveModifyDateOnNextUpdate = false;
+            return;
+        }
         this.lastModifyDate = LocalDateTime.now();
     }
 
@@ -210,6 +216,7 @@ public class FileInfo {
 
     public void changeFavorite(boolean favorite) {
         this.favorite = favorite;
+        this.preserveModifyDateOnNextUpdate = true;
     }
 
     public FileEncryptionMode resolveEncryptionMode() {

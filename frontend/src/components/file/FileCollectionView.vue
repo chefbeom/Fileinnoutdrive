@@ -9,6 +9,7 @@ import FileCollectionGrid from "./FileCollectionGrid.vue";
 import FileCollectionTable from "./FileCollectionTable.vue";
 import { FILE_COLLECTION_CONTEXT_KEY } from "./FileCollectionContext.js";
 import { downloadFileAsset } from "@/api/filesApi.js";
+import { isEncryptedVaultFile } from "@/utils/fileMediaUrl.js";
 import {
   INTERNAL_DRAG_MIME,
   extractDropItems,
@@ -115,6 +116,7 @@ const downloadingIds = ref([]);
 const lastSelectedAnchorId = ref(null);
 let refreshListTimerId = null;
 let thumbnailAbortController = null;
+let lastThumbnailListSignature = "";
 const planCapabilities = computed(() => fileStore.planCapabilities);
 const canCreateShares = computed(() => Boolean(planCapabilities.value?.shareEnabled));
 const canCreateLocks = computed(() => Boolean(planCapabilities.value?.fileLockEnabled));
@@ -326,7 +328,6 @@ const handleThumbnailAssetError = (file) => {
       }
     });
   }
-  scheduleAssetRefresh();
 };
 
 const isLocked = isCollectionLocked;
@@ -365,6 +366,11 @@ const getImageCardUrl = (file) => {
     if (directThumbnailUrl) {
       return directThumbnailUrl;
     }
+  }
+
+  // Vault 암호화 이미지 또는 서버 썸네일 대기 중일 때는 원본 스트림(MB 단위)으로 폴백하지 않고 썸네일을 우선한다.
+  if (isEncryptedVaultFile(file) || getManagedThumbnailState(file) === "loading") {
+    return "";
   }
 
   if (!hasBrokenPreview(file)) {
@@ -430,9 +436,18 @@ const canSaveShared = (file) => getActionAvailability(file).canSaveShared;
 const canManageSentShare = (file) => getActionAvailability(file).canManageSentShare;
 const isMovable = (file) => getActionAvailability(file).isMovable;
 
+const buildThumbnailListSignature = (files = []) => (files || [])
+  .map((file) => `${file?.id ?? ""}:${getManagedThumbnailKey(file)}:${getThumbnailUrl(file)}`)
+  .join("|");
+
 watch(
   () => props.files,
   (files) => {
+    const nextSignature = buildThumbnailListSignature(files);
+    if (nextSignature === lastThumbnailListSignature) {
+      return;
+    }
+    lastThumbnailListSignature = nextSignature;
     clearRefreshTimer();
     brokenPreviewIds.value = [];
     brokenThumbnailIds.value = [];
@@ -444,6 +459,7 @@ watch(
 watch(
   () => fileStore.currentFolderId,
   () => {
+    lastThumbnailListSignature = "";
     clearRefreshTimer();
     abortManagedThumbnails();
     lastSelectedAnchorId.value = null;

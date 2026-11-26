@@ -2,7 +2,8 @@ import { mount } from "@vue/test-utils";
 import { reactive, ref } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockSecretFolderStore, mockFileStore, mockViewStore } = vi.hoisted(() => ({
+const { mockSecretFolderStore, mockFileStore, mockLoadFileThumbnailUrl } = vi.hoisted(() => ({
+  mockLoadFileThumbnailUrl: vi.fn().mockResolvedValue(""),
   mockSecretFolderStore: {
     vaultMode: false,
     showHiddenFolders: false,
@@ -58,19 +59,37 @@ vi.mock("@/stores/useMediaPhotoStore.js", () => ({
   }),
 }));
 
+let sharedViewModeRef = null;
+
 vi.mock("@/stores/viewStore.js", () => ({
-  useViewStore: () => ({
-    viewMode: ref("grid"),
-    itemSize: ref("medium"),
-    resolvedLayoutColumns: ref(5),
-  }),
+  useViewStore: () => {
+    if (!sharedViewModeRef) {
+      sharedViewModeRef = ref("grid");
+    }
+    return {
+      viewMode: sharedViewModeRef,
+      itemSize: ref("medium"),
+      resolvedLayoutColumns: ref(5),
+    };
+  },
 }));
 
+vi.mock("@/utils/fileThumbnailCache.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    loadFileThumbnailUrl: (...args) => mockLoadFileThumbnailUrl(...args),
+  };
+});
+
+import { useViewStore } from "@/stores/viewStore.js";
 import FileCollectionView from "./FileCollectionView.vue";
 
 describe("FileCollectionView move-to-vault context menu", () => {
   beforeEach(() => {
     mockSecretFolderStore.vaultMode = false;
+    useViewStore().viewMode.value = "grid";
+    mockLoadFileThumbnailUrl.mockClear();
     document.body.innerHTML = "";
   });
 
@@ -232,6 +251,96 @@ describe("FileCollectionView move-to-vault context menu", () => {
 
     expect(wrapper.emitted("toggle-favorite")).toEqual([[folder], [file]]);
 
+    wrapper.unmount();
+  });
+
+  it("never mounts <video> stream tags for uncached Drive or Vault video cards in grid or table view", async () => {
+    const viewStore = useViewStore();
+    viewStore.viewMode.value = "grid";
+
+    const driveVideo = {
+      id: 71,
+      name: "drive-clip.mp4",
+      extension: "mp4",
+      type: "file",
+      downloadUrl: "/stream/71",
+      thumbnailUrl: "",
+    };
+    const vaultVideo = {
+      id: 72,
+      name: "vault-clip.mp4",
+      extension: "mp4",
+      type: "file",
+      spaceType: "VAULT",
+      isVaultSpace: true,
+      encrypted: true,
+      downloadUrl: "/api/file/secret/stream/72?st=tok",
+      thumbnailUrl: "",
+    };
+
+    const gridWrapper = mount(FileCollectionView, {
+      attachTo: document.body,
+      props: {
+        files: [driveVideo, vaultVideo],
+        selectedIds: [],
+        deleteMode: "trash",
+        sharedLibrary: false,
+      },
+    });
+    expect(gridWrapper.findAll("video").length).toBe(0);
+    gridWrapper.unmount();
+
+    viewStore.viewMode.value = "table";
+    const tableWrapper = mount(FileCollectionView, {
+      attachTo: document.body,
+      props: {
+        files: [driveVideo, vaultVideo],
+        selectedIds: [],
+        deleteMode: "trash",
+        sharedLibrary: false,
+      },
+    });
+    expect(tableWrapper.findAll("video").length).toBe(0);
+    tableWrapper.unmount();
+  });
+
+  it("does not re-fetch thumbnails when only favorite metadata changes on the same file list", async () => {
+    const vaultImage = {
+      id: 801,
+      name: "secret-photo.jpg",
+      extension: "jpg",
+      type: "file",
+      isImage: true,
+      spaceType: "VAULT",
+      isVaultSpace: true,
+      encrypted: true,
+      favorite: false,
+      isFavorite: false,
+      fileSavePath: "7/vault/secret-photo.enc",
+      updatedAt: "2026-11-26T10:00:00Z",
+      downloadUrl: "/api/file/secret/stream/801?st=tok",
+      thumbnailUrl: "",
+    };
+
+    const wrapper = mount(FileCollectionView, {
+      attachTo: document.body,
+      props: {
+        files: [vaultImage],
+        selectedIds: [],
+        deleteMode: "trash",
+        sharedLibrary: false,
+      },
+    });
+
+    await wrapper.vm.$nextTick();
+    expect(mockLoadFileThumbnailUrl).toHaveBeenCalledTimes(1);
+
+    await wrapper.setProps({
+      files: [{ ...vaultImage, favorite: true, isFavorite: true }],
+    });
+    await wrapper.vm.$nextTick();
+
+    expect(mockLoadFileThumbnailUrl).toHaveBeenCalledTimes(1);
     wrapper.unmount();
   });
 });

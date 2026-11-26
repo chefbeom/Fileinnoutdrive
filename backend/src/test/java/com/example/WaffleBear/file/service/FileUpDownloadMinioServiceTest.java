@@ -1071,6 +1071,28 @@ class FileUpDownloadMinioServiceTest {
                 .isInstanceOf(BaseException.class);
     }
 
+    @Test
+    void changeFavoritePreservesLastModifyDateDuringPreUpdate() {
+        LocalDateTime originalTimestamp = LocalDateTime.of(2026, 11, 20, 12, 0, 0);
+        FileInfo file = FileInfo.builder()
+                .idx(77L)
+                .user(User.builder().idx(7L).build())
+                .nodeType(FileNodeType.FILE)
+                .spaceType(FileSpaceType.VAULT)
+                .fileOriginName("vault-clip.mp4")
+                .fileFormat("mp4")
+                .fileSaveName("vault-77.enc")
+                .lastModifyDate(originalTimestamp)
+                .build();
+
+        file.changeFavorite(true);
+        file.preUpdate();
+        assertThat(file.getLastModifyDate()).isEqualTo(originalTimestamp);
+
+        file.preUpdate();
+        assertThat(file.getLastModifyDate()).isAfter(originalTimestamp);
+    }
+
     private void runTransactionTemplateCallbacksWithActiveTransaction() {
         doAnswer(invocation -> {
             TransactionCallback<?> callback = invocation.getArgument(0);

@@ -41,6 +41,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 @RequiredArgsConstructor
@@ -49,8 +53,12 @@ public class FileThumbnailService {
     private static final String THUMBNAIL_DIRECTORY_NAME = "thumbnails";
     private static final long MAX_VIDEO_FALLBACK_DOWNLOAD_BYTES = 80L * 1024 * 1024;
     private static final long MAX_IMAGE_THUMBNAIL_SOURCE_BYTES = 50L * 1024 * 1024;
-    private static final long THUMBNAIL_PREFIX_CACHE_TTL_MS = 30_000L;
+    private static final long THUMBNAIL_PREFIX_CACHE_TTL_MS = 300_000L;
     private static final long THUMBNAIL_MISSING_CACHE_TTL_MS = 15_000L;
+    private static final long THUMBNAIL_FAILURE_COOLDOWN_MS = 60_000L;
+    private static final long LOOPBACK_OPEN_RANGE_MAX_BYTES = 4L * 1024 * 1024;
+    private static final int MAX_ON_DEMAND_VIDEO_FFMPEG = 2;
+    private static final int MAX_ENCRYPTED_PREWARM_PER_PAGE = 4;
     private static final long MAX_MEMORY_CACHE_BYTES = 48L * 1024 * 1024;
     private static final long MAX_MEMORY_CACHE_ENTRY_BYTES = 2L * 1024 * 1024;
     private static final Set<String> IMAGE_EXTENSIONS = Set.of(
@@ -72,11 +80,18 @@ public class FileThumbnailService {
     private VaultFileCryptoService vaultFileCryptoService;
 
     private static final SecureRandom EPHEMERAL_RANDOM = new SecureRandom();
+    private static final AtomicInteger LOOPBACK_THREAD_COUNTER = new AtomicInteger(1);
+    private static final ExecutorService LOOPBACK_HTTP_EXECUTOR = Executors.newCachedThreadPool(runnable -> {
+        Thread thread = new Thread(runnable, "vault-thumb-loopback-" + LOOPBACK_THREAD_COUNTER.getAndIncrement());
+        thread.setDaemon(true);
+        return thread;
+    });
     private final Set<String> thumbnailGenerationInProgress = ConcurrentHashMap.newKeySet();
     private final Set<String> existingThumbnailKeys = ConcurrentHashMap.newKeySet();
-    private final Set<String> failedThumbnailKeys = ConcurrentHashMap.newKeySet();
+    private final Map<String, Long> failedThumbnailRetryAfter = new ConcurrentHashMap<>();
     private final Map<String, Long> scannedThumbnailPrefixes = new ConcurrentHashMap<>();
     private final Map<String, Long> missingThumbnailKeys = new ConcurrentHashMap<>();
+    private final Semaphore onDemandVideoFfmpegPermits = new Semaphore(MAX_ON_DEMAND_VIDEO_FFMPEG);
     private final Object memoryCacheLock = new Object();
     private final Map<String, CachedThumbnailEntry> thumbnailMemoryCache = new LinkedHashMap<>(256, 0.75f, true);
     private long currentMemoryCacheBytes = 0L;
@@ -144,7 +159,7 @@ public class FileThumbnailService {
         }
 
         String encryptedThumbKey = FileContentUtils.buildEncryptedThumbnailObjectKey(objectKey);
-        if (failedThumbnailKeys.contains(encryptedThumbKey)) {
+        if (isThumbnailFailedRecently(encryptedThumbKey)) {
             return null;
         }
 
@@ -169,15 +184,31 @@ public class FileThumbnailService {
         }
 
         if (isVideo && !videoThumbnailService.supports(extension)) {
-            failedThumbnailKeys.add(encryptedThumbKey);
+            markThumbnailFailed(encryptedThumbKey);
             return null;
         }
         if (!isVideo && !isPresignedRasterImage(file, extension)) {
             return null;
         }
 
+        if (thumbnailGenerationInProgress.contains(encryptedThumbKey)) {
+            return ThumbnailPayload.pendingPayload();
+        }
+
+        boolean acquiredPermit = false;
+        if (isVideo) {
+            acquiredPermit = onDemandVideoFfmpegPermits.tryAcquire();
+            if (!acquiredPermit) {
+                scheduleEncryptedThumbnailPreGeneration(file);
+                return ThumbnailPayload.pendingPayload();
+            }
+        }
+
         if (!thumbnailGenerationInProgress.add(encryptedThumbKey)) {
-            return null;
+            if (acquiredPermit) {
+                onDemandVideoFfmpegPermits.release();
+            }
+            return ThumbnailPayload.pendingPayload();
         }
 
         try {
@@ -209,7 +240,7 @@ public class FileThumbnailService {
                 vaultFileCryptoService.encryptAndStoreThumbnail(file, encryptedThumbKey, generatedBytes);
                 existingThumbnailKeys.add(encryptedThumbKey);
                 missingThumbnailKeys.remove(encryptedThumbKey);
-                failedThumbnailKeys.remove(encryptedThumbKey);
+                clearThumbnailFailed(encryptedThumbKey);
                 ThumbnailPayload payload = new ThumbnailPayload(
                         generatedBytes,
                         "image/jpeg",
@@ -220,13 +251,16 @@ public class FileThumbnailService {
                 putCachedThumbnail(encryptedThumbKey, payload, objectKey);
                 return payload;
             }
-            failedThumbnailKeys.add(encryptedThumbKey);
+            markThumbnailFailed(encryptedThumbKey);
             return null;
         } catch (Exception ignored) {
-            failedThumbnailKeys.add(encryptedThumbKey);
+            markThumbnailFailed(encryptedThumbKey);
             return null;
         } finally {
             thumbnailGenerationInProgress.remove(encryptedThumbKey);
+            if (acquiredPermit) {
+                onDemandVideoFfmpegPermits.release();
+            }
         }
     }
 
@@ -240,7 +274,8 @@ public class FileThumbnailService {
         EPHEMERAL_RANDOM.nextBytes(tokenBytes);
         String expectedPath = "/" + Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes) + "." + extension;
 
-        HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 4);
+        HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 16);
+        server.setExecutor(LOOPBACK_HTTP_EXECUTOR);
         server.createContext(expectedPath, exchange -> handleLoopbackVideoRange(exchange, expectedPath, file, plainSize));
         server.start();
         try {
@@ -283,7 +318,9 @@ public class FileThumbnailService {
                             end = plainSize - 1L;
                         } else if (!startStr.isEmpty()) {
                             start = Long.parseLong(startStr);
-                            end = endStr.isEmpty() ? (plainSize - 1L) : Math.min(plainSize - 1L, Long.parseLong(endStr));
+                            end = endStr.isEmpty()
+                                    ? Math.min(plainSize - 1L, start + LOOPBACK_OPEN_RANGE_MAX_BYTES - 1L)
+                                    : Math.min(plainSize - 1L, Long.parseLong(endStr));
                         }
                         if (start < 0L || end < start || start >= plainSize) {
                             exchange.getResponseHeaders().set("Content-Range", "bytes */" + plainSize);
@@ -327,7 +364,9 @@ public class FileThumbnailService {
             return;
         }
 
-        Set<String> prefixesToScan = new HashSet<>();
+        Set<String> syncPrefixesToScan = new HashSet<>();
+        Set<String> asyncPrefixesToRefresh = new HashSet<>();
+        Collection<FileInfo> encryptedPrewarmCandidates = new java.util.ArrayList<>();
         long now = System.currentTimeMillis();
         for (FileInfo file : files) {
             boolean presignedEligible = isPresignedThumbnailEligible(file);
@@ -345,21 +384,47 @@ public class FileThumbnailService {
             if (thumbnailObjectKey == null
                     || thumbnailObjectKey.isBlank()
                     || existingThumbnailKeys.contains(thumbnailObjectKey)
-                    || failedThumbnailKeys.contains(thumbnailObjectKey)) {
+                    || isThumbnailFailedRecently(thumbnailObjectKey)) {
                 continue;
+            }
+            if (encryptedEligible) {
+                encryptedPrewarmCandidates.add(file);
             }
             String prefix = extractThumbnailDirectoryPrefix(thumbnailObjectKey);
             if (prefix == null) {
                 continue;
             }
             Long lastScannedAt = scannedThumbnailPrefixes.get(prefix);
-            if (lastScannedAt == null || (now - lastScannedAt) >= THUMBNAIL_PREFIX_CACHE_TTL_MS) {
-                prefixesToScan.add(prefix);
+            if (lastScannedAt == null) {
+                syncPrefixesToScan.add(prefix);
+            } else if ((now - lastScannedAt) >= THUMBNAIL_PREFIX_CACHE_TTL_MS) {
+                asyncPrefixesToRefresh.add(prefix);
             }
         }
 
-        for (String prefix : prefixesToScan) {
+        for (String prefix : syncPrefixesToScan) {
             scanThumbnailPrefix(prefix, now);
+        }
+        for (String prefix : asyncPrefixesToRefresh) {
+            scannedThumbnailPrefixes.put(prefix, now);
+            try {
+                thumbnailTaskExecutor.runAsync(() -> scanThumbnailPrefix(prefix, now));
+            } catch (RuntimeException ignored) {
+            }
+        }
+
+        int scheduledEncryptedCount = 0;
+        for (FileInfo file : encryptedPrewarmCandidates) {
+            if (scheduledEncryptedCount >= MAX_ENCRYPTED_PREWARM_PER_PAGE) {
+                break;
+            }
+            String encryptedThumbKey = FileContentUtils.buildEncryptedThumbnailObjectKey(file.getFileSavePath());
+            if (encryptedThumbKey != null
+                    && !existingThumbnailKeys.contains(encryptedThumbKey)
+                    && !thumbnailGenerationInProgress.contains(encryptedThumbKey)) {
+                scheduleEncryptedThumbnailPreGeneration(file);
+                scheduledEncryptedCount += 1;
+            }
         }
     }
 
@@ -377,7 +442,8 @@ public class FileThumbnailService {
         if (encryptedThumbKey == null
                 || encryptedThumbKey.isBlank()
                 || existingThumbnailKeys.contains(encryptedThumbKey)
-                || failedThumbnailKeys.contains(encryptedThumbKey)) {
+                || thumbnailGenerationInProgress.contains(encryptedThumbKey)
+                || isThumbnailFailedRecently(encryptedThumbKey)) {
             return;
         }
 
@@ -420,7 +486,7 @@ public class FileThumbnailService {
         for (String key : targetKeys) {
             existingThumbnailKeys.remove(key);
             missingThumbnailKeys.remove(key);
-            failedThumbnailKeys.remove(key);
+            clearThumbnailFailed(key);
         }
 
         synchronized (memoryCacheLock) {
@@ -471,7 +537,7 @@ public class FileThumbnailService {
         }
 
         String thumbnailObjectKey = buildThumbnailObjectKey(objectKey);
-        if (failedThumbnailKeys.contains(thumbnailObjectKey)) {
+        if (isThumbnailFailedRecently(thumbnailObjectKey)) {
             return null;
         }
 
@@ -493,11 +559,25 @@ public class FileThumbnailService {
             return readObject(thumbnailObjectKey, "image/jpeg", file);
         }
 
-        if (failedThumbnailKeys.contains(thumbnailObjectKey)) {
+        if (isThumbnailFailedRecently(thumbnailObjectKey)) {
             return null;
         }
 
-        byte[] generatedBytes = ensureVideoThumbnailSynchronously(file, thumbnailObjectKey);
+        if (thumbnailGenerationInProgress.contains(thumbnailObjectKey)) {
+            return ThumbnailPayload.pendingPayload();
+        }
+
+        if (!onDemandVideoFfmpegPermits.tryAcquire()) {
+            triggerThumbnailGeneration(file, thumbnailObjectKey);
+            return ThumbnailPayload.pendingPayload();
+        }
+
+        byte[] generatedBytes;
+        try {
+            generatedBytes = ensureVideoThumbnailSynchronously(file, thumbnailObjectKey);
+        } finally {
+            onDemandVideoFfmpegPermits.release();
+        }
         if (generatedBytes != null && generatedBytes.length > 0) {
             ThumbnailPayload payload = new ThumbnailPayload(
                     generatedBytes,
@@ -531,7 +611,7 @@ public class FileThumbnailService {
             return readObject(thumbnailObjectKey, "image/jpeg", file);
         }
 
-        if (!failedThumbnailKeys.contains(thumbnailObjectKey)) {
+        if (!isThumbnailFailedRecently(thumbnailObjectKey)) {
             byte[] generatedBytes = ensureImageThumbnail(objectKey, thumbnailObjectKey);
             if (generatedBytes != null && generatedBytes.length > 0) {
                 ThumbnailPayload payload = new ThumbnailPayload(
@@ -553,7 +633,7 @@ public class FileThumbnailService {
             return;
         }
 
-        if (failedThumbnailKeys.contains(thumbnailObjectKey)) {
+        if (isThumbnailFailedRecently(thumbnailObjectKey)) {
             return;
         }
 
@@ -562,11 +642,11 @@ public class FileThumbnailService {
         boolean isRasterImage = isPresignedRasterImage(file, extension);
         if (isVideo) {
             if (!videoThumbnailService.supports(extension)) {
-                failedThumbnailKeys.add(thumbnailObjectKey);
+                markThumbnailFailed(thumbnailObjectKey);
                 return;
             }
         } else if (!isRasterImage) {
-            failedThumbnailKeys.add(thumbnailObjectKey);
+            markThumbnailFailed(thumbnailObjectKey);
             return;
         }
 
@@ -599,7 +679,7 @@ public class FileThumbnailService {
         }
         String extension = resolveExtension(file);
         if (!videoThumbnailService.supports(extension)) {
-            failedThumbnailKeys.add(thumbnailObjectKey);
+            markThumbnailFailed(thumbnailObjectKey);
             return null;
         }
 
@@ -617,7 +697,7 @@ public class FileThumbnailService {
     private byte[] ensureVideoThumbnail(FileInfo file, String thumbnailObjectKey) {
         String extension = resolveExtension(file);
         if (!videoThumbnailService.supports(extension)) {
-            failedThumbnailKeys.add(thumbnailObjectKey);
+            markThumbnailFailed(thumbnailObjectKey);
             return null;
         }
 
@@ -631,13 +711,13 @@ public class FileThumbnailService {
             if (thumbnailBytes != null && thumbnailBytes.length > 0) {
                 uploadThumbnail(thumbnailObjectKey, thumbnailBytes);
                 existingThumbnailKeys.add(thumbnailObjectKey);
-                failedThumbnailKeys.remove(thumbnailObjectKey);
+                clearThumbnailFailed(thumbnailObjectKey);
                 return thumbnailBytes;
             }
-            failedThumbnailKeys.add(thumbnailObjectKey);
+            markThumbnailFailed(thumbnailObjectKey);
             return null;
         } catch (Exception ignored) {
-            failedThumbnailKeys.add(thumbnailObjectKey);
+            markThumbnailFailed(thumbnailObjectKey);
             return null;
         }
     }
@@ -690,13 +770,13 @@ public class FileThumbnailService {
             if (thumbnailBytes != null && thumbnailBytes.length > 0) {
                 uploadThumbnail(thumbnailObjectKey, thumbnailBytes);
                 existingThumbnailKeys.add(thumbnailObjectKey);
-                failedThumbnailKeys.remove(thumbnailObjectKey);
+                clearThumbnailFailed(thumbnailObjectKey);
                 return thumbnailBytes;
             }
-            failedThumbnailKeys.add(thumbnailObjectKey);
+            markThumbnailFailed(thumbnailObjectKey);
             return null;
         } catch (Exception ignored) {
-            failedThumbnailKeys.add(thumbnailObjectKey);
+            markThumbnailFailed(thumbnailObjectKey);
             return null;
         }
     }
@@ -717,7 +797,7 @@ public class FileThumbnailService {
             );
             existingThumbnailKeys.add(thumbnailObjectKey);
             missingThumbnailKeys.remove(thumbnailObjectKey);
-            failedThumbnailKeys.remove(thumbnailObjectKey);
+            clearThumbnailFailed(thumbnailObjectKey);
         }
     }
 
@@ -758,7 +838,7 @@ public class FileThumbnailService {
             return true;
         }
 
-        if (failedThumbnailKeys.contains(objectKey)) {
+        if (isThumbnailFailedRecently(objectKey)) {
             return false;
         }
 
@@ -1075,15 +1155,57 @@ public class FileThumbnailService {
         return 0L;
     }
 
+    private boolean isThumbnailFailedRecently(String key) {
+        if (key == null || key.isBlank()) {
+            return false;
+        }
+        Long retryAfter = failedThumbnailRetryAfter.get(key);
+        if (retryAfter == null) {
+            return false;
+        }
+        if (System.currentTimeMillis() >= retryAfter) {
+            failedThumbnailRetryAfter.remove(key, retryAfter);
+            return false;
+        }
+        return true;
+    }
+
+    private void markThumbnailFailed(String key) {
+        if (key != null && !key.isBlank()) {
+            failedThumbnailRetryAfter.put(key, System.currentTimeMillis() + THUMBNAIL_FAILURE_COOLDOWN_MS);
+        }
+    }
+
+    private void clearThumbnailFailed(String key) {
+        if (key != null && !key.isBlank()) {
+            failedThumbnailRetryAfter.remove(key);
+        }
+    }
+
     public record ThumbnailPayload(
             byte[] bytes,
             String contentType,
             String eTag,
             long lastModifiedEpochMillis,
-            boolean privateNoStore
+            boolean privateNoStore,
+            boolean pending
     ) {
         public ThumbnailPayload(byte[] bytes, String contentType, String eTag, long lastModifiedEpochMillis) {
-            this(bytes, contentType, eTag, lastModifiedEpochMillis, false);
+            this(bytes, contentType, eTag, lastModifiedEpochMillis, false, false);
+        }
+
+        public ThumbnailPayload(
+                byte[] bytes,
+                String contentType,
+                String eTag,
+                long lastModifiedEpochMillis,
+                boolean privateNoStore
+        ) {
+            this(bytes, contentType, eTag, lastModifiedEpochMillis, privateNoStore, false);
+        }
+
+        public static ThumbnailPayload pendingPayload() {
+            return new ThumbnailPayload(new byte[0], "application/octet-stream", "", 0L, true, true);
         }
     }
 }

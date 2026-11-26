@@ -2,19 +2,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
+  fetchFileList as fetchFileListApi,
   fetchFileListPage as fetchFileListPageApi,
   fetchStorageSummary as fetchStorageSummaryApi,
+  fetchVaultFileList as fetchVaultFileListApi,
   moveFilesToVault as moveFilesToVaultApi,
+  setFavoriteFiles as setFavoriteFilesApi,
 } from '@/api/filesApi.js'
 import { useFileStore } from './useFileStore.js'
+import { useSecretFolderStore } from './useSecretFolderStore.js'
 
 vi.mock('@/api/filesApi.js', async (importOriginal) => {
   const actual = await importOriginal()
   return {
     ...actual,
+    fetchFileList: vi.fn(),
     fetchFileListPage: vi.fn(),
     fetchStorageSummary: vi.fn(),
+    fetchVaultFileList: vi.fn(),
     moveFilesToVault: vi.fn(),
+    setFavoriteFiles: vi.fn(),
   }
 })
 
@@ -32,6 +39,12 @@ describe('useFileStore storage summary', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    fetchFileListApi.mockReset()
+    fetchFileListPageApi.mockReset()
+    fetchStorageSummaryApi.mockReset()
+    fetchVaultFileListApi.mockReset()
+    moveFilesToVaultApi.mockReset()
+    setFavoriteFilesApi.mockReset()
   })
 
   it('shares one in-flight storage summary request between concurrent callers', async () => {
@@ -138,7 +151,7 @@ describe('useFileStore storage summary', () => {
     // Root snapshot is restored immediately!
     expect(store.driveFiles.map((f) => f.id)).toEqual([486, 10])
 
-    const rootPromise = store.fetchDrivePage({ parentId: null, page: 0, size: 10 })
+    const rootPromise = store.fetchDrivePage({ parentId: null, page: 0, size: 10, forceRefresh: true })
 
     // Even if the stale subfolder request resolves afterwards, it must NOT overwrite root files
     subfolderDeferred.resolve({
@@ -291,5 +304,154 @@ describe('useFileStore storage summary', () => {
     ]
     store.markFilesRecentlyUploaded([4])
     expect(store.recentUploadedFiles.map((f) => f.id)).toEqual([4])
+  })
+
+  it('toggles favorites optimistically without full-library refresh and rolls back on error', async () => {
+    fetchFileListPageApi.mockResolvedValueOnce({
+      fileList: [{ idx: 91, fileOriginName: 'clip.mp4', fileFormat: 'mp4', nodeType: 'FILE', favorite: false }],
+      breadcrumbs: [],
+      availableExtensions: ['mp4'],
+      totalPage: 1,
+      totalCount: 1,
+      currentPage: 0,
+      currentSize: 20,
+    })
+
+    const store = useFileStore()
+    await store.fetchDrivePage({ parentId: null, page: 0, size: 20 })
+    const initialPageCalls = fetchFileListPageApi.mock.calls.length
+
+    setFavoriteFilesApi.mockResolvedValueOnce({ affectedCount: 1 })
+    await store.setFilesFavorite([91], true)
+    expect(store.driveFiles[0].isFavorite).toBe(true)
+    expect(fetchFileListPageApi).toHaveBeenCalledTimes(initialPageCalls)
+    expect(fetchFileListApi).not.toHaveBeenCalled()
+
+    setFavoriteFilesApi.mockRejectedValueOnce(new Error('network error'))
+    await expect(store.setFilesFavorite([91], false)).rejects.toThrow('network error')
+    expect(store.driveFiles[0].isFavorite).toBe(true)
+  })
+
+  it('serves cached page responses on repeat visits and clears page cache on clearVaultFiles', async () => {
+    fetchStorageSummaryApi.mockResolvedValue({ planCode: 'ADMIN', totalQuotaBytes: 1000 })
+    fetchFileListPageApi
+      .mockResolvedValueOnce({
+        fileList: [{ idx: 1, fileOriginName: 'page0.mp4', nodeType: 'FILE' }],
+        breadcrumbs: [],
+        availableExtensions: [],
+        totalPage: 2,
+        totalCount: 2,
+        currentPage: 0,
+        currentSize: 1,
+      })
+      .mockResolvedValueOnce({
+        fileList: [{ idx: 2, fileOriginName: 'page1.mp4', nodeType: 'FILE' }],
+        breadcrumbs: [],
+        availableExtensions: [],
+        totalPage: 2,
+        totalCount: 2,
+        currentPage: 1,
+        currentSize: 1,
+      })
+      .mockResolvedValueOnce({
+        fileList: [{ idx: 2, fileOriginName: 'page1-reloaded.mp4', nodeType: 'FILE' }],
+        breadcrumbs: [],
+        availableExtensions: [],
+        totalPage: 2,
+        totalCount: 2,
+        currentPage: 1,
+        currentSize: 1,
+      })
+
+    const store = useFileStore()
+    await store.fetchDrivePage({ parentId: null, page: 0, size: 1 })
+    await store.fetchDrivePage({ parentId: null, page: 1, size: 1 })
+    expect(fetchFileListPageApi).toHaveBeenCalledTimes(2)
+
+    // Repeat visit to page 0 uses pageResponseCache
+    await store.fetchDrivePage({ parentId: null, page: 0, size: 1 })
+    expect(fetchFileListPageApi).toHaveBeenCalledTimes(2)
+    expect(store.driveFiles[0].name).toBe('page0.mp4')
+
+    // Locking/clearing vault invalidates cached page entries
+    store.clearVaultFiles()
+    await store.fetchDrivePage({ parentId: null, page: 1, size: 1 })
+    expect(fetchFileListPageApi).toHaveBeenCalledTimes(3)
+    expect(store.driveFiles[0].name).toBe('page1-reloaded.mp4')
+  })
+
+  it('reflects Vault favorites immediately in vaultFavoriteItems and deduplicates in-flight favorite calls', async () => {
+    fetchStorageSummaryApi.mockResolvedValue({ planCode: 'ADMIN', totalQuotaBytes: 1000 })
+    fetchFileListPageApi.mockResolvedValueOnce({
+      fileList: [
+        {
+          idx: 812,
+          fileOriginName: 'vault-clip.mp4',
+          fileFormat: 'mp4',
+          nodeType: 'FILE',
+          spaceType: 'VAULT',
+          encrypted: true,
+          favorite: false,
+        },
+      ],
+      breadcrumbs: [],
+      availableExtensions: ['mp4'],
+      totalPage: 1,
+      totalCount: 1,
+      currentPage: 0,
+      currentSize: 20,
+    })
+
+    const deferredFavorite = createDeferred()
+    setFavoriteFilesApi.mockReturnValueOnce(deferredFavorite.promise)
+
+    const store = useFileStore()
+    await store.fetchDrivePage({ parentId: null, page: 0, size: 20, vaultMode: true })
+    expect(store.vaultFavoriteItems).toHaveLength(0)
+
+    const firstToggle = store.setFilesFavorite([812], true)
+    const duplicateToggle = store.setFilesFavorite([812], true)
+
+    // Optimistically visible immediately in vaultFavoriteItems even before vaultAllFiles is fetched
+    expect(store.vaultFavoriteItems.map((f) => f.id)).toEqual([812])
+    expect(setFavoriteFilesApi).toHaveBeenCalledTimes(1)
+
+    deferredFavorite.resolve({ action: 'favorite', affectedCount: 1 })
+    await expect(firstToggle).resolves.toEqual({ action: 'favorite', affectedCount: 1 })
+    await expect(duplicateToggle).resolves.toBeNull()
+  })
+
+  it('refreshAll skips Drive/Shared calls in Vault mode and deduplicates storage summary requests', async () => {
+    fetchStorageSummaryApi.mockResolvedValue({ planCode: 'ADMIN', totalQuotaBytes: 1000 })
+    fetchFileListPageApi.mockResolvedValue({
+      fileList: [{ idx: 901, fileOriginName: 'vault-doc.pdf', nodeType: 'FILE', spaceType: 'VAULT' }],
+      breadcrumbs: [],
+      availableExtensions: ['pdf'],
+      totalPage: 1,
+      totalCount: 1,
+      currentPage: 0,
+      currentSize: 20,
+    })
+    fetchVaultFileListApi.mockResolvedValue([])
+
+    const secretStore = useSecretFolderStore()
+    secretStore.vaultMode = true
+    secretStore.vaultUnlocked = true
+
+    const store = useFileStore()
+    await store.fetchStorageSummary()
+    await store.fetchDrivePage({ parentId: null, page: 0, size: 20, vaultMode: true })
+    await store.fetchVaultFiles()
+
+    fetchStorageSummaryApi.mockClear()
+    fetchFileListApi.mockClear()
+    fetchVaultFileListApi.mockClear()
+
+    await store.refreshAll()
+    await Promise.resolve()
+
+    expect(fetchFileListApi).not.toHaveBeenCalled()
+    expect(fetchVaultFileListApi).toHaveBeenCalledTimes(1)
+    expect(fetchStorageSummaryApi).toHaveBeenCalledTimes(1)
   })
 })

@@ -2,6 +2,7 @@ package com.example.WaffleBear.file.manage;
 
 import com.example.WaffleBear.file.dto.FileCommonDto;
 import com.example.WaffleBear.file.service.FileThumbnailQueryService;
+import com.example.WaffleBear.file.service.FileThumbnailService;
 import com.example.WaffleBear.user.model.AuthUserDetails;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,7 +22,9 @@ import java.util.List;
 
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -146,6 +149,17 @@ class FileManageControllerTest {
                 .andExpect(jsonPath("$.affectedCount").value(2));
 
         verify(fileManageService).setFavoriteFiles(7L, List.of(10L, 11L), true);
+    }
+
+    @Test
+    void thumbnailEndpointReturns202AcceptedWhenGenerationIsPending() throws Exception {
+        when(fileThumbnailQueryService.loadOwnedThumbnail(7L, 88L))
+                .thenReturn(FileThumbnailService.ThumbnailPayload.pendingPayload());
+
+        mockMvc.perform(get("/file/{fileIdx}/thumbnail", 88L)
+                        .requestAttr(AUTH_USER_ATTR, authenticatedUser()))
+                .andExpect(status().isAccepted())
+                .andExpect(header().string("X-Thumbnail-Status", "pending"));
     }
 
     private HandlerMethodArgumentResolver authUserArgumentResolver() {

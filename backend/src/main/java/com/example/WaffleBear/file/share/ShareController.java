@@ -249,6 +249,13 @@ public class ShareController {
             FileThumbnailService.ThumbnailPayload payload,
             String ifNoneMatch
     ) {
+        if (payload != null && payload.pending()) {
+            return ResponseEntity.accepted()
+                    .cacheControl(CacheControl.noStore())
+                    .header("Pragma", "no-cache")
+                    .header("X-Thumbnail-Status", "pending")
+                    .build();
+        }
         if (payload == null || payload.bytes() == null || payload.bytes().length == 0) {
             return ResponseEntity.noContent()
                     .cacheControl(CacheControl.noStore())

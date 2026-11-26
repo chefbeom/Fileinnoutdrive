@@ -48,6 +48,8 @@ import java.util.Optional;
 @Tag(name = "Vault Streaming & Encryption", description = "Encrypted secret vault Range streaming and key migration APIs")
 public class VaultStreamController {
 
+    private static final long MAX_INLINE_OPEN_RANGE_BYTES = 4L * 1024 * 1024;
+
     private final FileUpDownloadRepository fileUpDownloadRepository;
     private final UserRepository userRepository;
     private final SecretTokenService secretTokenService;
@@ -124,6 +126,9 @@ public class VaultStreamController {
                 return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
                         .header(HttpHeaders.CONTENT_RANGE, "bytes */" + plaintextSize)
                         .build();
+            }
+            if (!forceDownload && isOpenEndedRangeHeader(rangeHeader)) {
+                rangeEnd = Math.min(rangeEnd, rangeStart + MAX_INLINE_OPEN_RANGE_BYTES - 1L);
             }
             status = HttpStatus.PARTIAL_CONTENT;
         }
@@ -257,6 +262,14 @@ public class VaultStreamController {
         } catch (Exception ignored) {
             return MediaType.APPLICATION_OCTET_STREAM;
         }
+    }
+
+    private boolean isOpenEndedRangeHeader(String rangeHeader) {
+        if (rangeHeader == null || !rangeHeader.startsWith("bytes=")) {
+            return false;
+        }
+        String spec = rangeHeader.substring("bytes=".length()).split(",", 2)[0].trim();
+        return spec.endsWith("-") && !spec.startsWith("-");
     }
 
     private boolean isClientAbortException(Throwable throwable) {

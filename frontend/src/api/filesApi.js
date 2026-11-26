@@ -454,6 +454,8 @@ export async function restoreFileVersion(fileId, versionId) {
   const response = await api.post(`/file/${fileId}/versions/${versionId}/restore`);
   return extractObjectResult(response?.data);
 }
+export const PENDING_THUMBNAIL_SENTINEL = Object.freeze({ __pendingThumbnail: true });
+
 export async function fetchFileThumbnailBlob(fileId, version = "", options = {}) {
   const response = await api.get(`/file/${fileId}/thumbnail`, {
     params: version ? { v: version } : undefined,
@@ -461,6 +463,10 @@ export async function fetchFileThumbnailBlob(fileId, version = "", options = {})
     timeout: options?.timeout ?? 25000,
     signal: options?.signal,
   });
+
+  if (response?.status === 202) {
+    return PENDING_THUMBNAIL_SENTINEL;
+  }
 
   if (response?.status === 204) {
     return null;
@@ -478,6 +484,10 @@ export async function fetchSharedFileThumbnailBlob(fileId, version = "", options
     timeout: options?.timeout ?? 25000,
     signal: options?.signal,
   });
+
+  if (response?.status === 202) {
+    return PENDING_THUMBNAIL_SENTINEL;
+  }
 
   if (response?.status === 204) {
     return null;

@@ -249,21 +249,6 @@ const {
             </svg>
           </span>
         </div>
-        <div v-else-if="isVideo(file) && Boolean(getVideoPreviewStreamUrl(file))" class="preview-box file-entry__preview relative overflow-hidden bg-slate-950" :class="viewMode === 'icon' ? 'file-entry__preview--icon' : 'file-entry__preview--card'">
-          <video
-            :src="`${getVideoPreviewStreamUrl(file)}#t=0.1`"
-            class="h-full w-full object-cover pointer-events-none"
-            preload="metadata"
-            muted
-            playsinline
-            @error="handlePreviewAssetError(file)"
-          ></video>
-          <span class="video-play-badge video-play-badge--grid" aria-hidden="true">
-            <svg class="h-3.5 w-3.5 translate-x-[0.5px]" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M6 4.5v11l9-5.5-9-5.5Z" />
-            </svg>
-          </span>
-        </div>
         <div v-else-if="isVideo(file)" class="preview-box file-entry__preview flex items-center justify-center bg-slate-900 text-white" :class="viewMode === 'icon' ? 'file-entry__preview--icon' : 'file-entry__preview--card'">
           <svg class="file-entry__preview-graphic" fill="currentColor" viewBox="0 0 20 20">
             <path d="M6 4.5v11l9-5.5-9-5.5Z" />

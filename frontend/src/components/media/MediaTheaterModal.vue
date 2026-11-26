@@ -3,7 +3,12 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRouter } from "vue-router";
 import { useMediaPhotoStore, convertSrtToVtt, formatDurationClock } from "@/stores/useMediaPhotoStore.js";
 import { downloadFileAsset } from "@/api/filesApi.js";
-import { getCachedFileThumbnailUrl, loadFileThumbnailUrl } from "@/utils/fileThumbnailCache.js";
+import {
+  getCachedFileThumbnailUrl,
+  loadFileThumbnailUrl,
+  resumeThumbnailQueue,
+  suspendThumbnailQueue,
+} from "@/utils/fileThumbnailCache.js";
 import {
   isEncryptedVaultFile,
   refreshEncryptedStreamUrl,
@@ -99,8 +104,31 @@ const isItemInCollection = (collection) => {
   return (collection.itemIds || []).some((id) => String(id) === String(currentItem.value.id));
 };
 
+let isTheaterVideoPrioritySuspended = false;
+let theaterPriorityReleaseTimer = null;
+
+const releaseTheaterThumbnailPriority = () => {
+  if (theaterPriorityReleaseTimer) {
+    clearTimeout(theaterPriorityReleaseTimer);
+    theaterPriorityReleaseTimer = null;
+  }
+  if (isTheaterVideoPrioritySuspended) {
+    isTheaterVideoPrioritySuspended = false;
+    resumeThumbnailQueue();
+  }
+};
+
+const holdTheaterThumbnailPriority = () => {
+  releaseTheaterThumbnailPriority();
+  isTheaterVideoPrioritySuspended = true;
+  suspendThumbnailQueue();
+  theaterPriorityReleaseTimer = setTimeout(() => {
+    releaseTheaterThumbnailPriority();
+  }, 1500);
+};
+
 const loadQueueThumbnails = async () => {
-  for (const item of playlistItems.value.slice(0, 30)) {
+  for (const item of playlistItems.value.slice(0, 12)) {
     const key = String(item.id);
     if (thumbnailMap.value[key]) continue;
     const cached = getCachedFileThumbnailUrl(item) || resolveFileThumbnailFallbackUrl(item);
@@ -108,7 +136,7 @@ const loadQueueThumbnails = async () => {
       thumbnailMap.value = { ...thumbnailMap.value, [key]: cached };
       continue;
     }
-    loadFileThumbnailUrl(item).then((url) => {
+    loadFileThumbnailUrl(item, { priority: "normal" }).then((url) => {
       if (url) {
         thumbnailMap.value = { ...thumbnailMap.value, [key]: url };
       }
@@ -203,6 +231,7 @@ const availableSubtitleTracks = computed(() => {
 });
 
 const onLoadedMetadata = () => {
+  releaseTheaterThumbnailPriority();
   const el = videoRef.value;
   if (!el || !currentItem.value) return;
 
@@ -244,6 +273,7 @@ const onLoadedMetadata = () => {
   }
 
   el.play().catch(() => {});
+  void loadQueueThumbnails();
 };
 
 const restartFromBeginning = () => {
@@ -256,6 +286,7 @@ const restartFromBeginning = () => {
     mediaPhotoStore.recordWatchProgress(currentItem.value.id, 0, duration.value);
   }
   el.play().catch(() => {});
+  void loadQueueThumbnails();
 };
 
 const onTimeUpdate = () => {
@@ -537,9 +568,11 @@ watch(
 
     await nextTick();
     if (currentItem.value && !isImageItem.value) {
+      holdTheaterThumbnailPriority();
       void loadMatchingSubtitles(currentItem.value);
+    } else {
+      releaseTheaterThumbnailPriority();
     }
-    void loadQueueThumbnails();
   },
   { immediate: true },
 );
@@ -549,6 +582,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  releaseTheaterThumbnailPriority();
   window.removeEventListener("keydown", handleKeydown);
   if (progressThrottleTimer) clearTimeout(progressThrottleTimer);
   if (resumeToastTimer) clearTimeout(resumeToastTimer);
@@ -745,15 +779,17 @@ onBeforeUnmount(() => {
             :src="streamUrl"
             controls
             playsinline
-            preload="metadata"
+            preload="auto"
             crossorigin="anonymous"
             class="max-h-[36vh] sm:max-h-[48vh] w-full max-w-6xl rounded-2xl bg-black object-contain shadow-2xl lg:max-h-[74vh]"
             @loadedmetadata="onLoadedMetadata"
+            @loadeddata="releaseTheaterThumbnailPriority"
+            @canplay="releaseTheaterThumbnailPriority"
             @timeupdate="onTimeUpdate"
             @play="onPlay"
             @pause="onPause"
             @ended="onEnded"
-            @error="onVideoError"
+            @error="(e) => { releaseTheaterThumbnailPriority(); onVideoError(e); }"
           >
             <track
               v-for="track in availableSubtitleTracks"

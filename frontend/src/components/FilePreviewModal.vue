@@ -13,6 +13,7 @@ import {
   safeExitFullscreen,
   safePauseMedia,
 } from "@/utils/modalBackHistory.js";
+import { resumeThumbnailQueue, suspendThumbnailQueue } from "@/utils/fileThumbnailCache.js";
 
 const props = defineProps({
   file: {
@@ -42,8 +43,31 @@ const mediaPhotoStore = useMediaPhotoStore();
 
 const videoPreviewRef = ref(null);
 const audioPreviewRef = ref(null);
+let isVideoPrioritySuspended = false;
+let videoPriorityReleaseTimer = null;
+
+const releaseVideoThumbnailPriority = () => {
+  if (videoPriorityReleaseTimer) {
+    clearTimeout(videoPriorityReleaseTimer);
+    videoPriorityReleaseTimer = null;
+  }
+  if (isVideoPrioritySuspended) {
+    isVideoPrioritySuspended = false;
+    resumeThumbnailQueue();
+  }
+};
+
+const holdVideoThumbnailPriority = () => {
+  releaseVideoThumbnailPriority();
+  isVideoPrioritySuspended = true;
+  suspendThumbnailQueue();
+  videoPriorityReleaseTimer = setTimeout(() => {
+    releaseVideoThumbnailPriority();
+  }, 1500);
+};
 
 const onBeforeCloseTeardown = () => {
+  releaseVideoThumbnailPriority();
   safeExitFullscreen();
   if (videoPreviewRef.value) {
     safePauseMedia(videoPreviewRef.value);
@@ -313,6 +337,11 @@ watch(
     }
     window.removeEventListener("keydown", closeOnEscape);
     if (file) {
+      if (previewKind.value === "video" && !isLockedFile.value) {
+        holdVideoThumbnailPriority();
+      } else {
+        releaseVideoThumbnailPriority();
+      }
       fileStore.recordFileAccess?.(file);
       window.addEventListener("keydown", closeOnEscape);
       if (prevFile?.id && file.id) {
@@ -321,6 +350,7 @@ watch(
         historyManager.open(file.id);
       }
     } else {
+      releaseVideoThumbnailPriority();
       historyManager.destroy();
     }
     loadTextPreview();
@@ -376,7 +406,7 @@ onBeforeUnmount(() => {
         </div>
 
         <img v-else-if="previewKind === 'image' && previewUrl" :src="previewUrl" :alt="file.name" class="max-h-[44vh] sm:max-h-[50vh] max-w-full rounded-2xl object-contain lg:max-h-full" @error="handlePreviewAssetError" />
-        <video v-else-if="previewKind === 'video' && previewUrl" ref="videoPreviewRef" :src="previewUrl" controls playsinline preload="metadata" class="max-h-[44vh] sm:max-h-[50vh] max-w-full rounded-2xl bg-black lg:max-h-full" @error="handlePreviewAssetError"></video>
+        <video v-else-if="previewKind === 'video' && previewUrl" ref="videoPreviewRef" :src="previewUrl" controls playsinline preload="metadata" class="max-h-[44vh] sm:max-h-[50vh] max-w-full rounded-2xl bg-black lg:max-h-full" @loadeddata="releaseVideoThumbnailPriority" @canplay="releaseVideoThumbnailPriority" @error="(e) => { releaseVideoThumbnailPriority(); handlePreviewAssetError(e); }"></video>
         <audio v-else-if="previewKind === 'audio' && previewUrl" ref="audioPreviewRef" :src="previewUrl" controls class="w-full max-w-xl px-2" @error="handlePreviewAssetError"></audio>
         <iframe v-else-if="previewKind === 'pdf' && previewUrl" :src="previewUrl" class="h-[46vh] sm:h-[55vh] w-full rounded-2xl bg-white lg:h-full" title="PDF 미리보기"></iframe>
 

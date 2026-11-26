@@ -97,6 +97,31 @@ public class FileUpDownloadS3Service implements FileUpDownloadService {
     }
 
     @Override
+    public FileCommonDto.FileActionRes moveFromVault(
+            Long userIdx,
+            Long fileIdx,
+            Long targetParentId,
+            boolean restoreOriginalParent
+    ) {
+        return resolveDelegate().moveFromVault(userIdx, fileIdx, targetParentId, restoreOriginalParent);
+    }
+
+    @Override
+    public FileCommonDto.FileActionRes moveFilesFromVault(
+            Long userIdx,
+            List<Long> fileIdxList,
+            Long targetParentId,
+            boolean restoreOriginalParent
+    ) {
+        return resolveDelegate().moveFilesFromVault(userIdx, fileIdxList, targetParentId, restoreOriginalParent);
+    }
+
+    @Override
+    public FileCommonDto.FileActionRes setFavoriteFiles(Long userIdx, List<Long> fileIdxList, boolean favorite) {
+        return resolveDelegate().setFavoriteFiles(userIdx, fileIdxList, favorite);
+    }
+
+    @Override
     public FileCommonDto.FileActionRes restoreFilesFromTrash(Long userIdx, List<Long> fileIdxList) {
         return resolveDelegate().restoreFilesFromTrash(userIdx, fileIdxList);
     }

@@ -173,6 +173,12 @@ public final class VaultChunkCrypto {
         EncryptedByteSlice slice = computeEncryptedRange(plaintextSize, chunkSize, plainStart, plainEnd);
         int totalChunks = chunkCount(plaintextSize, chunkSize);
         SecretKeySpec keySpec = new SecretKeySpec(dek, "AES");
+        Cipher cipher;
+        try {
+            cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        } catch (GeneralSecurityException exception) {
+            throw new IOException("Failed to initialize AES-GCM cipher", exception);
+        }
 
         for (int chunkIndex = slice.firstChunk(); chunkIndex <= slice.lastChunk(); chunkIndex++) {
             long chunkPlainStart = (long) chunkIndex * chunkSize;
@@ -185,6 +191,7 @@ public final class VaultChunkCrypto {
 
             boolean isFinal = (chunkIndex == totalChunks - 1);
             byte[] plainChunk = decryptSingleChunk(
+                    cipher,
                     keySpec,
                     noncePrefix,
                     chunkIndex,
@@ -201,6 +208,7 @@ public final class VaultChunkCrypto {
             int copyEnd = (chunkIndex == slice.lastChunk()) ? slice.lastChunkMaxBytes() : plainChunk.length;
             if (copyEnd > copyStart) {
                 plainOut.write(plainChunk, copyStart, copyEnd - copyStart);
+                plainOut.flush();
             }
         }
     }
@@ -307,6 +315,7 @@ public final class VaultChunkCrypto {
     }
 
     private static byte[] decryptSingleChunk(
+            Cipher cipher,
             SecretKeySpec keySpec,
             byte[] noncePrefix,
             int chunkIndex,
@@ -316,7 +325,6 @@ public final class VaultChunkCrypto {
             byte[] cipherBytes
     ) throws IOException {
         try {
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             byte[] iv = buildChunkIv(noncePrefix, chunkIndex);
             byte[] aad = buildChunkAad(streamKind, chunkIndex, finalChunk, chunkSize);
             cipher.init(Cipher.DECRYPT_MODE, keySpec, new GCMParameterSpec(GCM_TAG_BITS, iv));
@@ -467,6 +475,7 @@ public final class VaultChunkCrypto {
     }
 
     private static final class DecryptingChunkInputStream extends FilterInputStream {
+        private final Cipher cipher;
         private final SecretKeySpec keySpec;
         private final byte[] noncePrefix;
         private final int chunkSize;
@@ -488,6 +497,11 @@ public final class VaultChunkCrypto {
                 byte streamKind
         ) {
             super(in);
+            try {
+                this.cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            } catch (GeneralSecurityException exception) {
+                throw new IllegalStateException("Failed to initialize AES-GCM cipher", exception);
+            }
             this.keySpec = new SecretKeySpec(dek, "AES");
             this.noncePrefix = Arrays.copyOf(noncePrefix, noncePrefix.length);
             this.chunkSize = chunkSize;
@@ -534,7 +548,7 @@ public final class VaultChunkCrypto {
 
                 boolean isFinal = (chunkIndex == totalChunks - 1);
                 byte[] plainChunk = decryptSingleChunk(
-                        keySpec, noncePrefix, chunkIndex, isFinal, chunkSize, streamKind, cipherChunk
+                        cipher, keySpec, noncePrefix, chunkIndex, isFinal, chunkSize, streamKind, cipherChunk
                 );
                 if (plainChunk.length != expectedPlainLen) {
                     throw new IOException("Decrypted vault chunk size mismatch at chunk " + chunkIndex);

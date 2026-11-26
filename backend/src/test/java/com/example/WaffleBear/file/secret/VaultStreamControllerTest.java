@@ -245,6 +245,57 @@ class VaultStreamControllerTest {
     }
 
     @Test
+    void capsInlineOpenEndedRangeAtMaxInlineWindowWhileDownloadRemainsUncapped() throws Exception {
+        long tenMbPlainSize = 10L * 1024 * 1024;
+        FileInfo largeEncryptedVideo = FileInfo.builder()
+                .idx(18L)
+                .user(encryptedVideo.getUser())
+                .nodeType(FileNodeType.FILE)
+                .spaceType(FileSpaceType.VAULT)
+                .fileOriginName("large-clip.mp4")
+                .fileSaveName("vault-18.enc")
+                .fileSavePath("7/vault/vault-18.enc")
+                .fileFormat("mp4")
+                .fileSize(tenMbPlainSize)
+                .encryptionMode(FileEncryptionMode.SERVER_ENVELOPE_V1)
+                .encryptionKeyVersion(1)
+                .wrappedDek(encryptedVideo.getWrappedDek())
+                .encryptionNoncePrefix(encryptedVideo.getEncryptionNoncePrefix())
+                .encryptionChunkSize(TEST_CHUNK_SIZE)
+                .encryptedFileSize(tenMbPlainSize + 1024L)
+                .build();
+        when(fileUpDownloadRepository.findByIdxAndUser_Idx(18L, 7L))
+                .thenReturn(Optional.of(largeEncryptedVideo));
+
+        String st = secretTokenService.createVaultStreamToken(7L, 18L);
+
+        // Inline open-ended Range: bytes=0- caps at 4 MiB (0..4194303)
+        MvcResult inlineHead = mockMvc.perform(head("/file/secret/stream/{fileIdx}", 18L)
+                        .param("st", st)
+                        .header(HttpHeaders.RANGE, "bytes=0-"))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        mockMvc.perform(asyncDispatch(inlineHead))
+                .andExpect(status().isPartialContent())
+                .andExpect(header().string(HttpHeaders.CONTENT_RANGE, "bytes 0-4194303/" + tenMbPlainSize))
+                .andExpect(header().longValue(HttpHeaders.CONTENT_LENGTH, 4L * 1024 * 1024));
+
+        // Explicit download=1 keeps full remaining length
+        MvcResult downloadHead = mockMvc.perform(head("/file/secret/stream/{fileIdx}", 18L)
+                        .param("st", st)
+                        .param("download", "1")
+                        .header(HttpHeaders.RANGE, "bytes=0-"))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        mockMvc.perform(asyncDispatch(downloadHead))
+                .andExpect(status().isPartialContent())
+                .andExpect(header().string(HttpHeaders.CONTENT_RANGE, "bytes 0-" + (tenMbPlainSize - 1L) + "/" + tenMbPlainSize))
+                .andExpect(header().longValue(HttpHeaders.CONTENT_LENGTH, tenMbPlainSize));
+    }
+
+    @Test
     void supportsHeadDownloadAttachmentAndForcesOctetStreamForActiveWebFiles() throws Exception {
         String videoToken = secretTokenService.createVaultStreamToken(7L, 15L);
 

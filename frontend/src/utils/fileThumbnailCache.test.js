@@ -12,6 +12,8 @@ import {
   clearVaultThumbnails,
   getCachedFileThumbnailUrl,
   loadFileThumbnailUrl,
+  resumeThumbnailQueue,
+  suspendThumbnailQueue,
 } from "./fileThumbnailCache.js";
 
 describe("fileThumbnailCache", () => {
@@ -36,8 +38,8 @@ describe("fileThumbnailCache", () => {
     let normalQueued;
     let highQueued;
     try {
-      // Occupy all 6 concurrent thumbnail slots first
-      for (let id = 1; id <= 6; id += 1) {
+      // Occupy all 3 concurrent thumbnail slots first
+      for (let id = 1; id <= 3; id += 1) {
         activePromises.push(
           loadFileThumbnailUrl({ id, fileSavePath: `1/f-${id}.jpg`, spaceType: "DRIVE" }),
         );
@@ -56,7 +58,7 @@ describe("fileThumbnailCache", () => {
       // Flush microtask queue so acquired slots start mockFetchFileThumbnailBlob
       await Promise.resolve();
       await Promise.resolve();
-      expect(callOrder).toEqual([1, 2, 3, 4, 5, 6]);
+      expect(callOrder).toEqual([1, 2, 3]);
     } finally {
       // Drain all active + newly woken slots cleanly
       for (let round = 0; round < 5 && resolvers.length > 0; round += 1) {
@@ -109,5 +111,45 @@ describe("fileThumbnailCache", () => {
     expect(getCachedFileThumbnailUrl(normalFile)).toBe(normalUrl);
     expect(window.URL.revokeObjectURL).toHaveBeenCalledWith(vaultUrl);
     expect(window.URL.revokeObjectURL).not.toHaveBeenCalledWith(normalUrl);
+  });
+
+  it("pauses queued thumbnail fetches while suspended and retries 202 pending responses", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchCalls = [];
+      mockFetchFileThumbnailBlob
+        .mockImplementationOnce(async (fileId) => {
+          fetchCalls.push(fileId);
+          return { __pendingThumbnail: true };
+        })
+        .mockImplementationOnce(async (fileId) => {
+          fetchCalls.push(fileId);
+          return new Blob(["ready-thumb"], { type: "image/jpeg" });
+        });
+
+      suspendThumbnailQueue();
+      const pendingPromise = loadFileThumbnailUrl({
+        id: 405,
+        fileSavePath: "1/pending.mp4",
+        spaceType: "DRIVE",
+        updatedAt: "2026-11-26T10:00:00Z",
+      });
+
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(fetchCalls).toEqual([]);
+
+      resumeThumbnailQueue();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(fetchCalls).toEqual([405]);
+
+      await vi.advanceTimersByTimeAsync(2300);
+      const resolvedUrl = await pendingPromise;
+      expect(fetchCalls).toEqual([405, 405]);
+      expect(resolvedUrl).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

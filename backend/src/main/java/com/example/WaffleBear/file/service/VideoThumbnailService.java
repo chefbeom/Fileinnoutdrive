@@ -1,5 +1,6 @@
 package com.example.WaffleBear.file.service;
 
+import lombok.extern.slf4j.Slf4j;
 import org.jcodec.api.FrameGrab;
 import org.jcodec.api.JCodecException;
 import org.jcodec.common.io.NIOUtils;
@@ -15,7 +16,9 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -24,6 +27,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
+@Slf4j
 @Service
 public class VideoThumbnailService {
 
@@ -32,7 +36,7 @@ public class VideoThumbnailService {
     );
     private static final int MAX_THUMBNAIL_WIDTH = 480;
     private static final int MAX_THUMBNAIL_HEIGHT = 320;
-    private static final long FFMPEG_TIMEOUT_SECONDS = 15L;
+    private static final long FFMPEG_TIMEOUT_SECONDS = 12L;
     private static final ScheduledExecutorService FFMPEG_WATCHDOG = Executors.newSingleThreadScheduledExecutor(runnable -> {
         Thread thread = new Thread(runnable, "ffmpeg-video-watchdog");
         thread.setDaemon(true);
@@ -86,26 +90,45 @@ public class VideoThumbnailService {
     }
 
     private byte[] runFfmpegThumbnail(String inputSource, String seekTimestamp) {
-        List<String> command = List.of(
-                "ffmpeg",
-                "-hide_banner",
-                "-loglevel", "error",
-                "-nostdin",
-                "-ss", seekTimestamp,
-                "-i", inputSource,
-                "-frames:v", "1",
-                "-vf", "scale='min(" + MAX_THUMBNAIL_WIDTH + ",iw)':-2",
-                "-q:v", "4",
-                "-f", "image2pipe",
-                "-vcodec", "mjpeg",
-                "pipe:1"
-        );
+        boolean isHttpSource = inputSource.startsWith("http://") || inputSource.startsWith("https://");
+        List<String> command = new ArrayList<>();
+        command.add("ffmpeg");
+        command.add("-hide_banner");
+        command.add("-loglevel");
+        command.add("error");
+        command.add("-nostdin");
+        if (isHttpSource) {
+            command.add("-rw_timeout");
+            command.add("10000000");
+        }
+        command.add("-analyzeduration");
+        command.add("2000000");
+        command.add("-probesize");
+        command.add("2000000");
+        command.add("-noaccurate_seek");
+        command.add("-ss");
+        command.add(seekTimestamp);
+        command.add("-i");
+        command.add(inputSource);
+        command.add("-frames:v");
+        command.add("1");
+        command.add("-vf");
+        command.add("scale='min(" + MAX_THUMBNAIL_WIDTH + ",iw)':-2,format=yuvj420p");
+        command.add("-strict");
+        command.add("unofficial");
+        command.add("-q:v");
+        command.add("4");
+        command.add("-f");
+        command.add("image2pipe");
+        command.add("-vcodec");
+        command.add("mjpeg");
+        command.add("pipe:1");
 
         Process process = null;
         ScheduledFuture<?> killFuture = null;
         try {
             process = new ProcessBuilder(command)
-                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .redirectErrorStream(false)
                     .start();
             final Process startedProcess = process;
             killFuture = FFMPEG_WATCHDOG.schedule(
@@ -113,19 +136,43 @@ public class VideoThumbnailService {
                     FFMPEG_TIMEOUT_SECONDS,
                     TimeUnit.SECONDS
             );
+            ByteArrayOutputStream stderrBuffer = new ByteArrayOutputStream(512);
+            Thread stderrReader = new Thread(() -> {
+                try (InputStream errIn = startedProcess.getErrorStream()) {
+                    byte[] chunk = new byte[512];
+                    int read;
+                    while ((read = errIn.read(chunk)) != -1) {
+                        if (stderrBuffer.size() < 2048) {
+                            stderrBuffer.write(chunk, 0, Math.min(read, 2048 - stderrBuffer.size()));
+                        }
+                    }
+                } catch (IOException ignored) {
+                }
+            }, "ffmpeg-stderr-drain");
+            stderrReader.setDaemon(true);
+            stderrReader.start();
+
             try (InputStream stdout = startedProcess.getInputStream();
                  ByteArrayOutputStream buffer = new ByteArrayOutputStream()) {
                 stdout.transferTo(buffer);
                 boolean finished = startedProcess.waitFor(2, TimeUnit.SECONDS);
+                try {
+                    stderrReader.join(200);
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
                 if (!finished) {
                     startedProcess.destroyForcibly();
+                    log.debug("ffmpeg thumbnail timed out at seek={} err={}", seekTimestamp, stderrBuffer.toString(StandardCharsets.UTF_8));
                     return new byte[0];
                 }
                 if (startedProcess.exitValue() == 0 && buffer.size() > 0) {
                     return buffer.toByteArray();
                 }
+                log.debug("ffmpeg thumbnail failed exit={} seek={} err={}", startedProcess.exitValue(), seekTimestamp, stderrBuffer.toString(StandardCharsets.UTF_8));
             }
-        } catch (Exception ignored) {
+        } catch (Exception exception) {
+            log.debug("ffmpeg thumbnail execution error seek={}: {}", seekTimestamp, exception.getMessage());
             if (process != null) {
                 process.destroyForcibly();
             }

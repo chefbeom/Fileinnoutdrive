@@ -4,21 +4,75 @@ import {
 } from "@/api/filesApi.js";
 
 const MAX_CACHE_SIZE = 1000;
-const MAX_CONCURRENT_THUMBNAIL_REQUESTS = 6;
+const MAX_CONCURRENT_THUMBNAIL_REQUESTS = 3;
 const MISS_RETRY_COOLDOWN_MS = 15_000;
+const PENDING_THUMBNAIL_RETRY_DELAY_MS = 2_200;
+const MAX_PENDING_THUMBNAIL_RETRIES = 2;
 const thumbnailUrlCache = new Map();
 const thumbnailRequestCache = new Map();
 const thumbnailMissCache = new Map();
 let activeThumbnailRequests = 0;
+let thumbnailSuspendCount = 0;
 const highPriorityThumbnailQueue = [];
 const normalPriorityThumbnailQueue = [];
+
+const waitWithSignal = (delayMs, signal) => new Promise((resolve, reject) => {
+  if (signal?.aborted) {
+    reject(new DOMException("Aborted", "AbortError"));
+    return;
+  }
+
+  let timerId = null;
+  const onAbort = () => {
+    if (timerId !== null) {
+      clearTimeout(timerId);
+      timerId = null;
+    }
+    signal?.removeEventListener("abort", onAbort);
+    reject(new DOMException("Aborted", "AbortError"));
+  };
+
+  signal?.addEventListener("abort", onAbort, { once: true });
+  timerId = setTimeout(() => {
+    signal?.removeEventListener("abort", onAbort);
+    resolve();
+  }, delayMs);
+});
+
+const pumpThumbnailQueue = () => {
+  if (thumbnailSuspendCount > 0) {
+    return;
+  }
+
+  while (activeThumbnailRequests < MAX_CONCURRENT_THUMBNAIL_REQUESTS) {
+    const nextEntry = highPriorityThumbnailQueue.shift() || normalPriorityThumbnailQueue.shift();
+    if (!nextEntry) {
+      return;
+    }
+    activeThumbnailRequests += 1;
+    nextEntry.resolve();
+  }
+};
+
+export const suspendThumbnailQueue = () => {
+  thumbnailSuspendCount += 1;
+};
+
+export const resumeThumbnailQueue = () => {
+  if (thumbnailSuspendCount > 0) {
+    thumbnailSuspendCount -= 1;
+  }
+  if (thumbnailSuspendCount === 0) {
+    pumpThumbnailQueue();
+  }
+};
 
 const acquireThumbnailSlot = (signal, priority = "normal") => {
   if (signal?.aborted) {
     return Promise.reject(new DOMException("Aborted", "AbortError"));
   }
 
-  if (activeThumbnailRequests < MAX_CONCURRENT_THUMBNAIL_REQUESTS) {
+  if (thumbnailSuspendCount === 0 && activeThumbnailRequests < MAX_CONCURRENT_THUMBNAIL_REQUESTS) {
     activeThumbnailRequests += 1;
     return Promise.resolve();
   }
@@ -53,21 +107,8 @@ const acquireThumbnailSlot = (signal, priority = "normal") => {
 };
 
 const releaseThumbnailSlot = () => {
-  while (highPriorityThumbnailQueue.length > 0) {
-    const nextHigh = highPriorityThumbnailQueue.shift();
-    if (nextHigh) {
-      nextHigh.resolve();
-      return;
-    }
-  }
-  while (normalPriorityThumbnailQueue.length > 0) {
-    const nextNormal = normalPriorityThumbnailQueue.shift();
-    if (nextNormal) {
-      nextNormal.resolve();
-      return;
-    }
-  }
   activeThumbnailRequests = Math.max(0, activeThumbnailRequests - 1);
+  pumpThumbnailQueue();
 };
 
 const isAbortError = (error) => (
@@ -163,24 +204,51 @@ export const loadFileThumbnailUrl = async (file, options = {}) => {
   const request = (async () => {
     let slotAcquired = false;
     try {
-      await acquireThumbnailSlot(signal, priority);
-      slotAcquired = true;
+      const fetchOnce = async () => {
+        await acquireThumbnailSlot(signal, priority);
+        slotAcquired = true;
+        try {
+          const existingCachedUrl = thumbnailUrlCache.get(cacheKey);
+          if (existingCachedUrl) {
+            return existingCachedUrl;
+          }
 
-      const existingCachedUrl = thumbnailUrlCache.get(cacheKey);
-      if (existingCachedUrl) {
-        return existingCachedUrl;
+          return file?.sharedWithMe
+            ? await fetchSharedFileThumbnailBlob(file.id, normalizeVersion(file), { signal })
+            : await fetchFileThumbnailBlob(file.id, normalizeVersion(file), { signal });
+        } finally {
+          if (slotAcquired) {
+            slotAcquired = false;
+            releaseThumbnailSlot();
+          }
+        }
+      };
+
+      let thumbnailResult = await fetchOnce();
+      if (typeof thumbnailResult === "string") {
+        return thumbnailResult;
       }
 
-      const thumbnailBlob = file?.sharedWithMe
-        ? await fetchSharedFileThumbnailBlob(file.id, normalizeVersion(file), { signal })
-        : await fetchFileThumbnailBlob(file.id, normalizeVersion(file), { signal });
+      let pendingAttempt = 0;
+      while (thumbnailResult?.__pendingThumbnail && pendingAttempt < MAX_PENDING_THUMBNAIL_RETRIES) {
+        pendingAttempt += 1;
+        await waitWithSignal(PENDING_THUMBNAIL_RETRY_DELAY_MS, signal);
+        thumbnailResult = await fetchOnce();
+        if (typeof thumbnailResult === "string") {
+          return thumbnailResult;
+        }
+      }
 
-      if (!(thumbnailBlob instanceof Blob) || thumbnailBlob.size <= 0) {
+      if (thumbnailResult?.__pendingThumbnail) {
+        return "";
+      }
+
+      if (!(thumbnailResult instanceof Blob) || thumbnailResult.size <= 0) {
         thumbnailMissCache.set(cacheKey, Date.now() + MISS_RETRY_COOLDOWN_MS);
         return "";
       }
 
-      const objectUrl = window.URL.createObjectURL(thumbnailBlob);
+      const objectUrl = window.URL.createObjectURL(thumbnailResult);
       thumbnailMissCache.delete(cacheKey);
       setCachedThumbnailUrl(cacheKey, objectUrl);
       return objectUrl;
