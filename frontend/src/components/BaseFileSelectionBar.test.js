@@ -57,7 +57,11 @@ describe("BaseFileSelectionBar.vue", () => {
     await vaultMoveBtn.trigger("click");
     expect(wrapper.emitted("move-to-vault")).toBeTruthy();
 
-    await wrapper.setProps({ vaultMode: true });
+    await wrapper.setProps({ vaultMode: true, vaultExportableCount: 2 });
     expect(wrapper.findAll("button").find((b) => b.text().includes("자체 비밀구역으로 옮기기"))).toBeUndefined();
+    const exportBtn = wrapper.findAll("button").find((b) => b.text().includes("일반 저장소로 꺼내기 (복호화)"));
+    expect(exportBtn).toBeDefined();
+    await exportBtn.trigger("click");
+    expect(wrapper.emitted("move-from-vault")).toBeTruthy();
   });
 });

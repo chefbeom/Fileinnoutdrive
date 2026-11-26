@@ -218,6 +218,11 @@ export function buildSelectedBaseFileGroups(selectedFiles = [], options = {}) {
       vaultMode,
       deleteMode,
     }).canMoveToVault),
+    vaultExportableFiles: selectedFiles.filter((file) => getCollectionActionAvailability(file, {
+      sharedLibrary,
+      vaultMode,
+      deleteMode,
+    }).canMoveFromVault),
   };
 }
 

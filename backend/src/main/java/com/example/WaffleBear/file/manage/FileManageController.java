@@ -183,6 +183,22 @@ public class FileManageController {
         ));
     }
 
+    @PatchMapping("/{fileIdx}/move-from-vault")
+    @Operation(summary = "Export item from secret vault", description = "Decrypts and moves a single file or folder out of the personal secret vault back to normal drive.")
+    public ResponseEntity<FileCommonDto.FileActionRes> moveFromVault(
+            @AuthenticationPrincipal AuthUserDetails dto,
+            @PathVariable Long fileIdx,
+            @RequestBody(required = false) FileManageDto.MoveReq request
+    ) {
+        Long userIdx = dto != null ? dto.getIdx() : 0L;
+        return ResponseEntity.ok(fileManageService.moveFromVault(
+                userIdx,
+                fileIdx,
+                request != null ? request.getTargetParentId() : null,
+                request != null && Boolean.TRUE.equals(request.getRestoreOriginalParent())
+        ));
+    }
+
     @PatchMapping("/{fileIdx}/move")
     @Operation(summary = "Move item", description = "Moves a single file or folder to another parent folder.")
     public ResponseEntity<FileCommonDto.FileActionRes> moveToFolder(
@@ -228,6 +244,21 @@ public class FileManageController {
                 userIdx,
                 request != null ? request.getFileIdxList() : null,
                 request != null ? request.getTargetParentId() : null
+        ));
+    }
+
+    @PatchMapping("/move-from-vault")
+    @Operation(summary = "Export items from secret vault in batch", description = "Decrypts and moves multiple files or folders out of the personal secret vault back to normal drive.")
+    public ResponseEntity<FileCommonDto.FileActionRes> moveFilesFromVault(
+            @AuthenticationPrincipal AuthUserDetails dto,
+            @RequestBody FileManageDto.MoveBatchReq request
+    ) {
+        Long userIdx = dto != null ? dto.getIdx() : 0L;
+        return ResponseEntity.ok(fileManageService.moveFilesFromVault(
+                userIdx,
+                request != null ? request.getFileIdxList() : null,
+                request != null ? request.getTargetParentId() : null,
+                request != null && Boolean.TRUE.equals(request.getRestoreOriginalParent())
         ));
     }
 

@@ -8,6 +8,7 @@ defineProps({
   lockCandidateCount: { type: Number, default: 0 },
   lockedCount: { type: Number, default: 0 },
   vaultMovableCount: { type: Number, default: 0 },
+  vaultExportableCount: { type: Number, default: 0 },
   sharedLibrary: { type: Boolean, default: false },
   vaultMode: { type: Boolean, default: false },
   deleteMode: { type: String, default: "trash" },
@@ -21,6 +22,7 @@ const emit = defineEmits([
   "share",
   "lock",
   "move-to-vault",
+  "move-from-vault",
   "restore",
   "delete",
   "clear",
@@ -49,6 +51,7 @@ const emit = defineEmits([
         <button v-if="!sharedLibrary && deleteMode !== 'permanent' && canCreateLocks && lockCandidateCount > 0" type="button" class="batch-button bg-white text-amber-700 hover:bg-amber-100" @click="emit('lock', true)">선택 잠금</button>
         <button v-if="!sharedLibrary && deleteMode !== 'permanent' && lockedCount > 0" type="button" class="batch-button bg-white text-slate-700 hover:bg-slate-200" @click="emit('lock', false)">잠금 해제</button>
         <button v-if="!sharedLibrary && !vaultMode && deleteMode !== 'permanent' && vaultMovableCount > 0" type="button" class="batch-button bg-white text-indigo-700 hover:bg-indigo-100" @click="emit('move-to-vault')">자체 비밀구역으로 옮기기</button>
+        <button v-if="!sharedLibrary && vaultMode && deleteMode !== 'permanent' && vaultExportableCount > 0" type="button" class="batch-button bg-white text-emerald-700 hover:bg-emerald-100" @click="emit('move-from-vault')">일반 저장소로 꺼내기 (복호화)</button>
         <button v-if="!sharedLibrary && deleteMode === 'permanent'" type="button" class="batch-button bg-white text-emerald-700 hover:bg-emerald-100" @click="emit('restore')">원래 위치로 복구</button>
         <button v-if="!sharedLibrary" type="button" class="batch-button bg-white text-rose-600 hover:bg-rose-100" @click="emit('delete')">{{ deleteMode === 'permanent' ? '선택 영구 삭제' : '선택 삭제' }}</button>
         <button type="button" class="batch-button bg-transparent text-blue-700 hover:bg-blue-100" @click="emit('clear')">선택 해제</button>

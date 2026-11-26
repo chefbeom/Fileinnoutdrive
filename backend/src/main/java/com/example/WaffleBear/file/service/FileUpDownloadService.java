@@ -45,6 +45,29 @@ public interface FileUpDownloadService {
         throw new UnsupportedOperationException("Vault move is not supported.");
     }
 
+    default FileCommonDto.FileActionRes moveFromVault(
+            Long userIdx,
+            Long fileIdx,
+            Long targetParentId,
+            boolean restoreOriginalParent
+    ) {
+        return moveFilesFromVault(
+                userIdx,
+                fileIdx == null ? List.of() : List.of(fileIdx),
+                targetParentId,
+                restoreOriginalParent
+        );
+    }
+
+    default FileCommonDto.FileActionRes moveFilesFromVault(
+            Long userIdx,
+            List<Long> fileIdxList,
+            Long targetParentId,
+            boolean restoreOriginalParent
+    ) {
+        throw new UnsupportedOperationException("Vault export is not supported.");
+    }
+
     FileCommonDto.FileActionRes restoreFilesFromTrash(Long userIdx, List<Long> fileIdxList);
 
     FileInfoDto.StorageSummaryRes getStorageSummary(Long userIdx);

@@ -70,6 +70,24 @@ public class FileManageService {
         return fileUpDownloadService.moveFilesToVault(userIdx, fileIdxList, targetParentId);
     }
 
+    public FileCommonDto.FileActionRes moveFromVault(
+            Long userIdx,
+            Long fileIdx,
+            Long targetParentId,
+            boolean restoreOriginalParent
+    ) {
+        return fileUpDownloadService.moveFromVault(userIdx, fileIdx, targetParentId, restoreOriginalParent);
+    }
+
+    public FileCommonDto.FileActionRes moveFilesFromVault(
+            Long userIdx,
+            List<Long> fileIdxList,
+            Long targetParentId,
+            boolean restoreOriginalParent
+    ) {
+        return fileUpDownloadService.moveFilesFromVault(userIdx, fileIdxList, targetParentId, restoreOriginalParent);
+    }
+
     public FileCommonDto.FileActionRes restoreFilesFromTrash(Long userIdx, List<Long> fileIdxList) {
         return fileUpDownloadService.restoreFilesFromTrash(userIdx, fileIdxList);
     }

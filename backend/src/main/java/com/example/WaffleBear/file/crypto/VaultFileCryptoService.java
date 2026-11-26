@@ -4,6 +4,7 @@ import com.example.WaffleBear.common.exception.BaseException;
 import com.example.WaffleBear.common.model.BaseResponseStatus;
 import com.example.WaffleBear.config.MinioProperties;
 import com.example.WaffleBear.file.model.FileInfo;
+import com.example.WaffleBear.file.util.FileContentUtils;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
@@ -17,6 +18,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Locale;
 import java.util.UUID;
 
 /**
@@ -43,6 +45,66 @@ public class VaultFileCryptoService {
             long plaintextSize,
             long encryptedFileSize
     ) {
+    }
+
+    public record VaultDecryptionResult(
+            String plaintextObjectKey,
+            String plaintextSaveName,
+            long plaintextSize
+    ) {
+    }
+
+    public VaultDecryptionResult decryptToPlaintextObject(Long userIdx, FileInfo encryptedFile) {
+        if (userIdx == null || userIdx <= 0 || encryptedFile == null || !encryptedFile.isEncrypted()) {
+            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
+        String sourceKey = encryptedFile.getFileSavePath();
+        if (sourceKey == null || sourceKey.isBlank()) {
+            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
+
+        String safeExtension = resolveSafePlainExtension(encryptedFile);
+        String saveName = UUID.randomUUID() + "." + safeExtension;
+        String targetObjectKey = userIdx + "/" + saveName;
+        long plainSize = resolvePlaintextSize(encryptedFile);
+        String contentType = FileContentUtils.resolveSafeMediaContentType(
+                encryptedFile.getFileOriginName(),
+                safeExtension
+        );
+
+        try (InputStream plainIn = openDecryptedInputStream(encryptedFile)) {
+            minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(minioProperties.getBucket_cloud())
+                            .object(targetObjectKey)
+                            .stream(plainIn, plainSize, -1)
+                            .contentType(contentType)
+                            .build()
+            );
+            return new VaultDecryptionResult(targetObjectKey, saveName, plainSize);
+        } catch (Exception exception) {
+            deleteObjectQuietly(targetObjectKey);
+            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
+    }
+
+    private String resolveSafePlainExtension(FileInfo file) {
+        String raw = file.getFileFormat();
+        if ((raw == null || raw.isBlank()) && file.getFileOriginName() != null) {
+            String originName = file.getFileOriginName();
+            int dot = originName.lastIndexOf('.');
+            if (dot >= 0 && dot < originName.length() - 1) {
+                raw = originName.substring(dot + 1);
+            }
+        }
+        if (raw == null) {
+            return "bin";
+        }
+        String cleaned = raw.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+        if (cleaned.isEmpty()) {
+            return "bin";
+        }
+        return cleaned.length() > 16 ? cleaned.substring(0, 16) : cleaned;
     }
 
     public VaultEncryptionResult encryptPlaintextObject(

@@ -115,7 +115,15 @@ describe("fileCollectionViewModel", () => {
     expect(getCollectionActionAvailability({ type: "folder", isVaultSpace: true })).toMatchObject({
       canConfigureSecret: false,
       canShare: false,
+      canMoveFromVault: false,
     });
+    expect(getCollectionActionAvailability({ type: "folder", isVaultSpace: true }, { vaultMode: true })).toMatchObject({
+      canMoveToVault: false,
+      canMoveFromVault: true,
+    });
+    expect(getCollectionActionAvailability({ type: "file", isVaultSpace: true, lockedFile: true }, { vaultMode: true }).canMoveFromVault).toBe(false);
+    expect(getCollectionActionAvailability({ type: "file", isVaultSpace: true, isTrash: true }, { vaultMode: true }).canMoveFromVault).toBe(false);
+    expect(getCollectionActionAvailability({ type: "file", isVaultSpace: true }, { vaultMode: true, deleteMode: "permanent" }).canMoveFromVault).toBe(false);
     expect(getCollectionActionAvailability({ type: "folder", isTrash: true }).canDownload).toBe(false);
     expect(getCollectionActionAvailability({ type: "folder" }, { deleteMode: "permanent" }).canDownload).toBe(false);
     expect(getCollectionActionAvailability({ type: "folder", lockedFile: true }).canDownload).toBe(false);

@@ -25,6 +25,7 @@ public class FileCommonDto {
         private Long fileSize;
         private String nodeType;
         private Long parentId;
+        private Long vaultOriginParentId;
         private Boolean lockedFile;
         private Boolean sharedFile;
         private Boolean trashed;

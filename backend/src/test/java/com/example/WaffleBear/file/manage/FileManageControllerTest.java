@@ -92,6 +92,43 @@ class FileManageControllerTest {
                 .andExpect(jsonPath("$.action").value("move-to-vault"));
     }
 
+    @Test
+    void moveFromVaultSingleAndBatchEndpointsDelegateWithRestoreOriginalParentFlag() throws Exception {
+        when(fileManageService.moveFromVault(7L, 55L, null, true))
+                .thenReturn(FileCommonDto.FileActionRes.builder()
+                        .targetIdx(12L)
+                        .action("move-from-vault")
+                        .affectedCount(1)
+                        .build());
+
+        mockMvc.perform(patch("/file/{fileIdx}/move-from-vault", 55L)
+                        .requestAttr(AUTH_USER_ATTR, authenticatedUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"restoreOriginalParent\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.targetIdx").value(12))
+                .andExpect(jsonPath("$.action").value("move-from-vault"));
+
+        verify(fileManageService).moveFromVault(7L, 55L, null, true);
+
+        when(fileManageService.moveFilesFromVault(7L, List.of(55L, 56L), 30L, false))
+                .thenReturn(FileCommonDto.FileActionRes.builder()
+                        .targetIdx(30L)
+                        .action("move-from-vault")
+                        .affectedCount(2)
+                        .build());
+
+        mockMvc.perform(patch("/file/move-from-vault")
+                        .requestAttr(AUTH_USER_ATTR, authenticatedUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"fileIdxList\":[55,56],\"targetParentId\":30,\"restoreOriginalParent\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.targetIdx").value(30))
+                .andExpect(jsonPath("$.affectedCount").value(2));
+
+        verify(fileManageService).moveFilesFromVault(7L, List.of(55L, 56L), 30L, false);
+    }
+
     private HandlerMethodArgumentResolver authUserArgumentResolver() {
         return new HandlerMethodArgumentResolver() {
             @Override

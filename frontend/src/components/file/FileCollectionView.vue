@@ -86,6 +86,7 @@ const emit = defineEmits([
   "share-download-link",
   "toggle-lock",
   "move-to-vault",
+  "move-from-vault",
   "open-vault-import",
   "save-to-drive",
 ]);
@@ -419,6 +420,7 @@ const canRestore = (file) => getActionAvailability(file).canRestore;
 const canManageFolder = (file) => getActionAvailability(file).canManageFolder;
 const canConfigureSecret = (file) => getActionAvailability(file).canConfigureSecret;
 const canMoveToVault = (file) => getActionAvailability(file).canMoveToVault;
+const canMoveFromVault = (file) => getActionAvailability(file).canMoveFromVault;
 const canShare = (file) => getActionAvailability(file).canShare;
 const canShareDownloadLink = (file) => getActionAvailability(file).canShareDownloadLink;
 const canToggleLock = (file) => getActionAvailability(file).canToggleLock;
@@ -1068,6 +1070,13 @@ const handleContextMoveToVault = (target) => {
   }
 };
 
+const handleContextMoveFromVault = (target) => {
+  closeContextMenu();
+  if (target) {
+    emit("move-from-vault", target);
+  }
+};
+
 const handleContextOpenVaultImport = (targetFolderId = fileStore.currentFolderId ?? null, targetFolderName = "") => {
   closeContextMenu();
   emit("open-vault-import", {
@@ -1357,6 +1366,7 @@ provide(FILE_COLLECTION_CONTEXT_KEY, {
   canManageSentShare,
   canToggleLock,
   canMoveToVault,
+  canMoveFromVault,
   canManageFolder,
   canRestore,
   canDelete,
@@ -1564,6 +1574,16 @@ provide(FILE_COLLECTION_CONTEXT_KEY, {
           >
             <i class="fa-solid fa-shield-halved w-4 text-center text-indigo-500"></i>
             <span>자체 비밀구역으로 옮기기</span>
+          </button>
+
+          <button
+            v-if="canMoveFromVault(contextMenu.target)"
+            type="button"
+            class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-emerald-700 transition hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-slate-800"
+            @click="handleContextMoveFromVault(contextMenu.target)"
+          >
+            <i class="fa-solid fa-lock-open w-4 text-center text-emerald-500"></i>
+            <span>일반 저장소로 꺼내기 (복호화)</span>
           </button>
 
           <button
@@ -1840,6 +1860,16 @@ provide(FILE_COLLECTION_CONTEXT_KEY, {
           >
             <i class="fa-solid fa-shield-halved w-4 text-center text-indigo-500"></i>
             <span>자체 비밀구역으로 옮기기</span>
+          </button>
+
+          <button
+            v-if="canMoveFromVault(contextMenu.target)"
+            type="button"
+            class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-emerald-700 transition hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-slate-800"
+            @click="handleContextMoveFromVault(contextMenu.target)"
+          >
+            <i class="fa-solid fa-lock-open w-4 text-center text-emerald-500"></i>
+            <span>일반 저장소로 꺼내기 (복호화)</span>
           </button>
 
           <button

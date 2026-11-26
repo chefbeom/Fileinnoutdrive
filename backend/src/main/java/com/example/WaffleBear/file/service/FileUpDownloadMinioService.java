@@ -477,7 +477,7 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
 
     @Override
     public FileCommonDto.FileActionRes moveFilesToFolder(Long userIdx, List<Long> fileIdxList, Long targetParentId) {
-        return moveFilesToTargetSpace(userIdx, fileIdxList, targetParentId, null);
+        return moveFilesToTargetSpace(userIdx, fileIdxList, targetParentId, null, false);
     }
 
     @Override
@@ -487,12 +487,39 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
 
     @Override
     public FileCommonDto.FileActionRes moveFilesToVault(Long userIdx, List<Long> fileIdxList, Long targetParentId) {
-        return moveFilesToTargetSpace(userIdx, fileIdxList, targetParentId, FileSpaceType.VAULT);
+        return moveFilesToTargetSpace(userIdx, fileIdxList, targetParentId, FileSpaceType.VAULT, false);
+    }
+
+    @Override
+    public FileCommonDto.FileActionRes moveFromVault(
+            Long userIdx,
+            Long fileIdx,
+            Long targetParentId,
+            boolean restoreOriginalParent
+    ) {
+        return moveFilesFromVault(
+                userIdx,
+                fileIdx == null ? List.of() : List.of(fileIdx),
+                targetParentId,
+                restoreOriginalParent
+        );
+    }
+
+    @Override
+    public FileCommonDto.FileActionRes moveFilesFromVault(
+            Long userIdx,
+            List<Long> fileIdxList,
+            Long targetParentId,
+            boolean restoreOriginalParent
+    ) {
+        return moveFilesToTargetSpace(userIdx, fileIdxList, targetParentId, FileSpaceType.DRIVE, restoreOriginalParent);
     }
 
     private record MoveSubtreePlan(
             FileInfo source,
             boolean movingIntoVault,
+            boolean movingOutOfVault,
+            FileInfo resolvedTargetParent,
             List<FileInfo> activeSubtreeNodes,
             List<FileInfo> trashedDescendants
     ) {
@@ -504,21 +531,34 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
             Long targetParentId,
             FileSpaceType requestedTargetSpace
     ) {
+        return moveFilesToTargetSpace(userIdx, fileIdxList, targetParentId, requestedTargetSpace, false);
+    }
+
+    private FileCommonDto.FileActionRes moveFilesToTargetSpace(
+            Long userIdx,
+            List<Long> fileIdxList,
+            Long targetParentId,
+            FileSpaceType requestedTargetSpace,
+            boolean restoreOriginalParent
+    ) {
         if (fileIdxList == null || fileIdxList.isEmpty()) {
             throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
         }
 
         boolean vaultAccessChecked = false;
-        if (requestedTargetSpace == FileSpaceType.VAULT) {
+        if (requestedTargetSpace == FileSpaceType.VAULT || requestedTargetSpace == FileSpaceType.DRIVE) {
             requireVaultUnlocked(userIdx);
             vaultAccessChecked = true;
         }
+
+        boolean restoreOriginMode = requestedTargetSpace == FileSpaceType.DRIVE && restoreOriginalParent;
+        Long effectiveTargetParentId = restoreOriginMode ? null : targetParentId;
 
         List<FileInfo> userFiles = fileUpDownloadRepository.findAllByUser_Idx(userIdx);
         Map<Long, FileInfo> fileById = userFiles.stream()
                 .filter(file -> file.getIdx() != null)
                 .collect(HashMap::new, (map, file) -> map.put(file.getIdx(), file), HashMap::putAll);
-        FileInfo targetParent = resolveParentFolder(userIdx, targetParentId);
+        FileInfo targetParent = resolveParentFolder(userIdx, effectiveTargetParentId);
         if (targetParent != null) {
             assertSecretNodeAccess(userIdx, targetParent, true);
             if (requestedTargetSpace != null && targetParent.resolveSpaceType() != requestedTargetSpace) {
@@ -563,10 +603,13 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                 || (targetParent != null && SecretTreeRules.hasHiddenAncestor(targetParent));
         boolean explicitVaultDestination = requestedTargetSpace == FileSpaceType.VAULT
                 || (targetParent != null && targetParent.isVaultSpace());
+        boolean explicitDriveDestination = requestedTargetSpace == FileSpaceType.DRIVE;
 
         List<MoveSubtreePlan> movePlans = new ArrayList<>();
         List<FileInfo> filesToEncrypt = new ArrayList<>();
         Set<Long> queuedEncryptionIds = new HashSet<>();
+        List<FileInfo> filesToDecrypt = new ArrayList<>();
+        Set<Long> queuedDecryptionIds = new HashSet<>();
 
         for (FileInfo source : topLevelSources) {
             if (source.isTrashed()) {
@@ -577,7 +620,10 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
             boolean movingIntoVault = explicitVaultDestination
                     && targetSpace == FileSpaceType.VAULT
                     && source.resolveSpaceType() == FileSpaceType.DRIVE;
-            if (source.resolveSpaceType() != targetSpace && !movingIntoVault) {
+            boolean movingOutOfVault = explicitDriveDestination
+                    && targetSpace == FileSpaceType.DRIVE
+                    && source.resolveSpaceType() == FileSpaceType.VAULT;
+            if (source.resolveSpaceType() != targetSpace && !movingIntoVault && !movingOutOfVault) {
                 throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
             }
 
@@ -585,15 +631,18 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                     ? FileTreeRules.collectTargetTree(source, userFiles)
                     : List.of(source);
 
-            if (targetParent != null) {
-                boolean movingIntoOwnTree = subtree.stream()
-                        .map(FileInfo::getIdx)
-                        .anyMatch(idx -> idx != null && idx.equals(targetParent.getIdx()));
+            Set<Long> subtreeIds = subtree.stream()
+                    .map(FileInfo::getIdx)
+                    .filter(Objects::nonNull)
+                    .collect(HashSet::new, HashSet::add, HashSet::addAll);
 
-                if (movingIntoOwnTree) {
-                    throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
-                }
+            if (targetParent != null && subtreeIds.contains(targetParent.getIdx())) {
+                throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
             }
+
+            FileInfo resolvedSourceTargetParent = (movingOutOfVault && restoreOriginMode)
+                    ? resolveVaultOriginDriveParent(userIdx, source, fileById, subtreeIds)
+                    : targetParent;
 
             List<FileInfo> activeSubtreeNodes = new ArrayList<>();
             List<FileInfo> trashedDescendants = new ArrayList<>();
@@ -628,10 +677,32 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                 }
             }
 
-            movePlans.add(new MoveSubtreePlan(source, movingIntoVault, activeSubtreeNodes, trashedDescendants));
+            if (movingOutOfVault) {
+                for (FileInfo activeNode : activeSubtreeNodes) {
+                    if (FileTreeRules.resolveNodeType(activeNode) == FileNodeType.FILE
+                            && activeNode.isEncrypted()
+                            && activeNode.getFileSavePath() != null
+                            && !activeNode.getFileSavePath().isBlank()
+                            && (activeNode.getIdx() == null || queuedDecryptionIds.add(activeNode.getIdx()))) {
+                        if (vaultFileCryptoService == null) {
+                            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+                        }
+                        filesToDecrypt.add(activeNode);
+                    }
+                }
+            }
+
+            movePlans.add(new MoveSubtreePlan(
+                    source,
+                    movingIntoVault,
+                    movingOutOfVault,
+                    resolvedSourceTargetParent,
+                    activeSubtreeNodes,
+                    trashedDescendants
+            ));
         }
 
-        // Encrypt files outside DB transaction so large streams never hold DB locks.
+        // Encrypt or decrypt files outside DB transaction so large streams never hold DB locks.
         Map<FileInfo, VaultFileCryptoService.VaultEncryptionResult> encryptionResults = new java.util.IdentityHashMap<>();
         try {
             for (FileInfo fileNode : filesToEncrypt) {
@@ -650,14 +721,37 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
             throw exception;
         }
 
+        Map<FileInfo, VaultFileCryptoService.VaultDecryptionResult> decryptionResults = new java.util.IdentityHashMap<>();
+        try {
+            for (FileInfo fileNode : filesToDecrypt) {
+                VaultFileCryptoService.VaultDecryptionResult dec = vaultFileCryptoService.decryptToPlaintextObject(
+                        userIdx,
+                        fileNode
+                );
+                decryptionResults.put(fileNode, dec);
+            }
+        } catch (RuntimeException exception) {
+            if (vaultFileCryptoService != null) {
+                encryptionResults.values().forEach(enc -> vaultFileCryptoService.deleteObjectQuietly(enc.encryptedObjectKey()));
+                decryptionResults.values().forEach(dec -> vaultFileCryptoService.deleteObjectQuietly(dec.plaintextObjectKey()));
+            }
+            throw exception;
+        }
+
         try {
             transactionTemplate.execute(status -> {
                 List<FileInfo> nodesToSave = new ArrayList<>();
                 Set<Long> queuedNodeIds = new HashSet<>();
-                List<String> oldPlaintextKeys = new ArrayList<>();
+                List<String> oldStorageKeysToDelete = new ArrayList<>();
 
                 for (MoveSubtreePlan plan : movePlans) {
-                    plan.source().changeParent(targetParent);
+                    if (plan.movingIntoVault()) {
+                        Long originParentId = plan.source().getParent() != null
+                                ? plan.source().getParent().getIdx()
+                                : null;
+                        plan.source().rememberVaultOriginParent(originParentId);
+                    }
+                    plan.source().changeParent(plan.resolvedTargetParent());
                     queueNodeForSave(nodesToSave, queuedNodeIds, plan.source());
 
                     if (plan.movingIntoVault()) {
@@ -670,8 +764,8 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                             if (enc != null) {
                                 String oldKey = activeNode.getFileSavePath();
                                 if (oldKey != null && !oldKey.isBlank()) {
-                                    oldPlaintextKeys.add(oldKey);
-                                    oldPlaintextKeys.add(FileContentUtils.buildThumbnailObjectKey(oldKey));
+                                    oldStorageKeysToDelete.add(oldKey);
+                                    oldStorageKeysToDelete.add(FileContentUtils.buildThumbnailObjectKey(oldKey));
                                 }
                                 activeNode.updateStorageObject(enc.encryptedSaveName(), enc.encryptedObjectKey());
                                 activeNode.applyServerEnvelopeEncryption(
@@ -691,18 +785,42 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                                 queueNodeForSave(nodesToSave, queuedNodeIds, trashedDescendant);
                             }
                         }
+                    } else if (plan.movingOutOfVault()) {
+                        for (FileInfo activeNode : plan.activeSubtreeNodes()) {
+                            activeNode.changeSpaceType(FileSpaceType.DRIVE);
+                            activeNode.clearVaultOriginParent();
+                            VaultFileCryptoService.VaultDecryptionResult dec = decryptionResults.get(activeNode);
+                            if (dec != null) {
+                                String oldEncryptedKey = activeNode.getFileSavePath();
+                                if (oldEncryptedKey != null && !oldEncryptedKey.isBlank()) {
+                                    oldStorageKeysToDelete.add(oldEncryptedKey);
+                                    oldStorageKeysToDelete.add(FileContentUtils.buildEncryptedThumbnailObjectKey(oldEncryptedKey));
+                                }
+                                activeNode.updateStorageObject(dec.plaintextSaveName(), dec.plaintextObjectKey());
+                                activeNode.clearEncryptionMetadata();
+                            }
+                            queueNodeForSave(nodesToSave, queuedNodeIds, activeNode);
+                        }
+                        for (FileInfo trashedDescendant : plan.trashedDescendants()) {
+                            FileInfo descendantParent = trashedDescendant.getParent();
+                            if (descendantParent != null && !descendantParent.isTrashed()) {
+                                trashedDescendant.changeParent(null);
+                                queueNodeForSave(nodesToSave, queuedNodeIds, trashedDescendant);
+                            }
+                        }
                     }
                 }
 
                 fileUpDownloadRepository.saveAll(nodesToSave);
-                if (!oldPlaintextKeys.isEmpty()) {
-                    FileObjectCleanupScheduler.deleteAfterCommit(fileObjectDeletionService, oldPlaintextKeys);
+                if (!oldStorageKeysToDelete.isEmpty()) {
+                    FileObjectCleanupScheduler.deleteAfterCommit(fileObjectDeletionService, oldStorageKeysToDelete);
                 }
                 return null;
             });
         } catch (RuntimeException exception) {
             if (vaultFileCryptoService != null) {
                 encryptionResults.values().forEach(enc -> vaultFileCryptoService.deleteObjectQuietly(enc.encryptedObjectKey()));
+                decryptionResults.values().forEach(dec -> vaultFileCryptoService.deleteObjectQuietly(dec.plaintextObjectKey()));
             }
             throw exception;
         }
@@ -715,11 +833,42 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
             }
         }
 
+        String actionName = requestedTargetSpace == FileSpaceType.VAULT
+                ? "move-to-vault"
+                : (requestedTargetSpace == FileSpaceType.DRIVE ? "move-from-vault" : "move");
+        Long responseTargetIdx = movePlans.size() == 1 && movePlans.get(0).resolvedTargetParent() != null
+                ? movePlans.get(0).resolvedTargetParent().getIdx()
+                : effectiveTargetParentId;
         return FileCommonDto.FileActionRes.builder()
-                .targetIdx(targetParentId)
-                .action(requestedTargetSpace == FileSpaceType.VAULT ? "move-to-vault" : "move")
+                .targetIdx(responseTargetIdx)
+                .action(actionName)
                 .affectedCount(topLevelSources.size())
                 .build();
+    }
+
+    private FileInfo resolveVaultOriginDriveParent(
+            Long userIdx,
+            FileInfo source,
+            Map<Long, FileInfo> fileById,
+            Set<Long> ownSubtreeIds
+    ) {
+        if (source == null || source.getVaultOriginParentId() == null) {
+            return null;
+        }
+        FileInfo candidate = fileById.get(source.getVaultOriginParentId());
+        if (candidate == null
+                || candidate.isTrashed()
+                || candidate.resolveSpaceType() != FileSpaceType.DRIVE
+                || FileTreeRules.resolveNodeType(candidate) != FileNodeType.FOLDER
+                || (ownSubtreeIds != null && ownSubtreeIds.contains(candidate.getIdx()))) {
+            return null;
+        }
+        try {
+            assertSecretNodeAccess(userIdx, candidate, true);
+            return candidate;
+        } catch (RuntimeException ignored) {
+            return null;
+        }
     }
 
     private void ensureNoSharedNodesInSubtree(List<FileInfo> nodes) {
@@ -1785,6 +1934,7 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                 .fileSize(entity.getFileSize())
                 .nodeType(nodeType.name())
                 .parentId(entity.getParent() != null ? entity.getParent().getIdx() : null)
+                .vaultOriginParentId(entity.getVaultOriginParentId())
                 .lockedFile(entity.isLockedFile())
                 .sharedFile(entity.isSharedFile())
                 .trashed(entity.isTrashed())

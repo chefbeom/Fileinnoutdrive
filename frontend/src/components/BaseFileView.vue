@@ -11,6 +11,7 @@ import BaseFolderRenameDialog from "./BaseFolderRenameDialog.vue";
 import FilePreviewModal from "@/components/FilePreviewModal.vue";
 import FileCollectionView from "@/components/file/FileCollectionView.vue";
 import VaultImportModal from "@/components/file/VaultImportModal.vue";
+import VaultExportModal from "@/components/file/VaultExportModal.vue";
 import { downloadFileAsset } from "@/api/filesApi.js";
 import {
   extractDropItems,
@@ -300,6 +301,7 @@ const selectedLockableFiles = computed(() => selectedFileGroups.value.lockableFi
 const selectedLockCandidates = computed(() => selectedFileGroups.value.lockCandidates);
 const selectedLockedFiles = computed(() => selectedFileGroups.value.lockedFiles);
 const selectedVaultMovableFiles = computed(() => selectedFileGroups.value.vaultMovableFiles);
+const selectedVaultExportableFiles = computed(() => selectedFileGroups.value.vaultExportableFiles);
 const {
   shareTargets,
   shareInfo,
@@ -872,6 +874,50 @@ const handleBatchMoveToVault = () => {
   return moveItemsToVault(selectedVaultMovableFiles.value);
 };
 
+const vaultExportModal = ref({
+  open: false,
+  items: [],
+});
+
+const openVaultExportModal = (targets = []) => {
+  const validTargets = (Array.isArray(targets) ? targets : [targets]).filter((item) => item?.id != null);
+  if (!validTargets.length || !isVaultMode.value || props.sharedLibrary || effectiveDeleteMode.value === "permanent") {
+    return;
+  }
+  vaultExportModal.value = {
+    open: true,
+    items: validTargets,
+  };
+};
+
+const closeVaultExportModal = () => {
+  vaultExportModal.value = {
+    open: false,
+    items: [],
+  };
+};
+
+const handleVaultExported = ({ affectedCount = 0, restoreOriginalParent = true } = {}) => {
+  const exportedIdSet = new Set((vaultExportModal.value.items || []).map((item) => String(item.id)));
+  selectedIds.value = selectedIds.value.filter((id) => !exportedIdSet.has(String(id)));
+  closeVaultExportModal();
+  window.alert(
+    restoreOriginalParent
+      ? `${affectedCount}개 항목을 복호화해 원래 폴더(또는 홈)로 돌려보냈습니다.`
+      : `${affectedCount}개 항목을 복호화해 선택한 일반 저장소 폴더로 꺼냈습니다.`,
+  );
+};
+
+const handleMoveFromVault = (target) => openVaultExportModal([target]);
+
+const handleBatchMoveFromVault = () => {
+  if (!selectedVaultExportableFiles.value.length) {
+    window.alert("일반 저장소로 꺼낼 수 있는 항목이 선택되지 않았습니다.");
+    return;
+  }
+  return openVaultExportModal(selectedVaultExportableFiles.value);
+};
+
 const openRenameFolder = (folder) => {
   if (!folder || folder.type !== "folder") return;
   renameTarget.value = folder;
@@ -1343,6 +1389,7 @@ onBeforeUnmount(() => {
       :lock-candidate-count="selectedLockCandidates.length"
       :locked-count="selectedLockedFiles.length"
       :vault-movable-count="selectedVaultMovableFiles.length"
+      :vault-exportable-count="selectedVaultExportableFiles.length"
       :shared-library="sharedLibrary"
       :vault-mode="isVaultMode"
       :delete-mode="effectiveDeleteMode"
@@ -1353,6 +1400,7 @@ onBeforeUnmount(() => {
       @share="openShareDialog()"
       @lock="handleBatchLock"
       @move-to-vault="handleBatchMoveToVault"
+      @move-from-vault="handleBatchMoveFromVault"
       @restore="handleRestoreSelected"
       @delete="handleDeleteSelected"
       @clear="clearSelection"
@@ -1378,6 +1426,7 @@ onBeforeUnmount(() => {
         @share-download-link="openDownloadLinkDialog"
         @toggle-lock="handleToggleLock"
         @move-to-vault="handleMoveToVault"
+        @move-from-vault="handleMoveFromVault"
         @open-vault-import="openVaultImportModal"
         @save-to-drive="handleSaveSharedToDrive"
       />
@@ -1726,6 +1775,12 @@ onBeforeUnmount(() => {
       :target-folder-name="vaultImportModal.targetFolderName"
       @close="closeVaultImportModal"
       @imported="handleVaultImported"
+    />
+    <VaultExportModal
+      :open="vaultExportModal.open"
+      :items="vaultExportModal.items"
+      @close="closeVaultExportModal"
+      @exported="handleVaultExported"
     />
   </div>
 </template>

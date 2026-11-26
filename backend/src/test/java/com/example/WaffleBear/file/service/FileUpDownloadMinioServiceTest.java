@@ -3,8 +3,10 @@ package com.example.WaffleBear.file.service;
 import com.example.WaffleBear.common.exception.BaseException;
 import com.example.WaffleBear.common.model.BaseResponseStatus;
 import com.example.WaffleBear.file.FileUpDownloadRepository;
+import com.example.WaffleBear.file.crypto.VaultFileCryptoService;
 import com.example.WaffleBear.file.dto.FileCommonDto;
 import com.example.WaffleBear.file.info.dto.FileInfoDto;
+import com.example.WaffleBear.file.model.FileEncryptionMode;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.manage.dto.FileManageDto;
 import com.example.WaffleBear.file.model.FileNodeType;
@@ -105,6 +107,7 @@ class FileUpDownloadMinioServiceTest {
     @AfterEach
     void clearTransactionSynchronization() {
         ReflectionTestUtils.setField(fileService, "secretAccessGuard", null);
+        ReflectionTestUtils.setField(fileService, "vaultFileCryptoService", null);
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.clearSynchronization();
         }
@@ -890,6 +893,144 @@ class FileUpDownloadMinioServiceTest {
         }
 
         assertThat(entryNames).containsExactly("docs/", "docs/file-101.txt");
+    }
+
+    @Test
+    void moveFilesToVaultRecordsOriginParentIdAndEncrypts() {
+        SecretAccessGuard guard = mock(SecretAccessGuard.class);
+        VaultFileCryptoService crypto = mock(VaultFileCryptoService.class);
+        ReflectionTestUtils.setField(fileService, "secretAccessGuard", guard);
+        ReflectionTestUtils.setField(fileService, "vaultFileCryptoService", crypto);
+
+        User owner = User.builder().idx(7L).build();
+        FileInfo driveParent = folder(5L, owner, null, FileSpaceType.DRIVE);
+        FileInfo driveSubfolder = folder(10L, owner, driveParent, FileSpaceType.DRIVE);
+        FileInfo driveChildFile = fileWithParent(11L, owner, driveSubfolder, FileSpaceType.DRIVE, false, false);
+
+        when(fileUpDownloadRepository.findAllByUser_Idx(7L)).thenReturn(List.of(driveParent, driveSubfolder, driveChildFile));
+        when(crypto.encryptPlaintextObject(7L, "7/saved-11.txt", 128L))
+                .thenReturn(new VaultFileCryptoService.VaultEncryptionResult(
+                        "7/vault/enc-11.enc",
+                        "enc-11.enc",
+                        1,
+                        "wrapped-dek",
+                        "nonce",
+                        1048576,
+                        128L,
+                        156L
+                ));
+
+        FileCommonDto.FileActionRes res = fileService.moveToVault(7L, 10L, null);
+
+        assertThat(res.getAction()).isEqualTo("move-to-vault");
+        assertThat(driveSubfolder.isVaultSpace()).isTrue();
+        assertThat(driveSubfolder.getParent()).isNull();
+        assertThat(driveSubfolder.getVaultOriginParentId()).isEqualTo(5L);
+        assertThat(driveChildFile.isVaultSpace()).isTrue();
+        assertThat(driveChildFile.isEncrypted()).isTrue();
+        assertThat(driveChildFile.getFileSavePath()).isEqualTo("7/vault/enc-11.enc");
+        verify(fileObjectDeletionService).deleteObjects(List.of("7/saved-11.txt", "7/thumbnails/saved-11.jpg"));
+    }
+
+    @Test
+    void moveFilesFromVaultRestoresOriginParentDecryptsAndCleansUpEncryptedObjects() {
+        SecretAccessGuard guard = mock(SecretAccessGuard.class);
+        VaultFileCryptoService crypto = mock(VaultFileCryptoService.class);
+        ReflectionTestUtils.setField(fileService, "secretAccessGuard", guard);
+        ReflectionTestUtils.setField(fileService, "vaultFileCryptoService", crypto);
+
+        User owner = User.builder().idx(7L).build();
+        FileInfo originDriveFolder = folder(5L, owner, null, FileSpaceType.DRIVE);
+        FileInfo vaultFolder = folder(20L, owner, null, FileSpaceType.VAULT);
+        vaultFolder.rememberVaultOriginParent(5L);
+
+        FileInfo encryptedFile = FileInfo.builder()
+                .idx(21L)
+                .user(owner)
+                .parent(vaultFolder)
+                .nodeType(FileNodeType.FILE)
+                .spaceType(FileSpaceType.VAULT)
+                .encryptionMode(FileEncryptionMode.SERVER_ENVELOPE_V1)
+                .encryptionKeyVersion(1)
+                .wrappedDek("wrapped")
+                .encryptionNoncePrefix("nonce")
+                .encryptionChunkSize(1048576)
+                .fileOriginName("secret.mp4")
+                .fileFormat("mp4")
+                .fileSaveName("enc-21.enc")
+                .fileSavePath("7/vault/enc-21.enc")
+                .fileSize(2048L)
+                .encryptedFileSize(2076L)
+                .trashed(false)
+                .build();
+
+        when(fileUpDownloadRepository.findAllByUser_Idx(7L))
+                .thenReturn(List.of(originDriveFolder, vaultFolder, encryptedFile));
+        when(crypto.decryptToPlaintextObject(7L, encryptedFile))
+                .thenReturn(new VaultFileCryptoService.VaultDecryptionResult(
+                        "7/plain-21.mp4",
+                        "plain-21.mp4",
+                        2048L
+                ));
+
+        FileCommonDto.FileActionRes res = fileService.moveFilesFromVault(7L, List.of(20L), null, true);
+
+        verify(guard).requireVaultUnlocked(7L);
+        assertThat(res.getAction()).isEqualTo("move-from-vault");
+        assertThat(res.getTargetIdx()).isEqualTo(5L);
+        assertThat(res.getAffectedCount()).isEqualTo(1);
+        assertThat(vaultFolder.resolveSpaceType()).isEqualTo(FileSpaceType.DRIVE);
+        assertThat(vaultFolder.getParent()).isSameAs(originDriveFolder);
+        assertThat(vaultFolder.getVaultOriginParentId()).isNull();
+        assertThat(encryptedFile.resolveSpaceType()).isEqualTo(FileSpaceType.DRIVE);
+        assertThat(encryptedFile.isEncrypted()).isFalse();
+        assertThat(encryptedFile.getFileSavePath()).isEqualTo("7/plain-21.mp4");
+        assertThat(encryptedFile.getFileSaveName()).isEqualTo("plain-21.mp4");
+        verify(fileObjectDeletionService).deleteObjects(List.of("7/vault/enc-21.enc", "7/vault/thumbnails/enc-21.vthumb"));
+    }
+
+    @Test
+    void moveFilesFromVaultFallsBackToRootWhenOriginDeletedAndSupportsExplicitDriveTarget() {
+        SecretAccessGuard guard = mock(SecretAccessGuard.class);
+        VaultFileCryptoService crypto = mock(VaultFileCryptoService.class);
+        ReflectionTestUtils.setField(fileService, "secretAccessGuard", guard);
+        ReflectionTestUtils.setField(fileService, "vaultFileCryptoService", crypto);
+
+        User owner = User.builder().idx(7L).build();
+        FileInfo trashedOrigin = folder(5L, owner, null, FileSpaceType.DRIVE);
+        trashedOrigin.markTrashed(LocalDateTime.now());
+        FileInfo explicitDriveFolder = folder(30L, owner, null, FileSpaceType.DRIVE);
+        FileInfo vaultFile = FileInfo.builder()
+                .idx(25L)
+                .user(owner)
+                .nodeType(FileNodeType.FILE)
+                .spaceType(FileSpaceType.VAULT)
+                .vaultOriginParentId(5L)
+                .encryptionMode(FileEncryptionMode.SERVER_ENVELOPE_V1)
+                .wrappedDek("dek")
+                .encryptionNoncePrefix("nonce")
+                .fileOriginName("doc.pdf")
+                .fileFormat("pdf")
+                .fileSaveName("enc-25.enc")
+                .fileSavePath("7/vault/enc-25.enc")
+                .fileSize(512L)
+                .trashed(false)
+                .build();
+
+        when(fileUpDownloadRepository.findAllByUser_Idx(7L))
+                .thenReturn(List.of(trashedOrigin, explicitDriveFolder, vaultFile));
+        when(crypto.decryptToPlaintextObject(7L, vaultFile))
+                .thenReturn(new VaultFileCryptoService.VaultDecryptionResult("7/plain-25.pdf", "plain-25.pdf", 512L));
+
+        FileCommonDto.FileActionRes fallbackRes = fileService.moveFilesFromVault(7L, List.of(25L), null, true);
+        assertThat(fallbackRes.getTargetIdx()).isNull();
+        assertThat(vaultFile.getParent()).isNull();
+        assertThat(vaultFile.isEncrypted()).isFalse();
+
+        // Cross-space plain moveFilesToFolder must still reject VAULT -> DRIVE
+        vaultFile.changeSpaceType(FileSpaceType.VAULT);
+        assertThatThrownBy(() -> fileService.moveFilesToFolder(7L, List.of(25L), 30L))
+                .isInstanceOf(BaseException.class);
     }
 
     private void runTransactionTemplateCallbacksWithActiveTransaction() {

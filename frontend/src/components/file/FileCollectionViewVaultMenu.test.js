@@ -147,6 +147,14 @@ describe("FileCollectionView move-to-vault context menu", () => {
       .find((btn) => btn.textContent?.includes("자체 비밀구역으로 옮기기"));
     expect(moveMenuBtn).toBeUndefined();
 
+    const exportMenuBtn = Array.from(document.body.querySelectorAll("button"))
+      .find((btn) => btn.textContent?.includes("일반 저장소로 꺼내기 (복호화)"));
+    expect(exportMenuBtn).toBeTruthy();
+    exportMenuBtn.click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("move-from-vault")).toEqual([[vaultFolder]]);
+
+    await card.trigger("contextmenu", { clientX: 45, clientY: 55 });
     const importIntoFolderBtn = Array.from(document.body.querySelectorAll("button"))
       .find((btn) => btn.textContent?.includes("이 폴더로 파일 · 폴더 가져오기"));
     expect(importIntoFolderBtn).toBeTruthy();

@@ -305,18 +305,55 @@ export async function moveFilesToFolder(fileIdList, targetParentId) {
   return extractObjectResult(response?.data);
 }
 
-export async function moveFileToVault(fileId, targetParentId = null) {
-  const response = await api.patch(`/file/${fileId}/move-to-vault`, {
-    targetParentId,
-  });
+export async function moveFileToVault(fileId, targetParentId = null, options = {}) {
+  const response = await api.patch(
+    `/file/${fileId}/move-to-vault`,
+    { targetParentId },
+    { timeout: options?.timeout ?? 300000 },
+  );
   return extractObjectResult(response?.data);
 }
 
-export async function moveFilesToVault(fileIdList, targetParentId = null) {
-  const response = await api.patch("/file/move-to-vault", {
-    fileIdxList: fileIdList,
-    targetParentId,
-  });
+export async function moveFilesToVault(fileIdList, targetParentId = null, options = {}) {
+  const response = await api.patch(
+    "/file/move-to-vault",
+    {
+      fileIdxList: fileIdList,
+      targetParentId,
+    },
+    { timeout: options?.timeout ?? 300000 },
+  );
+  return extractObjectResult(response?.data);
+}
+
+export async function moveFileFromVault(
+  fileId,
+  { targetParentId = null, restoreOriginalParent = false, timeout = 300000 } = {},
+) {
+  const response = await api.patch(
+    `/file/${fileId}/move-from-vault`,
+    {
+      targetParentId,
+      restoreOriginalParent: Boolean(restoreOriginalParent),
+    },
+    { timeout },
+  );
+  return extractObjectResult(response?.data);
+}
+
+export async function moveFilesFromVault(
+  fileIdList,
+  { targetParentId = null, restoreOriginalParent = false, timeout = 300000 } = {},
+) {
+  const response = await api.patch(
+    "/file/move-from-vault",
+    {
+      fileIdxList: fileIdList,
+      targetParentId,
+      restoreOriginalParent: Boolean(restoreOriginalParent),
+    },
+    { timeout },
+  );
   return extractObjectResult(response?.data);
 }
 

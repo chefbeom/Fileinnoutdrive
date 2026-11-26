@@ -57,6 +57,7 @@ public class FileInfo {
     private Boolean hiddenFolder;
     private Boolean folderPinEnabled;
     private String folderPinHash;
+    private Long vaultOriginParentId;
 
     @Column(nullable = false)
     private String fileOriginName;
@@ -234,5 +235,13 @@ public class FileInfo {
     public void updateStorageObject(String fileSaveName, String fileSavePath) {
         this.fileSaveName = fileSaveName;
         this.fileSavePath = fileSavePath;
+    }
+
+    public void rememberVaultOriginParent(Long originParentId) {
+        this.vaultOriginParentId = originParentId;
+    }
+
+    public void clearVaultOriginParent() {
+        this.vaultOriginParentId = null;
     }
 }

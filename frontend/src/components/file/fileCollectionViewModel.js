@@ -243,6 +243,7 @@ export function getCollectionActionAvailability(file, options = {}) {
     canManageFolder: !sharedLibrary && deleteMode !== "permanent" && isFolder && !isTrash,
     canConfigureSecret: !sharedLibrary && deleteMode !== "permanent" && isFolder && !isTrash && !sharedWithMe && !isCollectionSharedFolder(file) && !isVaultSpace,
     canMoveToVault: !sharedLibrary && !vaultMode && deleteMode !== "permanent" && !sharedWithMe && !isTrash && !locked && !isVaultSpace && !isSharedOut,
+    canMoveFromVault: !sharedLibrary && vaultMode && deleteMode !== "permanent" && !sharedWithMe && !isTrash && !locked && isVaultSpace,
     canShare: !sharedLibrary && !sharedWithMe && !isTrash && !locked && !isSecretNode && (canCreateShares || file?.sharedFile),
     canShareDownloadLink: !sharedLibrary && !sharedWithMe && !isFolder && !isTrash && !locked && !isSecretNode && !vaultMode && !hiddenContext,
     canToggleLock: !sharedLibrary && !sharedWithMe && !isFolder && !isTrash && (canCreateLocks || file?.lockedFile),

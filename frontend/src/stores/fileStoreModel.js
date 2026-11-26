@@ -196,6 +196,7 @@ export const normalizeFileRecord = (rawFile, options = {}) => {
     pinEnabled: Boolean(rawFile?.pinEnabled),
     pinRegistered: Boolean(rawFile?.pinRegistered),
     parentId: rawFile?.parentId ?? null,
+    vaultOriginParentId: rawFile?.vaultOriginParentId ?? null,
     deletedAt: rawFile?.deletedAt || null,
     downloadUrl,
     presignedDownloadUrl: rawFile?.presignedDownloadUrl || "",

@@ -22,9 +22,10 @@ import {
   fetchTextPreview as fetchTextPreviewApi,
   moveFileToFolder as moveFileToFolderApi,
   moveFileToVault as moveFileToVaultApi,
+  moveFilesToVault as moveFilesToVaultApi,
+  moveFilesFromVault as moveFilesFromVaultApi,
   moveFileToTrash as moveFileToTrashApi,
   moveFilesToFolder as moveFilesToFolderApi,
-  moveFilesToVault as moveFilesToVaultApi,
   renameFolder as renameFolderApi,
   restoreFileFromTrash as restoreFileFromTrashApi,
   restoreFilesFromTrash as restoreFilesFromTrashApi,
@@ -1299,6 +1300,63 @@ export const useFileStore = defineStore("file", () => {
     return result;
   };
 
+  const moveFilesFromVault = async (
+    fileIds,
+    { targetParentId = null, restoreOriginalParent = false, onProgress = null } = {},
+  ) => {
+    const normalizedIds = normalizeIdList(fileIds);
+    if (!normalizedIds.length) {
+      return { affectedCount: 0, targetIdx: targetParentId ?? null };
+    }
+
+    let affectedCount = 0;
+    let lastResult = null;
+    const succeededIds = [];
+
+    try {
+      for (let index = 0; index < normalizedIds.length; index += 1) {
+        const currentId = normalizedIds[index];
+        onProgress?.({
+          completed: index,
+          total: normalizedIds.length,
+          currentId,
+        });
+        const result = await moveFilesFromVaultApi([currentId], {
+          targetParentId: restoreOriginalParent ? null : targetParentId,
+          restoreOriginalParent: Boolean(restoreOriginalParent),
+        });
+        lastResult = result;
+        succeededIds.push(currentId);
+        affectedCount += Number(result?.affectedCount ?? 1);
+        onProgress?.({
+          completed: index + 1,
+          total: normalizedIds.length,
+          currentId,
+        });
+      }
+    } catch (error) {
+      if (succeededIds.length > 0) {
+        pruneMovedAccessedHistory(succeededIds);
+        await refreshAll().catch(() => {});
+        if (vaultHasLoaded.value) {
+          await fetchVaultFiles({ force: true }).catch(() => {});
+        }
+      }
+      throw error;
+    }
+
+    pruneMovedAccessedHistory(succeededIds);
+    await refreshAll();
+    if (vaultHasLoaded.value) {
+      await fetchVaultFiles({ force: true }).catch(() => {});
+    }
+
+    return {
+      affectedCount,
+      targetIdx: lastResult?.targetIdx ?? (restoreOriginalParent ? null : targetParentId),
+    };
+  };
+
   const renameFolder = async (folderId, folderName) => {
     await renameFolderApi(folderId, folderName.trim());
     await refreshAll();
@@ -1483,6 +1541,7 @@ export const useFileStore = defineStore("file", () => {
     moveFilesToFolder,
     moveFileToVault,
     moveFilesToVault,
+    moveFilesFromVault,
     renameFolder,
     setFilesLocked,
     shareFiles,

@@ -44,6 +44,7 @@ public class FileManageDto {
         private Long targetParentId;
         private String targetSpaceType;
         private Boolean vaultMode;
+        private Boolean restoreOriginalParent;
     }
 
     @Getter
@@ -56,6 +57,7 @@ public class FileManageDto {
         private Long targetParentId;
         private String targetSpaceType;
         private Boolean vaultMode;
+        private Boolean restoreOriginalParent;
     }
 
     @Getter
