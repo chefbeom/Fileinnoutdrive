@@ -52,6 +52,8 @@ const mockMediaPhotoStore = reactive({
     },
   ],
   favoritePhotos: [],
+  favoritePhotoAlbums: [],
+  totalPhotoFavoritesCount: 0,
   resolvedPhotoAlbums: [],
   allDriveFolders: [],
   excludedPhotos: [],
@@ -60,6 +62,7 @@ const mockMediaPhotoStore = reactive({
   excludePhotoFiles: vi.fn(),
   removePhotoFiles: vi.fn(),
   togglePhotoFavorite: vi.fn(),
+  toggleAlbumFavorite: vi.fn(),
   updatePreferences: vi.fn(),
 });
 
@@ -143,5 +146,42 @@ describe("PhotosView.vue", () => {
     await nextTick();
     await wrapper.get("[data-testid='photos-batch-exclude-btn']").trigger("click");
     expect(mockMediaPhotoStore.excludePhotoFiles).toHaveBeenCalledWith(["201"]);
+  });
+
+  it("renders photos favorites & album shortcut shelf and toggles album favorite star", async () => {
+    const album = {
+      id: "alb-1",
+      name: "여행모음",
+      description: "",
+      photoCount: 1,
+      photos: [mockMediaPhotoStore.allPhotos[0]],
+      isFavorite: true,
+    };
+    mockRoute.query = {};
+    mockMediaPhotoStore.resolvedPhotoAlbums = [album];
+    mockMediaPhotoStore.favoritePhotoAlbums = [album];
+    mockMediaPhotoStore.favoritePhotos = [mockMediaPhotoStore.allPhotos[0]];
+    mockMediaPhotoStore.totalPhotoFavoritesCount = 2;
+    mockMediaPhotoStore.toggleAlbumFavorite.mockClear();
+
+    const wrapper = mount(PhotosView, {
+      global: {
+        stubs: {
+          Teleport: true,
+          BaseFileShareDialog: true,
+          DownloadShareLinkDialog: true,
+        },
+      },
+    });
+    await nextTick();
+
+    const shelf = wrapper.get("[data-testid='photos-favorites-shelf']");
+    expect(shelf.text()).toContain("즐겨찾기 · 앨범 바로가기");
+    expect(shelf.text()).toContain("여행모음");
+
+    mockRoute.query = { tab: "albums" };
+    await nextTick();
+    await wrapper.get("[data-testid='album-favorite-btn']").trigger("click");
+    expect(mockMediaPhotoStore.toggleAlbumFavorite).toHaveBeenCalledWith("alb-1");
   });
 });

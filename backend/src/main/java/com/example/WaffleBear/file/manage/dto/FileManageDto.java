@@ -74,6 +74,16 @@ public class FileManageDto {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    public static class FavoriteBatchReq {
+        private List<Long> fileIdxList;
+        private Boolean favorite;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
     public static class ListPageReq {
         private Long parentId;
         private Integer page;

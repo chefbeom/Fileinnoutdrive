@@ -203,4 +203,35 @@ describe("FileCollectionView move-to-vault context menu", () => {
 
     wrapper.unmount();
   });
+
+  it("toggles favorite from grid star button and context menu", async () => {
+    const folder = { id: 50, name: "프로젝트", type: "folder", favorite: false };
+    const file = { id: 51, name: "note.md", type: "file", favorite: true, downloadUrl: "/d" };
+
+    const wrapper = mount(FileCollectionView, {
+      attachTo: document.body,
+      props: {
+        files: [folder, file],
+        selectedIds: [],
+        deleteMode: "trash",
+        sharedLibrary: false,
+      },
+    });
+
+    const starButtons = wrapper.findAll("[data-testid='grid-favorite-btn']");
+    expect(starButtons.length).toBe(2);
+    await starButtons[0].trigger("click");
+    expect(wrapper.emitted("toggle-favorite")).toEqual([[folder]]);
+
+    const cards = wrapper.findAll("article.file-entry");
+    await cards[1].trigger("contextmenu", { clientX: 40, clientY: 50 });
+    const ctxBtn = document.body.querySelector("[data-testid='ctx-favorite-file-btn']");
+    expect(ctxBtn?.textContent).toContain("즐겨찾기 해제");
+    ctxBtn.click();
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.emitted("toggle-favorite")).toEqual([[folder], [file]]);
+
+    wrapper.unmount();
+  });
 });

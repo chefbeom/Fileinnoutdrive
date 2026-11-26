@@ -1033,6 +1033,44 @@ class FileUpDownloadMinioServiceTest {
                 .isInstanceOf(BaseException.class);
     }
 
+    @Test
+    void setFavoriteFilesTogglesStateEnforcesTrashAndVaultAndMapsMetadata() {
+        SecretAccessGuard guard = mock(SecretAccessGuard.class);
+        ReflectionTestUtils.setField(fileService, "secretAccessGuard", guard);
+
+        User owner = User.builder().idx(7L).build();
+        FileInfo driveFolder = folder(40L, owner, null, FileSpaceType.DRIVE);
+        FileInfo vaultFile = fileWithParent(41L, owner, null, FileSpaceType.VAULT, false, false);
+        FileInfo trashed = trashedFile(42L, 7L, "7/trashed.txt", "txt");
+
+        when(fileUpDownloadRepository.findByIdxAndUser_Idx(40L, 7L)).thenReturn(Optional.of(driveFolder));
+        when(fileUpDownloadRepository.findByIdxAndUser_Idx(41L, 7L)).thenReturn(Optional.of(vaultFile));
+        when(fileUpDownloadRepository.findByIdxAndUser_Idx(42L, 7L)).thenReturn(Optional.of(trashed));
+
+        FileCommonDto.FileActionRes favoriteRes = fileService.setFavoriteFiles(7L, List.of(40L, 41L), true);
+        assertThat(favoriteRes.getAction()).isEqualTo("favorite");
+        assertThat(favoriteRes.getAffectedCount()).isEqualTo(2);
+        assertThat(driveFolder.isFavorite()).isTrue();
+        assertThat(vaultFile.isFavorite()).isTrue();
+        verify(guard).requireVaultUnlocked(7L);
+        verify(fileUpDownloadRepository).saveAll(List.of(driveFolder, vaultFile));
+
+        when(fileUpDownloadRepository.findAllByUser_IdxOrderByLastModifyDateDescUploadDateDesc(7L))
+                .thenReturn(List.of(driveFolder));
+        when(fileListItemUrlService.attachUrls(any(FileCommonDto.FileListItemRes.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        List<FileCommonDto.FileListItemRes> list = fileService.fileList(7L);
+        assertThat(list).hasSize(1);
+        assertThat(list.get(0).getFavorite()).isTrue();
+
+        FileCommonDto.FileActionRes unfavoriteRes = fileService.setFavoriteFiles(7L, List.of(40L), false);
+        assertThat(unfavoriteRes.getAction()).isEqualTo("unfavorite");
+        assertThat(driveFolder.isFavorite()).isFalse();
+
+        assertThatThrownBy(() -> fileService.setFavoriteFiles(7L, List.of(42L), true))
+                .isInstanceOf(BaseException.class);
+    }
+
     private void runTransactionTemplateCallbacksWithActiveTransaction() {
         doAnswer(invocation -> {
             TransactionCallback<?> callback = invocation.getArgument(0);

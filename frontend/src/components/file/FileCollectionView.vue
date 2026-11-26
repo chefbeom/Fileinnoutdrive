@@ -85,6 +85,7 @@ const emit = defineEmits([
   "share-file",
   "share-download-link",
   "toggle-lock",
+  "toggle-favorite",
   "move-to-vault",
   "move-from-vault",
   "open-vault-import",
@@ -424,6 +425,7 @@ const canMoveFromVault = (file) => getActionAvailability(file).canMoveFromVault;
 const canShare = (file) => getActionAvailability(file).canShare;
 const canShareDownloadLink = (file) => getActionAvailability(file).canShareDownloadLink;
 const canToggleLock = (file) => getActionAvailability(file).canToggleLock;
+const canToggleFavorite = (file) => getActionAvailability(file).canToggleFavorite;
 const canSaveShared = (file) => getActionAvailability(file).canSaveShared;
 const canManageSentShare = (file) => getActionAvailability(file).canManageSentShare;
 const isMovable = (file) => getActionAvailability(file).isMovable;
@@ -593,7 +595,12 @@ const handlePrimaryAction = (file) => {
 
   if (file.type === "folder") {
     if (props.deleteMode !== "permanent" && !props.sharedLibrary) {
-      fileStore.enterFolder(file.id);
+      if (router?.currentRoute?.value?.name === "favoriteFile") {
+        fileStore.navigateToFolder(file.id);
+        router.push({ name: "home" });
+      } else {
+        fileStore.enterFolder(file.id);
+      }
     }
     return;
   }
@@ -1141,6 +1148,21 @@ const handleContextToggleLock = (target, event) => {
   }
 };
 
+const onClickToggleFavorite = (file, event) => {
+  event?.stopPropagation?.();
+  if (!canToggleFavorite(file)) {
+    return;
+  }
+  emit("toggle-favorite", file);
+};
+
+const handleContextToggleFavorite = (target, event) => {
+  closeContextMenu();
+  if (target) {
+    onClickToggleFavorite(target, event || { stopPropagation() {} });
+  }
+};
+
 const handleContextSaveShared = (target, event) => {
   closeContextMenu();
   if (target) {
@@ -1365,6 +1387,7 @@ provide(FILE_COLLECTION_CONTEXT_KEY, {
   canShareDownloadLink,
   canManageSentShare,
   canToggleLock,
+  canToggleFavorite,
   canMoveToVault,
   canMoveFromVault,
   canManageFolder,
@@ -1382,6 +1405,7 @@ provide(FILE_COLLECTION_CONTEXT_KEY, {
   onClickShareDownloadLink,
   onClickManageSentShare,
   onClickToggleLock,
+  onClickToggleFavorite,
   onClickRenameFolder,
   onClickShowFolderProperties,
   onClickRestore,
@@ -1574,6 +1598,20 @@ provide(FILE_COLLECTION_CONTEXT_KEY, {
           >
             <i class="fa-solid fa-shield-halved w-4 text-center text-indigo-500"></i>
             <span>자체 비밀구역으로 옮기기</span>
+          </button>
+
+          <button
+            v-if="canToggleFavorite(contextMenu.target)"
+            type="button"
+            data-testid="ctx-favorite-folder-btn"
+            class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-gray-700 transition hover:bg-amber-50 hover:text-amber-600 dark:text-slate-200 dark:hover:bg-slate-800"
+            @click="handleContextToggleFavorite(contextMenu.target, $event)"
+          >
+            <i
+              :class="contextMenu.target.favorite ? 'fa-solid fa-star text-amber-500' : 'fa-regular fa-star text-amber-500'"
+              class="w-4 text-center"
+            ></i>
+            <span>{{ contextMenu.target.favorite ? "즐겨찾기 해제" : "즐겨찾기 추가" }}</span>
           </button>
 
           <button
@@ -1860,6 +1898,20 @@ provide(FILE_COLLECTION_CONTEXT_KEY, {
           >
             <i class="fa-solid fa-shield-halved w-4 text-center text-indigo-500"></i>
             <span>자체 비밀구역으로 옮기기</span>
+          </button>
+
+          <button
+            v-if="canToggleFavorite(contextMenu.target)"
+            type="button"
+            data-testid="ctx-favorite-file-btn"
+            class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-bold text-gray-700 transition hover:bg-amber-50 hover:text-amber-600 dark:text-slate-200 dark:hover:bg-slate-800"
+            @click="handleContextToggleFavorite(contextMenu.target, $event)"
+          >
+            <i
+              :class="contextMenu.target.favorite ? 'fa-solid fa-star text-amber-500' : 'fa-regular fa-star text-amber-500'"
+              class="w-4 text-center"
+            ></i>
+            <span>{{ contextMenu.target.favorite ? "즐겨찾기 해제" : "즐겨찾기 추가" }}</span>
           </button>
 
           <button

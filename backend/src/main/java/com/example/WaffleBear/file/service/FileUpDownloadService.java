@@ -76,6 +76,10 @@ public interface FileUpDownloadService {
 
     FileCommonDto.FileActionRes setLockedFiles(Long userIdx, List<Long> fileIdxList, boolean locked);
 
+    default FileCommonDto.FileActionRes setFavoriteFiles(Long userIdx, List<Long> fileIdxList, boolean favorite) {
+        throw new UnsupportedOperationException("Favorite toggle is not supported.");
+    }
+
     FileCommonDto.FileDownloadPayload downloadFile(Long userIdx, Long fileIdx);
 
     String getDownloadUrl(Long userIdx, Long fileIdx);

@@ -300,6 +300,8 @@ const selectedCancelableSentSharedFiles = computed(() => selectedFileGroups.valu
 const selectedLockableFiles = computed(() => selectedFileGroups.value.lockableFiles);
 const selectedLockCandidates = computed(() => selectedFileGroups.value.lockCandidates);
 const selectedLockedFiles = computed(() => selectedFileGroups.value.lockedFiles);
+const selectedFavoriteCandidates = computed(() => selectedFileGroups.value.favoriteCandidates);
+const selectedFavoritedFiles = computed(() => selectedFileGroups.value.favoritedFiles);
 const selectedVaultMovableFiles = computed(() => selectedFileGroups.value.vaultMovableFiles);
 const selectedVaultExportableFiles = computed(() => selectedFileGroups.value.vaultExportableFiles);
 const {
@@ -772,6 +774,34 @@ const handleToggleLock = async (file) => {
     await fileStore.setFilesLocked([file.id], !file.lockedFile);
   } catch (error) {
     window.alert(error?.response?.data?.message || error?.message || "\uD30C\uC77C \uC7A0\uAE08 \uC0C1\uD0DC\uB97C \uBCC0\uACBD\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
+  }
+};
+
+const handleToggleFavorite = async (file) => {
+  if (!file?.id) {
+    return;
+  }
+  try {
+    await fileStore.setFilesFavorite([file.id], !file.favorite);
+  } catch (error) {
+    window.alert(error?.response?.data?.message || error?.message || "즐겨찾기 상태를 변경하지 못했습니다.");
+  }
+};
+
+const handleBatchFavorite = async (favorite) => {
+  const targetFiles = favorite ? selectedFavoriteCandidates.value : selectedFavoritedFiles.value;
+  if (!targetFiles.length) {
+    window.alert("즐겨찾기 상태를 변경할 수 있는 항목이 선택되지 않았습니다.");
+    return;
+  }
+  try {
+    await fileStore.setFilesFavorite(
+      targetFiles.map((file) => file.id),
+      Boolean(favorite),
+    );
+    clearSelection();
+  } catch (error) {
+    window.alert(error?.response?.data?.message || error?.message || "즐겨찾기 상태를 변경하지 못했습니다.");
   }
 };
 
@@ -1388,6 +1418,8 @@ onBeforeUnmount(() => {
       :owned-shareable-count="selectedOwnedShareableFiles.length"
       :lock-candidate-count="selectedLockCandidates.length"
       :locked-count="selectedLockedFiles.length"
+      :favorite-candidate-count="selectedFavoriteCandidates.length"
+      :favorited-count="selectedFavoritedFiles.length"
       :vault-movable-count="selectedVaultMovableFiles.length"
       :vault-exportable-count="selectedVaultExportableFiles.length"
       :shared-library="sharedLibrary"
@@ -1399,6 +1431,7 @@ onBeforeUnmount(() => {
       @cancel-sent-shares="handleBatchCancelSentShares"
       @share="openShareDialog()"
       @lock="handleBatchLock"
+      @favorite="handleBatchFavorite"
       @move-to-vault="handleBatchMoveToVault"
       @move-from-vault="handleBatchMoveFromVault"
       @restore="handleRestoreSelected"
@@ -1425,6 +1458,7 @@ onBeforeUnmount(() => {
         @share-file="openShareDialog"
         @share-download-link="openDownloadLinkDialog"
         @toggle-lock="handleToggleLock"
+        @toggle-favorite="handleToggleFavorite"
         @move-to-vault="handleMoveToVault"
         @move-from-vault="handleMoveFromVault"
         @open-vault-import="openVaultImportModal"

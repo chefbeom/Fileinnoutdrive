@@ -372,6 +372,14 @@ export async function setLockedFiles(fileIdList, locked) {
   return extractObjectResult(response?.data);
 }
 
+export async function setFavoriteFiles(fileIdList, favorite) {
+  const response = await api.patch("/file/favorite", {
+    fileIdxList: fileIdList,
+    favorite: Boolean(favorite),
+  });
+  return extractObjectResult(response?.data);
+}
+
 export async function shareFilesWithUser(fileIdList, recipientEmail, permission = "READ", options = {}) {
   const downloadLimit = Number(options?.downloadLimit || 0);
   const response = await api.post("/file/share", {

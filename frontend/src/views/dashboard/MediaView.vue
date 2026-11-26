@@ -413,6 +413,15 @@ const filteredContinueWatching = computed(() => filterMediaPool(mediaPhotoStore.
 const filteredRecentlyWatched = computed(() => filterMediaPool(mediaPhotoStore.recentlyWatchedVideos));
 const filteredRecentlyAdded = computed(() => filterMediaPool(mediaPhotoStore.recentlyAddedVideos));
 const filteredFavorites = computed(() => sortMediaPool(filterMediaPool(mediaPhotoStore.favoriteMediaItems)));
+const filteredFavoriteSeries = computed(() =>
+  (filteredSeriesList.value || []).filter((series) => Boolean(series?.isFavorite)),
+);
+const favoriteSeriesShelfItems = computed(() =>
+  (mediaPhotoStore.favoriteMediaSeries || []).filter((series) =>
+    activeAreaFolderId.value === "all" || String(series?.areaFolderId || "") === activeAreaFolderId.value,
+  ).slice(0, 4),
+);
+const favoriteVideoShelfItems = computed(() => filteredFavorites.value.slice(0, 4));
 const collections = computed(() => mediaPhotoStore.resolvedMediaCollections);
 
 const activeAreaFolderId = computed(() => {
@@ -1367,7 +1376,7 @@ onBeforeUnmount(() => {
       :displayed-video-count="mediaPhotoStore.allVideos.length"
       :continue-count="mediaPhotoStore.continueWatchingVideos.length"
       :collection-count="collections.length"
-      :favorite-count="mediaPhotoStore.favoriteMediaItems.length"
+      :favorite-count="mediaPhotoStore.totalMediaFavoritesCount"
       :active-section="activeSection"
       :selected-collection-id="selectedCollectionId"
       :in-series-detail="Boolean(selectedSeries)"
@@ -1647,6 +1656,110 @@ onBeforeUnmount(() => {
               <span>{{ video.folderPathLabel }}</span>
             </div>
           </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- [A2] Favorites Quick Shelf (Shown on 'series' overview when user has favorite series or videos) -->
+    <section
+      v-if="activeSection === 'series' && !selectedSeriesId && !selectedCollectionId && !effectiveSearchQuery && (favoriteSeriesShelfItems.length > 0 || favoriteVideoShelfItems.length > 0)"
+      data-testid="media-favorites-shelf"
+      class="space-y-3 rounded-3xl border border-amber-400/30 bg-amber-500/5 p-4"
+    >
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-star text-amber-500"></i>
+          <h2 class="text-base font-black text-[var(--text-main)]">즐겨찾기</h2>
+          <span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-extrabold text-amber-600 dark:text-amber-400">
+            {{ mediaPhotoStore.totalMediaFavoritesCount }}
+          </span>
+        </div>
+        <button
+          type="button"
+          class="text-xs font-bold text-blue-500 hover:underline"
+          @click="setSection('favorites')"
+        >
+          전체 보기 →
+        </button>
+      </div>
+
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <article
+          v-for="series in favoriteSeriesShelfItems"
+          :key="'fav-shelf-series-' + series.id"
+          class="group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-elevated)] p-2.5 shadow-sm transition hover:border-amber-400"
+        >
+          <div
+            v-if="showThumbnails"
+            :ref="(el) => observeThumbnailEl(el, series.coverEpisode)"
+            class="relative h-16 w-24 shrink-0 cursor-pointer overflow-hidden rounded-xl bg-slate-900"
+            @click="openSeriesDetail(series)"
+          >
+            <img
+              v-if="series.coverEpisode && thumbnailMap[String(series.coverEpisode.id)]"
+              :src="thumbnailMap[String(series.coverEpisode.id)]"
+              :alt="series.title"
+              class="h-full w-full object-cover"
+            />
+            <div v-else class="flex h-full w-full items-center justify-center text-slate-400">
+              <i class="fa-solid fa-tv"></i>
+            </div>
+          </div>
+          <div class="min-w-0 flex-1 cursor-pointer" @click="openSeriesDetail(series)">
+            <span class="inline-block rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-600 dark:text-amber-400">
+              시리즈 · {{ series.episodeCount }}화
+            </span>
+            <h3 class="mt-1 truncate text-xs font-black text-[var(--text-main)] group-hover:text-amber-500">
+              {{ series.title }}
+            </h3>
+          </div>
+          <button
+            type="button"
+            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs text-amber-400 hover:bg-amber-500/15"
+            title="시리즈 즐겨찾기 해제"
+            @click.stop="mediaPhotoStore.toggleSeriesFavorite(series.id)"
+          >
+            <i class="fa-solid fa-star"></i>
+          </button>
+        </article>
+
+        <article
+          v-for="item in favoriteVideoShelfItems"
+          :key="'fav-shelf-video-' + item.id"
+          class="group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-elevated)] p-2.5 shadow-sm transition hover:border-amber-400"
+        >
+          <div
+            v-if="showThumbnails"
+            :ref="(el) => observeThumbnailEl(el, item)"
+            class="relative h-16 w-24 shrink-0 cursor-pointer overflow-hidden rounded-xl bg-slate-900"
+            @click="handlePlayItem(item, filteredFavorites)"
+          >
+            <img
+              v-if="thumbnailMap[String(item.id)]"
+              :src="thumbnailMap[String(item.id)]"
+              :alt="item.name"
+              class="h-full w-full object-cover"
+            />
+            <div v-else class="flex h-full w-full items-center justify-center text-slate-400">
+              <i class="fa-solid fa-film"></i>
+            </div>
+          </div>
+          <div class="min-w-0 flex-1 cursor-pointer" @click="handlePlayItem(item, filteredFavorites)">
+            <span class="inline-block rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-extrabold text-blue-500">
+              {{ item.durationLabel || "동영상" }}
+            </span>
+            <h3 class="mt-1 truncate text-xs font-black text-[var(--text-main)] group-hover:text-blue-500">
+              {{ item.displayTitle || item.name }}
+            </h3>
+          </div>
+          <button
+            type="button"
+            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs text-amber-400 hover:bg-amber-500/15"
+            title="동영상 즐겨찾기 해제"
+            @click.stop="mediaPhotoStore.toggleMediaFavorite(item.id)"
+          >
+            <i class="fa-solid fa-star"></i>
+          </button>
         </article>
       </div>
     </section>
@@ -1975,7 +2088,7 @@ onBeforeUnmount(() => {
               </span>
             </div>
 
-            <!-- Top-right Season + Special Count Badges -->
+            <!-- Top-right Season + Special Count Badges + Favorite Star -->
             <div class="absolute right-3 top-3 flex items-center gap-1.5">
               <span class="rounded-lg bg-black/75 px-2 py-0.5 text-[10px] font-extrabold text-white backdrop-blur-sm">
                 시즌 {{ series.seasonCount || 1 }}개
@@ -1986,6 +2099,16 @@ onBeforeUnmount(() => {
               >
                 특별편·극장판 {{ series.specialCount }}
               </span>
+              <button
+                type="button"
+                data-testid="series-favorite-btn"
+                class="flex h-7 w-7 items-center justify-center rounded-full bg-black/65 text-xs transition hover:bg-black/85"
+                :class="series.isFavorite ? 'text-amber-400' : 'text-white/80 hover:text-white'"
+                :title="series.isFavorite ? '시리즈 즐겨찾기 해제' : '시리즈 즐겨찾기 추가'"
+                @click.stop="mediaPhotoStore.toggleSeriesFavorite(series.id)"
+              >
+                <i :class="series.isFavorite ? 'fa-solid fa-star' : 'fa-regular fa-star'"></i>
+              </button>
             </div>
 
             <!-- Bottom Title & Quick Play Button on Cover -->
@@ -2052,14 +2175,25 @@ onBeforeUnmount(() => {
                       특별편·극장판 {{ series.specialCount }}
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow hover:bg-blue-500"
-                    title="시리즈 재생"
-                    @click.stop="handlePlaySeries(series)"
-                  >
-                    <i class="fa-solid fa-play ml-0.5 text-[11px]"></i>
-                  </button>
+                  <div class="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--bg-input)] text-xs transition"
+                      :class="series.isFavorite ? 'text-amber-400' : 'text-[var(--text-muted)] hover:text-amber-400'"
+                      :title="series.isFavorite ? '시리즈 즐겨찾기 해제' : '시리즈 즐겨찾기 추가'"
+                      @click.stop="mediaPhotoStore.toggleSeriesFavorite(series.id)"
+                    >
+                      <i :class="series.isFavorite ? 'fa-solid fa-star' : 'fa-regular fa-star'"></i>
+                    </button>
+                    <button
+                      type="button"
+                      class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow hover:bg-blue-500"
+                      title="시리즈 재생"
+                      @click.stop="handlePlaySeries(series)"
+                    >
+                      <i class="fa-solid fa-play ml-0.5 text-[11px]"></i>
+                    </button>
+                  </div>
                 </div>
                 <h3
                   class="cursor-pointer truncate text-sm font-black text-[var(--text-main)] hover:text-blue-500"
@@ -2257,6 +2391,15 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              class="flex h-8 w-8 items-center justify-center rounded-xl border border-[var(--border-color)] text-xs transition"
+              :class="series.isFavorite ? 'text-amber-400' : 'text-[var(--text-muted)] hover:text-amber-400'"
+              :title="series.isFavorite ? '시리즈 즐겨찾기 해제' : '시리즈 즐겨찾기 추가'"
+              @click="mediaPhotoStore.toggleSeriesFavorite(series.id)"
+            >
+              <i :class="series.isFavorite ? 'fa-solid fa-star' : 'fa-regular fa-star'"></i>
+            </button>
             <button
               type="button"
               class="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-blue-500"
@@ -2930,9 +3073,60 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
+    <!-- [D0] Favorite Series Cards (Shown on 'favorites' tab when favorited series exist) -->
+    <section
+      v-if="activeSection === 'favorites' && filteredFavoriteSeries.length > 0"
+      data-testid="media-favorite-series-section"
+      class="space-y-3"
+    >
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-star text-amber-500"></i>
+        <h2 class="text-base font-black text-[var(--text-main)]">즐겨찾는 시리즈 · 작품</h2>
+        <span class="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-extrabold text-amber-600 dark:text-amber-400">
+          {{ filteredFavoriteSeries.length }}개
+        </span>
+      </div>
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <article
+          v-for="series in filteredFavoriteSeries"
+          :key="'fav-tab-series-' + series.id"
+          class="group flex items-center gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-elevated)] p-3 shadow-sm transition hover:border-amber-400"
+        >
+          <div
+            v-if="showThumbnails"
+            :ref="(el) => observeThumbnailEl(el, series.coverEpisode)"
+            class="h-16 w-24 shrink-0 cursor-pointer overflow-hidden rounded-xl bg-slate-900"
+            @click="openSeriesDetail(series)"
+          >
+            <img
+              v-if="series.coverEpisode && thumbnailMap[String(series.coverEpisode.id)]"
+              :src="thumbnailMap[String(series.coverEpisode.id)]"
+              :alt="series.title"
+              class="h-full w-full object-cover"
+            />
+            <div v-else class="flex h-full w-full items-center justify-center text-slate-400">
+              <i class="fa-solid fa-tv"></i>
+            </div>
+          </div>
+          <div class="min-w-0 flex-1 cursor-pointer" @click="openSeriesDetail(series)">
+            <p class="truncate text-sm font-black text-[var(--text-main)] group-hover:text-amber-500">{{ series.title }}</p>
+            <p class="mt-0.5 text-[11px] text-[var(--text-muted)]">시즌 {{ series.seasonCount || 1 }}개 · {{ series.episodeCount }}화</p>
+          </div>
+          <button
+            type="button"
+            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs text-amber-400 hover:bg-amber-500/15"
+            title="시리즈 즐겨찾기 해제"
+            @click="mediaPhotoStore.toggleSeriesFavorite(series.id)"
+          >
+            <i class="fa-solid fa-star"></i>
+          </button>
+        </article>
+      </div>
+    </section>
+
     <!-- [D] Main Video Grid / List Section (Shown on 'continue', 'recent', 'favorites', or inside a collection) -->
     <section
-      v-if="activeSection !== 'series' && (activeSection !== 'collections' || selectedCollectionId)"
+      v-if="activeSection !== 'series' && (activeSection !== 'collections' || selectedCollectionId) && !(activeSection === 'favorites' && visibleMainItems.length === 0 && filteredFavoriteSeries.length > 0)"
       class="space-y-3"
     >
       <div class="flex items-center justify-between">

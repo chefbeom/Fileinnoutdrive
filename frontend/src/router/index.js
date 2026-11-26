@@ -44,6 +44,12 @@ const router = createRouter({
           meta: { title: '홈', requiresAuth: true },
         },
         {
+          path: 'favorites',
+          name: 'favoriteFile',
+          component: () => import('../views/dashboard/FavoriteFileView.vue'),
+          meta: { title: '즐겨찾기', requiresAuth: true },
+        },
+        {
           path: 'media',
           name: 'media',
           component: () => import('../views/dashboard/MediaView.vue'),

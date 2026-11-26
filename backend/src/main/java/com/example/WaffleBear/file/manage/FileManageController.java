@@ -298,6 +298,20 @@ public class FileManageController {
         ));
     }
 
+    @PatchMapping("/favorite")
+    @Operation(summary = "Toggle favorite state on files or folders", description = "Marks or unmarks files and folders as favorite in batch.")
+    public ResponseEntity<FileCommonDto.FileActionRes> setFavoriteFiles(
+            @AuthenticationPrincipal AuthUserDetails dto,
+            @RequestBody FileManageDto.FavoriteBatchReq request
+    ) {
+        Long userIdx = dto != null ? dto.getIdx() : 0L;
+        return ResponseEntity.ok(fileManageService.setFavoriteFiles(
+                userIdx,
+                request != null ? request.getFileIdxList() : null,
+                request != null && Boolean.TRUE.equals(request.getFavorite())
+        ));
+    }
+
     private ResponseEntity<byte[]> buildThumbnailResponse(
             FileThumbnailService.ThumbnailPayload payload,
             String ifNoneMatch

@@ -28,6 +28,7 @@ public class FileCommonDto {
         private Long vaultOriginParentId;
         private Boolean lockedFile;
         private Boolean sharedFile;
+        private Boolean favorite;
         private Boolean trashed;
         private String spaceType;
         private Boolean hiddenFolder;

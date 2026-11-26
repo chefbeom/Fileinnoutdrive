@@ -40,6 +40,7 @@ const {
   canShareDownloadLink = () => false,
   canManageSentShare,
   canToggleLock,
+  canToggleFavorite = () => false,
   canManageFolder,
   canRestore,
   canDelete,
@@ -55,6 +56,7 @@ const {
   onClickShareDownloadLink = () => {},
   onClickManageSentShare,
   onClickToggleLock,
+  onClickToggleFavorite = () => {},
   onClickRenameFolder,
   onClickShowFolderProperties,
   onClickRestore,
@@ -151,6 +153,21 @@ const {
           </label>
 
           <div class="flex items-center gap-1">
+            <button
+              v-if="canToggleFavorite(file)"
+              type="button"
+              data-testid="grid-favorite-btn"
+              class="action-icon transition-colors"
+              :class="file.favorite
+                ? 'text-amber-500 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-500/15'
+                : 'text-gray-400 hover:bg-amber-50 hover:text-amber-500 dark:text-slate-400 dark:hover:bg-slate-800'"
+              :title="file.favorite ? '즐겨찾기 해제' : '즐겨찾기 추가'"
+              :aria-label="file.favorite ? '즐겨찾기 해제' : '즐겨찾기 추가'"
+              :aria-pressed="Boolean(file.favorite)"
+              @click.stop="onClickToggleFavorite(file, $event)"
+            >
+              <i :class="file.favorite ? 'fa-solid fa-star text-xs' : 'fa-regular fa-star text-xs'"></i>
+            </button>
             <button
               type="button"
               class="action-icon text-gray-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"

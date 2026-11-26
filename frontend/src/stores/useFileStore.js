@@ -32,6 +32,7 @@ import {
   rejectSharedFile as rejectSharedFileApi,
   saveSharedFileToDrive as saveSharedFileToDriveApi,
   setLockedFiles as setLockedFilesApi,
+  setFavoriteFiles as setFavoriteFilesApi,
   shareFilesWithUser as shareFilesWithUserApi,
 } from "@/api/filesApi.js";
 import {
@@ -687,6 +688,27 @@ export const useFileStore = defineStore("file", () => {
       .filter((file) => !file.isTrash && file.type !== "folder")
       .sort((left, right) => (right.lastModifiedMs || 0) - (left.lastModifiedMs || 0)),
   );
+
+  const sortFavoriteList = (items = []) => [...items].sort((left, right) => {
+    const leftIsFolder = left?.type === "folder" ? 0 : 1;
+    const rightIsFolder = right?.type === "folder" ? 0 : 1;
+    if (leftIsFolder !== rightIsFolder) return leftIsFolder - rightIsFolder;
+    return (right.lastModifiedMs || 0) - (left.lastModifiedMs || 0);
+  });
+
+  const favoriteItems = computed(() => sortFavoriteList(
+    (allFiles.value || []).filter(
+      (file) => file && !file.isTrash && file.isFavorite && !file.isVaultSpace && String(file.spaceType || "").toUpperCase() !== "VAULT",
+    ),
+  ));
+
+  const favoriteFolders = computed(() => favoriteItems.value.filter((file) => file.type === "folder"));
+  const favoriteFilesOnly = computed(() => favoriteItems.value.filter((file) => file.type !== "folder"));
+
+  const vaultFavoriteItems = computed(() => sortFavoriteList(
+    (vaultAllFiles.value || []).filter((file) => file && !file.isTrash && file.isFavorite),
+  ));
+  const vaultFavoriteFolders = computed(() => vaultFavoriteItems.value.filter((file) => file.type === "folder"));
 
   const isEligibleUploadedCandidate = (file) => !(
     !file ||
@@ -1372,6 +1394,46 @@ export const useFileStore = defineStore("file", () => {
     await refreshAll();
   };
 
+  const patchFavoriteFlagLocal = (idSet, nextFlag) => {
+    const patchList = (listRef) => {
+      if (!Array.isArray(listRef.value)) return;
+      listRef.value = listRef.value.map((entry) => (
+        entry && idSet.has(String(entry.id))
+          ? { ...entry, favorite: nextFlag, isFavorite: nextFlag }
+          : entry
+      ));
+    };
+    patchList(allFiles);
+    patchList(drivePageFiles);
+    patchList(vaultAllFiles);
+  };
+
+  const setFilesFavorite = async (fileIds, favorite) => {
+    const normalizedIds = normalizeIdList(fileIds);
+    if (!normalizedIds.length) {
+      return null;
+    }
+
+    const nextFlag = Boolean(favorite);
+    const idSet = new Set(normalizedIds.map((id) => String(id)));
+    patchFavoriteFlagLocal(idSet, nextFlag);
+
+    try {
+      const result = await setFavoriteFilesApi(normalizedIds, nextFlag);
+      await refreshAll();
+      if (vaultHasLoaded.value) {
+        await fetchVaultFiles({ force: true }).catch(() => {});
+      }
+      return result;
+    } catch (error) {
+      await refreshAll().catch(() => {});
+      if (vaultHasLoaded.value) {
+        await fetchVaultFiles({ force: true }).catch(() => {});
+      }
+      throw error;
+    }
+  };
+
   const shareFiles = async (fileIds, recipientEmail, permission = "READ", options = {}) => {
     const normalizedIds = normalizeIdList(fileIds);
     if (!normalizedIds.length) {
@@ -1505,6 +1567,11 @@ export const useFileStore = defineStore("file", () => {
     recentFiles,
     recentUploadedFiles,
     recentAccessedFiles,
+    favoriteItems,
+    favoriteFolders,
+    favoriteFilesOnly,
+    vaultFavoriteItems,
+    vaultFavoriteFolders,
     trashFiles,
     allOnlyFiles,
     fetchFiles,
@@ -1544,6 +1611,7 @@ export const useFileStore = defineStore("file", () => {
     moveFilesFromVault,
     renameFolder,
     setFilesLocked,
+    setFilesFavorite,
     shareFiles,
     cancelSharedFiles,
     cancelAllSharedFiles,

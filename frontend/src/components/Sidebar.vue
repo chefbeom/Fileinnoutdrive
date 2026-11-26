@@ -42,6 +42,7 @@ const openLayoutCustomizer = () => {
 }
 const isMediaMenuOpen = ref(true)
 const isPhotosMenuOpen = ref(true)
+const isSidebarFavoritesOpen = ref(true)
 const {
   showRecentUploaded,
   showRecentAccessed,
@@ -338,6 +339,32 @@ const sidebarAccessedFiles = computed(() =>
   (fileStore.recentAccessedFiles || []).slice(0, maxItemsCount.value)
 );
 
+const sidebarFavoriteFolders = computed(() =>
+  (fileStore.favoriteFolders || []).slice(0, maxItemsCount.value)
+);
+
+const sidebarFavoriteFiles = computed(() =>
+  (fileStore.favoriteFilesOnly || []).slice(0, maxItemsCount.value)
+);
+
+const sidebarVaultFavorites = computed(() =>
+  (fileStore.vaultFavoriteItems || []).slice(0, maxItemsCount.value)
+);
+
+const openSidebarFavoriteFolder = async (folder) => {
+  if (!folder?.id) return;
+  if (secretFolderStore.vaultMode && !folder.isVaultSpace && String(folder.spaceType || "").toUpperCase() !== "VAULT") {
+    secretFolderStore.exitVaultMode({ lockVault: false });
+  }
+  fileStore.navigateToFolder(folder.id);
+  if (route.name !== "home") {
+    await router.push({ name: "home" }).catch(() => {});
+  }
+  if (isMobileViewport.value) {
+    isSidebarOpen.value = false;
+  }
+};
+
 const openSidebarFile = (file) => {
   if (!file) return;
   if (file.lockedFile) {
@@ -506,6 +533,26 @@ const handleAction = async (action, idx) => {
               <span>홈</span>
             </RouterLink>
 
+            <RouterLink
+              v-if="isNavInSidebar('favoriteFile') && !(secretFolderStore.vaultMode && secretFolderStore.vaultUnlocked)"
+              :style="getSidebarNavStyle('favoriteFile')"
+              :to="{ name: 'favoriteFile' }"
+              data-testid="sidebar-nav-favorites"
+              class="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-sm text-[var(--text-secondary)] rounded-xl transition-all duration-200 hover:bg-[var(--bg-input)] hover:text-[var(--text-main)] no-underline"
+              active-class="!bg-amber-500/10 !text-amber-600 !font-bold dark:!bg-amber-400/20 dark:!text-amber-400"
+            >
+              <div class="flex items-center gap-3.5">
+                <i class="fa-solid fa-star w-5 text-center flex-shrink-0 text-lg text-amber-500"></i>
+                <span>즐겨찾기</span>
+              </div>
+              <span
+                v-if="(fileStore.favoriteItems || []).length > 0"
+                class="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-600 dark:text-amber-400"
+              >
+                {{ (fileStore.favoriteItems || []).length }}
+              </span>
+            </RouterLink>
+
             <!-- 비밀 공간 전용 빠른 이동 (잠금 해제된 비밀 공간에서만 표시) -->
             <div
               v-if="secretFolderStore.vaultMode && secretFolderStore.vaultUnlocked"
@@ -546,6 +593,26 @@ const handleAction = async (action, idx) => {
                 <i class="fa-solid fa-images fa-fw text-amber-500"></i>
                 <span>비밀 사진첩</span>
               </RouterLink>
+
+              <div
+                v-if="sidebarVaultFavorites.length > 0"
+                data-testid="sidebar-vault-favorites"
+                class="mt-1 border-t border-amber-400/25 pt-1.5 space-y-0.5"
+              >
+                <div class="px-2 py-0.5 text-[10px] font-extrabold text-amber-600 dark:text-amber-400">
+                  비밀 즐겨찾기 · 바로가기
+                </div>
+                <button
+                  v-for="item in sidebarVaultFavorites"
+                  :key="'vault-fav-' + item.id"
+                  type="button"
+                  class="w-full flex items-center gap-2 px-2 py-1 text-left text-[11px] font-bold text-[var(--text-secondary)] rounded-lg hover:bg-[var(--bg-input)] hover:text-[var(--text-main)]"
+                  @click="item.type === 'folder' ? openSidebarFavoriteFolder(item) : openSidebarFile(item)"
+                >
+                  <i :class="item.type === 'folder' ? 'fa-solid fa-folder text-amber-500' : getSidebarFileIconClass(item)" class="w-3.5 text-center shrink-0"></i>
+                  <span class="truncate">{{ item.name }}</span>
+                </button>
+              </div>
             </div>
 
             <!-- 미디어 메뉴 (아코디언 하위 메뉴 포함) -->
@@ -633,7 +700,7 @@ const handleAction = async (action, idx) => {
                     : 'text-[var(--text-secondary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-main)]'"
                 >
                   <span>즐겨찾기</span>
-                  <span v-if="!mediaPhotoStore.isVaultScope" class="text-[10px] text-[var(--text-muted)]">{{ mediaPhotoStore.favoriteMediaItems.length }}</span>
+                  <span v-if="!mediaPhotoStore.isVaultScope" class="text-[10px] text-[var(--text-muted)]">{{ mediaPhotoStore.totalMediaFavoritesCount }}</span>
                 </RouterLink>
               </div>
             </div>
@@ -694,7 +761,7 @@ const handleAction = async (action, idx) => {
                     : 'text-[var(--text-secondary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-main)]'"
                 >
                   <span>즐겨찾기</span>
-                  <span v-if="!mediaPhotoStore.isVaultScope" class="text-[10px] text-[var(--text-muted)]">{{ mediaPhotoStore.favoritePhotos.length }}</span>
+                  <span v-if="!mediaPhotoStore.isVaultScope" class="text-[10px] text-[var(--text-muted)]">{{ mediaPhotoStore.totalPhotoFavoritesCount }}</span>
                 </RouterLink>
               </div>
             </div>
@@ -836,6 +903,64 @@ const handleAction = async (action, idx) => {
                 </button>
               </div>
             </div>
+            </div>
+          </div>
+
+          <!-- 즐겨찾기 · 바로가기 섹션 (일반 영역 전용) -->
+          <div
+            v-if="!(secretFolderStore.vaultMode && secretFolderStore.vaultUnlocked) && (sidebarFavoriteFolders.length > 0 || sidebarFavoriteFiles.length > 0)"
+            data-testid="sidebar-favorites-section"
+            class="mb-3"
+          >
+            <div
+              @click="isSidebarFavoritesOpen = !isSidebarFavoritesOpen"
+              class="flex items-center justify-between px-4 py-2 cursor-pointer rounded-lg transition-colors duration-200 hover:bg-[var(--bg-input)]"
+            >
+              <div class="flex items-center gap-2 overflow-hidden">
+                <i class="fa-solid fa-star text-xs text-amber-500 flex-shrink-0"></i>
+                <h3 class="text-xs font-bold text-[var(--text-muted)] tracking-wider truncate">즐겨찾기 · 바로가기</h3>
+              </div>
+              <div class="flex items-center gap-2 flex-shrink-0">
+                <RouterLink
+                  :to="{ name: 'favoriteFile' }"
+                  @click.stop
+                  class="text-[11px] text-blue-500 hover:underline no-underline"
+                >
+                  전체
+                </RouterLink>
+                <span class="text-xs text-[var(--text-muted)] transition-transform duration-200" :class="{ 'rotate-180': !isSidebarFavoritesOpen }">▼</span>
+              </div>
+            </div>
+
+            <div v-show="isSidebarFavoritesOpen" class="mt-1 space-y-1 px-2">
+              <button
+                v-for="folder in sidebarFavoriteFolders"
+                :key="'sidebar-fav-folder-' + folder.id"
+                type="button"
+                @click="openSidebarFavoriteFolder(folder)"
+                class="w-full px-3 py-1.5 text-left text-xs font-semibold text-[var(--text-secondary)] rounded-xl flex items-center justify-between gap-2 transition-all duration-200 hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-400"
+                :title="`${folder.name} 폴더로 바로 이동`"
+              >
+                <div class="flex items-center gap-2.5 overflow-hidden">
+                  <i class="fa-solid fa-folder text-amber-500 w-4 text-center flex-shrink-0"></i>
+                  <span class="truncate">{{ folder.name }}</span>
+                </div>
+                <span class="text-[10px] text-[var(--text-muted)] flex-shrink-0">이동</span>
+              </button>
+
+              <div
+                v-for="file in sidebarFavoriteFiles"
+                :key="'sidebar-fav-file-' + file.id"
+                @click="openSidebarFile(file)"
+                class="group px-3 py-1.5 text-xs text-[var(--text-secondary)] rounded-xl cursor-pointer flex items-center justify-between gap-2 transition-all duration-200 hover:bg-[var(--bg-input)] hover:text-[var(--text-main)]"
+                :title="`${file.name} (${file.sizeLabel || '-'})`"
+              >
+                <div class="flex items-center gap-2.5 overflow-hidden">
+                  <i :class="getSidebarFileIconClass(file)" class="w-4 text-center flex-shrink-0"></i>
+                  <span class="truncate">{{ file.name }}</span>
+                </div>
+                <span class="text-[10px] text-[var(--text-muted)] flex-shrink-0">{{ file.sizeLabel }}</span>
+              </div>
             </div>
           </div>
 

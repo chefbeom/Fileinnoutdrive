@@ -129,6 +129,25 @@ class FileManageControllerTest {
         verify(fileManageService).moveFilesFromVault(7L, List.of(55L, 56L), 30L, false);
     }
 
+    @Test
+    void setFavoriteEndpointDelegatesBatchRequest() throws Exception {
+        when(fileManageService.setFavoriteFiles(7L, List.of(10L, 11L), true))
+                .thenReturn(FileCommonDto.FileActionRes.builder()
+                        .action("favorite")
+                        .affectedCount(2)
+                        .build());
+
+        mockMvc.perform(patch("/file/favorite")
+                        .requestAttr(AUTH_USER_ATTR, authenticatedUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"fileIdxList\":[10,11],\"favorite\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.action").value("favorite"))
+                .andExpect(jsonPath("$.affectedCount").value(2));
+
+        verify(fileManageService).setFavoriteFiles(7L, List.of(10L, 11L), true);
+    }
+
     private HandlerMethodArgumentResolver authUserArgumentResolver() {
         return new HandlerMethodArgumentResolver() {
             @Override

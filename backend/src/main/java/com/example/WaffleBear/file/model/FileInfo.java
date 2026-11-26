@@ -72,6 +72,7 @@ public class FileInfo {
 
     private boolean lockedFile;
     private boolean sharedFile;
+    private Boolean favorite;
     private Boolean trashed;
     private LocalDateTime deletedAt;
 
@@ -99,6 +100,9 @@ public class FileInfo {
         }
         if (this.trashed == null) {
             this.trashed = false;
+        }
+        if (this.favorite == null) {
+            this.favorite = false;
         }
         this.uploadDate = LocalDateTime.now();
         this.lastModifyDate = LocalDateTime.now();
@@ -198,6 +202,14 @@ public class FileInfo {
 
     public void changeSharedFile(boolean sharedFile) {
         this.sharedFile = sharedFile;
+    }
+
+    public boolean isFavorite() {
+        return Boolean.TRUE.equals(this.favorite);
+    }
+
+    public void changeFavorite(boolean favorite) {
+        this.favorite = favorite;
     }
 
     public FileEncryptionMode resolveEncryptionMode() {

@@ -92,6 +92,10 @@ public class FileManageService {
         return fileUpDownloadService.restoreFilesFromTrash(userIdx, fileIdxList);
     }
 
+    public FileCommonDto.FileActionRes setFavoriteFiles(Long userIdx, List<Long> fileIdxList, boolean favorite) {
+        return fileUpDownloadService.setFavoriteFiles(userIdx, fileIdxList, favorite);
+    }
+
     public FileCommonDto.FileDownloadPayload downloadFile(Long userIdx, Long fileIdx) {
         return fileUpDownloadService.downloadFile(userIdx, fileIdx);
     }

@@ -61,11 +61,14 @@ const mockMediaPhotoStore = reactive({
   recentlyWatchedVideos: [],
   recentlyAddedVideos: [],
   favoriteMediaItems: [],
+  favoriteMediaSeries: [],
+  totalMediaFavoritesCount: 0,
   resolvedMediaCollections: [],
   activeMediaFolderUnits: [],
   fetchRemoteLibraryState: vi.fn().mockResolvedValue(undefined),
   ensureCatalogLoaded: vi.fn().mockResolvedValue(undefined),
   isMediaAreaFolder: (id) => mockMediaPhotoStore.resolvedMediaAreas.some((a) => String(a.folderId) === String(id)),
+  toggleSeriesFavorite: vi.fn(),
   updatePreferences: vi.fn(),
   setAutoClassifyEnabled: vi.fn(),
   resetPreferences: vi.fn(),
@@ -230,5 +233,43 @@ describe("MediaView.vue streamlined layout & guided setup", () => {
     });
 
     expect(wrapper.findAll("video[preload='metadata']").length).toBe(0);
+  });
+
+  it("renders dedicated media favorites shelf and toggles series favorite star", async () => {
+    mockRoute.query = {};
+    mockMediaPhotoStore.preferences.mediaSourceMode = "all";
+    mockMediaPhotoStore.favoriteMediaItems = [
+      { id: 801, name: "fav-ep.mp4", displayTitle: "fav-ep", mediaKind: "video", isFavorite: true },
+    ];
+    const seriesItem = {
+      id: "series-10",
+      title: "테스트 시리즈",
+      episodeCount: 5,
+      seasonCount: 1,
+      seasons: [],
+      allEpisodes: [],
+      isFavorite: true,
+    };
+    mockMediaPhotoStore.resolvedMediaSeries = [seriesItem];
+    mockMediaPhotoStore.favoriteMediaSeries = [seriesItem];
+    mockMediaPhotoStore.totalMediaFavoritesCount = 2;
+    mockMediaPhotoStore.toggleSeriesFavorite.mockClear();
+
+    const wrapper = mount(MediaView, {
+      global: {
+        stubs: {
+          Teleport: true,
+          BaseFileShareDialog: true,
+        },
+      },
+    });
+
+    const shelf = wrapper.get("[data-testid='media-favorites-shelf']");
+    expect(shelf.text()).toContain("즐겨찾기");
+    expect(shelf.text()).toContain("테스트 시리즈");
+    expect(shelf.text()).toContain("fav-ep");
+
+    await wrapper.get("[data-testid='series-favorite-btn']").trigger("click");
+    expect(mockMediaPhotoStore.toggleSeriesFavorite).toHaveBeenCalledWith("series-10");
   });
 });

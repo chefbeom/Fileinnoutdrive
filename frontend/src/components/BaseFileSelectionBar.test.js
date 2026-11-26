@@ -63,5 +63,18 @@ describe("BaseFileSelectionBar.vue", () => {
     expect(exportBtn).toBeDefined();
     await exportBtn.trigger("click");
     expect(wrapper.emitted("move-from-vault")).toBeTruthy();
+
+    await wrapper.setProps({
+      vaultMode: false,
+      favoriteCandidateCount: 1,
+      favoritedCount: 1,
+    });
+    const addFavBtn = wrapper.findAll("button").find((b) => b.text().includes("즐겨찾기 추가"));
+    const removeFavBtn = wrapper.findAll("button").find((b) => b.text().includes("즐겨찾기 해제"));
+    expect(addFavBtn).toBeDefined();
+    expect(removeFavBtn).toBeDefined();
+    await addFavBtn.trigger("click");
+    await removeFavBtn.trigger("click");
+    expect(wrapper.emitted("favorite")).toEqual([[true], [false]]);
   });
 });

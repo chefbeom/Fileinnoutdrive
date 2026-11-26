@@ -39,6 +39,7 @@ const {
   canShareDownloadLink = () => false,
   canManageSentShare,
   canToggleLock,
+  canToggleFavorite = () => false,
   canManageFolder,
   canRestore,
   canDelete,
@@ -54,6 +55,7 @@ const {
   onClickShareDownloadLink = () => {},
   onClickManageSentShare,
   onClickToggleLock,
+  onClickToggleFavorite = () => {},
   onClickRenameFolder,
   onClickShowFolderProperties,
   onClickRestore,
@@ -244,6 +246,21 @@ const {
             <td class="px-2.5 py-3 md:px-6 md:py-4">
               <div class="min-w-0">
                 <div class="flex items-center gap-1.5">
+                  <button
+                    v-if="canToggleFavorite(file)"
+                    type="button"
+                    data-testid="table-favorite-btn"
+                    class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md transition-colors"
+                    :class="file.favorite
+                      ? 'text-amber-500 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-500/15'
+                      : 'text-gray-300 hover:bg-amber-50 hover:text-amber-500 dark:text-slate-500 dark:hover:bg-slate-800'"
+                    :title="file.favorite ? '즐겨찾기 해제' : '즐겨찾기 추가'"
+                    :aria-label="file.favorite ? '즐겨찾기 해제' : '즐겨찾기 추가'"
+                    :aria-pressed="Boolean(file.favorite)"
+                    @click.stop="onClickToggleFavorite(file, $event)"
+                  >
+                    <i :class="file.favorite ? 'fa-solid fa-star text-[11px]' : 'fa-regular fa-star text-[11px]'"></i>
+                  </button>
                   <p class="file-entry__title truncate text-sm font-semibold text-gray-900">{{ getFileName(file) }}</p>
                   <span
                     v-if="isSharedFolder(file)"

@@ -348,4 +348,38 @@ describe("useMediaPhotoStore vault isolation & security lifecycle", () => {
       query: { spotlightId: "202", folderId: "201" },
     });
   });
+
+  it("isolates series and album favorites between vault scope and normal scope", async () => {
+    const store = useMediaPhotoStore();
+    mockAllFiles.value = [
+      { id: 10, name: "일반애니", type: "folder", parentId: null, isVaultSpace: false, spaceType: "DRIVE" },
+      { id: 11, name: "ep01.mp4", type: "file", parentId: 10, contentType: "video/mp4", fileFormat: "mp4", downloadUrl: "/d/11" },
+    ];
+    mockVaultAllFiles.value = [
+      { id: 300, name: "비밀사진", type: "folder", parentId: null, isVaultSpace: true, spaceType: "VAULT" },
+      { id: 301, name: "v01.jpg", type: "file", parentId: 300, contentType: "image/jpeg", fileFormat: "jpg", isVaultSpace: true, spaceType: "VAULT", downloadUrl: "/d/301" },
+    ];
+
+    await store.ensureCatalogLoaded({ scope: "normal" });
+    store.updatePreferences({ mediaSourceMode: "all" });
+    const normalSeries = store.resolvedMediaSeries[0];
+    expect(normalSeries).toBeTruthy();
+    expect(store.toggleSeriesFavorite(normalSeries.id)).toBe(true);
+    expect(store.favoriteMediaSeries.length).toBe(1);
+    expect(store.totalMediaFavoritesCount).toBe(1);
+
+    mockSecretFolderStore.vaultMode = true;
+    mockSecretFolderStore.vaultUnlocked = true;
+    await store.ensureCatalogLoaded({ scope: "vault" });
+    expect(store.favoriteMediaSeries).toEqual([]);
+
+    const vaultAlbum = store.createPhotoAlbum({ name: "비밀앨범", photoIds: ["301"] });
+    expect(store.toggleAlbumFavorite(vaultAlbum.id)).toBe(true);
+    expect(store.favoritePhotoAlbums.map((a) => a.id)).toEqual([vaultAlbum.id]);
+    expect(store.totalPhotoFavoritesCount).toBe(1);
+
+    await store.ensureCatalogLoaded({ scope: "normal" });
+    expect(store.favoritePhotoAlbums).toEqual([]);
+    expect(store.favoriteMediaSeries.length).toBe(1);
+  });
 });

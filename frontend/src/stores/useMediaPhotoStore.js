@@ -179,7 +179,9 @@ const createEmptyPersistedState = () => ({
   photoExcludedFileIds: [],
   photoExcludedFolderIds: [],
   mediaFavoriteIds: [],
+  mediaFavoriteSeriesIds: [],
   photoFavoriteIds: [],
+  photoFavoriteAlbumIds: [],
   mediaCollections: [],
   photoAlbums: [],
   seriesOverrides: createEmptySeriesOverrides(),
@@ -223,7 +225,9 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
   const photoExcludedFileIds = ref([]);
   const photoExcludedFolderIds = ref([]);
   const mediaFavoriteIds = ref([]);
+  const mediaFavoriteSeriesIds = ref([]);
   const photoFavoriteIds = ref([]);
+  const photoFavoriteAlbumIds = ref([]);
   const mediaCollections = ref([]);
   const photoAlbums = ref([]);
   const seriesOverrides = ref(createEmptySeriesOverrides());
@@ -305,8 +309,14 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     mediaFavoriteIds.value = Array.isArray(parsed.mediaFavoriteIds)
       ? parsed.mediaFavoriteIds.map((id) => String(id))
       : [];
+    mediaFavoriteSeriesIds.value = Array.isArray(parsed.mediaFavoriteSeriesIds)
+      ? parsed.mediaFavoriteSeriesIds.map((id) => String(id))
+      : [];
     photoFavoriteIds.value = Array.isArray(parsed.photoFavoriteIds)
       ? parsed.photoFavoriteIds.map((id) => String(id))
+      : [];
+    photoFavoriteAlbumIds.value = Array.isArray(parsed.photoFavoriteAlbumIds)
+      ? parsed.photoFavoriteAlbumIds.map((id) => String(id))
       : [];
     mediaCollections.value = Array.isArray(parsed.mediaCollections)
       ? parsed.mediaCollections
@@ -346,7 +356,9 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     photoExcludedFileIds: photoExcludedFileIds.value,
     photoExcludedFolderIds: photoExcludedFolderIds.value,
     mediaFavoriteIds: mediaFavoriteIds.value,
+    mediaFavoriteSeriesIds: mediaFavoriteSeriesIds.value,
     photoFavoriteIds: photoFavoriteIds.value,
+    photoFavoriteAlbumIds: photoFavoriteAlbumIds.value,
     mediaCollections: mediaCollections.value,
     photoAlbums: photoAlbums.value,
     seriesOverrides: seriesOverrides.value,
@@ -716,7 +728,9 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
   };
 
   const mediaFavoriteSet = computed(() => new Set(mediaFavoriteIds.value.map((id) => String(id))));
+  const mediaFavoriteSeriesSet = computed(() => new Set(mediaFavoriteSeriesIds.value.map((id) => String(id))));
   const photoFavoriteSet = computed(() => new Set(photoFavoriteIds.value.map((id) => String(id))));
+  const photoFavoriteAlbumSet = computed(() => new Set(photoFavoriteAlbumIds.value.map((id) => String(id))));
   const mediaIncludedFileSet = computed(() => new Set(mediaIncludedFileIds.value.map((id) => String(id))));
   const mediaIncludedFolderSet = computed(() => new Set(mediaIncludedFolderIds.value.map((id) => String(id))));
   const mediaExcludedFileSet = computed(() => new Set(mediaExcludedFileIds.value.map((id) => String(id))));
@@ -1346,9 +1360,18 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
         photoCount: photos.length,
         coverPhoto,
         dateRangeLabel,
+        isFavorite: photoFavoriteAlbumSet.value.has(String(album.id)),
       };
     });
   });
+
+  const favoritePhotoAlbums = computed(() =>
+    resolvedPhotoAlbums.value.filter((album) => album.isFavorite),
+  );
+
+  const totalPhotoFavoritesCount = computed(
+    () => favoritePhotos.value.length + favoritePhotoAlbums.value.length,
+  );
 
   const folderByIdMap = computed(() => {
     const map = new Map();
@@ -1407,7 +1430,18 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     });
   });
 
-  const resolvedMediaSeries = computed(() => mediaSeriesClassification.value.series || []);
+  const resolvedMediaSeries = computed(() =>
+    (mediaSeriesClassification.value.series || []).map((series) => ({
+      ...series,
+      isFavorite: mediaFavoriteSeriesSet.value.has(String(series.id)),
+    })),
+  );
+  const favoriteMediaSeries = computed(() =>
+    resolvedMediaSeries.value.filter((series) => series.isFavorite),
+  );
+  const totalMediaFavoritesCount = computed(
+    () => favoriteMediaItems.value.length + favoriteMediaSeries.value.length,
+  );
   const autoGroupedMediaSeries = computed(() => mediaSeriesClassification.value.reviewCandidates || []);
 
   const getImmediateChildFolderUnderAncestor = (folderId, ancestorId) => {
@@ -2262,6 +2296,28 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     savePersistedState();
   };
 
+  const toggleSeriesFavorite = (seriesId) => {
+    const key = String(seriesId ?? "").trim();
+    if (!key) return false;
+    const exists = mediaFavoriteSeriesSet.value.has(key);
+    mediaFavoriteSeriesIds.value = exists
+      ? mediaFavoriteSeriesIds.value.filter((id) => String(id) !== key)
+      : [key, ...mediaFavoriteSeriesIds.value];
+    savePersistedState();
+    return !exists;
+  };
+
+  const toggleAlbumFavorite = (albumId) => {
+    const key = String(albumId ?? "").trim();
+    if (!key) return false;
+    const exists = photoFavoriteAlbumSet.value.has(key);
+    photoFavoriteAlbumIds.value = exists
+      ? photoFavoriteAlbumIds.value.filter((id) => String(id) !== key)
+      : [key, ...photoFavoriteAlbumIds.value];
+    savePersistedState();
+    return !exists;
+  };
+
   // --- Media Collections CRUD ---
   const createMediaCollection = ({ name, description = "", itemIds = [], coverFileId = null } = {}) => {
     const trimmedName = String(name || "").trim();
@@ -2802,7 +2858,9 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     photoExcludedFileIds,
     photoExcludedFolderIds,
     mediaFavoriteIds,
+    mediaFavoriteSeriesIds,
     photoFavoriteIds,
+    photoFavoriteAlbumIds,
     mediaCollections,
     photoAlbums,
     preferences,
@@ -2827,7 +2885,11 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     recentlyWatchedVideos,
     recentlyAddedVideos,
     favoriteMediaItems,
+    favoriteMediaSeries,
+    totalMediaFavoritesCount,
     favoritePhotos,
+    favoritePhotoAlbums,
+    totalPhotoFavoritesCount,
     resolvedMediaCollections,
     resolvedPhotoAlbums,
     seriesOverrides,
@@ -2885,8 +2947,10 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     recordPhotoMetadata,
     toggleMediaFavorite,
     setMediaFavoritesBatch,
+    toggleSeriesFavorite,
     togglePhotoFavorite,
     setPhotoFavoritesBatch,
+    toggleAlbumFavorite,
     createMediaCollection,
     updateMediaCollection,
     deleteMediaCollection,

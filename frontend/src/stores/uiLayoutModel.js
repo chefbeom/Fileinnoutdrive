@@ -21,6 +21,18 @@ export const UI_LAYOUT_NAV_ITEMS = Object.freeze([
     defaultPlacement: "sidebar",
   },
   {
+    id: "favoriteFile",
+    label: "즐겨찾기",
+    shortLabel: "즐겨찾기",
+    description: "즐겨찾기한 폴더 바로가기 및 파일 목록",
+    icon: "fa-solid fa-star",
+    route: "/main/favorites",
+    routeName: "favoriteFile",
+    kind: "route",
+    sidebarGroup: "nav",
+    defaultPlacement: "sidebar",
+  },
+  {
     id: "media",
     label: "미디어",
     shortLabel: "미디어",
@@ -139,6 +151,7 @@ export function createDefaultUiLayoutState() {
     clientUpdatedAt: null,
     navPlacements: {
       home: "sidebar",
+      favoriteFile: "sidebar",
       media: "sidebar",
       photos: "sidebar",
       shareFile: "sidebar",
@@ -195,6 +208,7 @@ export const UI_LAYOUT_PRESETS = Object.freeze([
     patch: {
       navPlacements: {
         home: "sidebar",
+        favoriteFile: "sidebar",
         media: "header",
         photos: "header",
         shareFile: "sidebar",
@@ -203,7 +217,7 @@ export const UI_LAYOUT_PRESETS = Object.freeze([
         trash: "sidebar",
         storage: "sidebar",
       },
-      headerNavOrder: ["media", "photos", "home", "shareFile", "storageShare", "recentFile", "trash", "storage"],
+      headerNavOrder: ["media", "photos", "home", "favoriteFile", "shareFile", "storageShare", "recentFile", "trash", "storage"],
       headerNavPosition: "after-search",
       headerNavAlign: "right",
       headerNavStyle: "icon-label",
@@ -218,6 +232,7 @@ export const UI_LAYOUT_PRESETS = Object.freeze([
     patch: {
       navPlacements: {
         home: "header",
+        favoriteFile: "sidebar",
         media: "header",
         photos: "header",
         shareFile: "header",
@@ -226,7 +241,7 @@ export const UI_LAYOUT_PRESETS = Object.freeze([
         trash: "sidebar",
         storage: "sidebar",
       },
-      headerNavOrder: ["home", "media", "photos", "shareFile", "storageShare", "recentFile", "trash", "storage"],
+      headerNavOrder: ["home", "media", "photos", "shareFile", "favoriteFile", "storageShare", "recentFile", "trash", "storage"],
       headerNavPosition: "after-search",
       headerNavAlign: "right",
       headerNavStyle: "compact",
@@ -253,6 +268,7 @@ export const UI_LAYOUT_PRESETS = Object.freeze([
     patch: {
       navPlacements: {
         home: "sidebar",
+        favoriteFile: "sidebar",
         media: "header",
         photos: "header",
         shareFile: "sidebar",
@@ -261,7 +277,7 @@ export const UI_LAYOUT_PRESETS = Object.freeze([
         trash: "sidebar",
         storage: "sidebar",
       },
-      headerNavOrder: ["media", "photos", "home", "shareFile", "storageShare", "recentFile", "trash", "storage"],
+      headerNavOrder: ["media", "photos", "home", "favoriteFile", "shareFile", "storageShare", "recentFile", "trash", "storage"],
       headerNavPosition: "after-search",
       headerNavAlign: "right",
       headerNavStyle: "icon-only",

@@ -1388,6 +1388,43 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                 .build();
     }
 
+    @Override
+    @Transactional
+    public FileCommonDto.FileActionRes setFavoriteFiles(Long userIdx, List<Long> fileIdxList, boolean favorite) {
+        if (fileIdxList == null || fileIdxList.isEmpty()) {
+            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
+
+        List<FileInfo> files = fileIdxList.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .map(fileIdx -> getOwnedFile(userIdx, fileIdx))
+                .toList();
+
+        if (files.isEmpty()) {
+            throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+        }
+
+        for (FileInfo file : files) {
+            if (file.isTrashed()) {
+                throw BaseException.from(BaseResponseStatus.REQUEST_ERROR);
+            }
+            if (file.isVaultSpace()) {
+                requireVaultUnlocked(userIdx);
+            }
+            assertSecretNodeAccess(userIdx, file, true);
+            file.changeFavorite(favorite);
+        }
+
+        fileUpDownloadRepository.saveAll(files);
+
+        return FileCommonDto.FileActionRes.builder()
+                .targetIdx(null)
+                .action(favorite ? "favorite" : "unfavorite")
+                .affectedCount(files.size())
+                .build();
+    }
+
     private void removeMinioObjectsAfterCommit(List<FileInfo> files) {
         List<String> objectKeys = FileObjectRemovalRules.collectObjectKeysForRemoval(
                 files,
@@ -1522,6 +1559,7 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                 case "shared-with-me" -> predicates.add(criteriaBuilder.disjunction());
                 case "locked" -> predicates.add(criteriaBuilder.isTrue(root.get("lockedFile")));
                 case "unlocked" -> predicates.add(criteriaBuilder.isFalse(root.get("lockedFile")));
+                case "favorite" -> predicates.add(criteriaBuilder.isTrue(root.get("favorite")));
                 default -> {
                 }
             }
@@ -1937,6 +1975,7 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                 .vaultOriginParentId(entity.getVaultOriginParentId())
                 .lockedFile(entity.isLockedFile())
                 .sharedFile(entity.isSharedFile())
+                .favorite(entity.isFavorite())
                 .trashed(entity.isTrashed())
                 .spaceType(entity.resolveSpaceType().name())
                 .encrypted(entity.isEncrypted())

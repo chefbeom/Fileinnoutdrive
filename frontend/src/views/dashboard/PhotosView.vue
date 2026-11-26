@@ -1106,7 +1106,7 @@ onBeforeUnmount(() => {
             v-for="tab in [
               { key: 'timeline', label: `모든 사진 (${mediaPhotoStore.allPhotos.length})`, icon: 'fa-regular fa-images' },
               { key: 'albums', label: `앨범 (${albums.length})`, icon: 'fa-solid fa-book-open' },
-              { key: 'favorites', label: `즐겨찾기 (${mediaPhotoStore.favoritePhotos.length})`, icon: 'fa-solid fa-star' },
+              { key: 'favorites', label: `즐겨찾기 (${mediaPhotoStore.totalPhotoFavoritesCount})`, icon: 'fa-solid fa-star' },
             ]"
             :key="tab.key"
             type="button"
@@ -1408,6 +1408,17 @@ onBeforeUnmount(() => {
 
             <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/15 to-transparent"></div>
 
+            <button
+              type="button"
+              data-testid="album-favorite-btn"
+              class="absolute right-2.5 top-2.5 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-xs transition hover:bg-black/80"
+              :class="album.isFavorite ? 'text-amber-400' : 'text-white/80 hover:text-white'"
+              :title="album.isFavorite ? '앨범 즐겨찾기 해제' : '앨범 즐겨찾기 추가'"
+              @click.stop="mediaPhotoStore.toggleAlbumFavorite(album.id)"
+            >
+              <i :class="album.isFavorite ? 'fa-solid fa-star' : 'fa-regular fa-star'"></i>
+            </button>
+
             <div class="absolute bottom-3 left-3 right-3 text-white">
               <div class="flex items-center justify-between">
                 <span class="rounded bg-emerald-600/90 px-2 py-0.5 text-[10px] font-extrabold">
@@ -1481,6 +1492,17 @@ onBeforeUnmount(() => {
 
       <div class="flex flex-wrap items-center gap-2">
         <button
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-2xl border px-3.5 py-2 text-xs font-bold transition"
+          :class="activeAlbum.isFavorite
+            ? 'border-amber-400/50 bg-amber-500/15 text-amber-500'
+            : 'border-[var(--border-color)] bg-[var(--bg-elevated)] text-[var(--text-main)]'"
+          @click="mediaPhotoStore.toggleAlbumFavorite(activeAlbum.id)"
+        >
+          <i :class="activeAlbum.isFavorite ? 'fa-solid fa-star text-amber-400' : 'fa-regular fa-star'"></i>
+          <span>{{ activeAlbum.isFavorite ? "즐겨찾기 해제" : "즐겨찾기" }}</span>
+        </button>
+        <button
           v-if="activeAlbum.photoCount > 0"
           type="button"
           class="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-2 text-xs font-extrabold text-white hover:bg-blue-500"
@@ -1517,9 +1539,100 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
+    <!-- [B2] Photos Favorites & Album Shortcut Shelf (Shown on timeline overview when favorites exist) -->
+    <section
+      v-if="activeTab === 'timeline' && !selectedAlbumId && !effectiveSearchQuery && ((mediaPhotoStore.favoritePhotoAlbums || []).length > 0 || mediaPhotoStore.favoritePhotos.length > 0)"
+      data-testid="photos-favorites-shelf"
+      class="space-y-3 rounded-3xl border border-amber-400/30 bg-amber-500/5 p-4"
+    >
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-star text-amber-500"></i>
+          <h2 class="text-base font-black text-[var(--text-main)]">즐겨찾기 · 앨범 바로가기</h2>
+          <span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-extrabold text-amber-600 dark:text-amber-400">
+            {{ mediaPhotoStore.totalPhotoFavoritesCount }}
+          </span>
+        </div>
+        <button
+          type="button"
+          class="text-xs font-bold text-blue-500 hover:underline"
+          @click="setTab('favorites')"
+        >
+          전체 보기 →
+        </button>
+      </div>
+
+      <div v-if="(mediaPhotoStore.favoritePhotoAlbums || []).length > 0" class="flex flex-wrap items-center gap-2">
+        <button
+          v-for="album in mediaPhotoStore.favoritePhotoAlbums"
+          :key="'fav-album-pill-' + album.id"
+          type="button"
+          class="inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-[var(--bg-elevated)] px-3 py-1.5 text-xs font-bold text-[var(--text-main)] shadow-sm transition hover:border-amber-400"
+          @click="selectedAlbumId = album.id"
+        >
+          <i class="fa-solid fa-book-open text-emerald-500"></i>
+          <span>{{ album.name }}</span>
+          <span class="text-[10px] text-[var(--text-muted)]">({{ album.photoCount }}장)</span>
+        </button>
+      </div>
+
+      <div v-if="mediaPhotoStore.favoritePhotos.length > 0" class="grid grid-cols-3 gap-2 sm:grid-cols-6 md:grid-cols-8">
+        <div
+          v-for="photo in mediaPhotoStore.favoritePhotos.slice(0, 8)"
+          :key="'fav-photo-shelf-' + photo.id"
+          :ref="(el) => observePhotoThumbnailEl(el, photo)"
+          class="group relative aspect-square cursor-pointer overflow-hidden rounded-xl bg-slate-900"
+          @click="openPhotoLightbox(photo, mediaPhotoStore.favoritePhotos)"
+        >
+          <img
+            v-if="thumbnailMap[String(photo.id)]"
+            :src="thumbnailMap[String(photo.id)]"
+            :alt="photo.name"
+            class="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+          />
+          <div v-else class="flex h-full w-full items-center justify-center text-slate-400">
+            <i class="fa-regular fa-image"></i>
+          </div>
+          <span class="absolute right-1.5 top-1.5 text-[10px] text-amber-400 drop-shadow">
+            <i class="fa-solid fa-star"></i>
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- [B3] Favorite Albums Grid inside 'favorites' tab -->
+    <section
+      v-if="activeTab === 'favorites' && !selectedAlbumId && (mediaPhotoStore.favoritePhotoAlbums || []).length > 0"
+      data-testid="photos-favorite-albums-section"
+      class="space-y-3"
+    >
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-star text-amber-500"></i>
+        <h2 class="text-base font-black text-[var(--text-main)]">즐겨찾는 앨범</h2>
+        <span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-extrabold text-amber-600 dark:text-amber-400">
+          {{ mediaPhotoStore.favoritePhotoAlbums.length }}
+        </span>
+      </div>
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <button
+          v-for="album in mediaPhotoStore.favoritePhotoAlbums"
+          :key="'fav-tab-album-' + album.id"
+          type="button"
+          class="flex items-center justify-between gap-2 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-elevated)] p-3 text-left shadow-sm transition hover:border-amber-400"
+          @click="selectedAlbumId = album.id"
+        >
+          <div class="min-w-0">
+            <p class="truncate text-sm font-black text-[var(--text-main)]">{{ album.name }}</p>
+            <p class="mt-0.5 text-[11px] text-[var(--text-muted)]">사진 {{ album.photoCount }}장</p>
+          </div>
+          <i class="fa-solid fa-star shrink-0 text-xs text-amber-400"></i>
+        </button>
+      </div>
+    </section>
+
     <!-- [C] Photo Timeline / Album Photos Section -->
     <section
-      v-if="activeTab !== 'albums' || selectedAlbumId"
+      v-if="(activeTab !== 'albums' || selectedAlbumId) && !(activeTab === 'favorites' && visiblePhotos.length === 0 && (mediaPhotoStore.favoritePhotoAlbums || []).length > 0)"
       class="space-y-6"
     >
       <!-- Empty State -->

@@ -204,6 +204,11 @@ export function buildSelectedBaseFileGroups(selectedFiles = [], options = {}) {
   const vaultMode = Boolean(options.vaultMode);
   const deleteMode = options.deleteMode || "trash";
   const selectedLockableFiles = selectedFiles.filter((file) => !file?.sharedWithMe && file?.type !== "folder" && !file?.isTrash);
+  const favoriteSelectableFiles = selectedFiles.filter((file) => getCollectionActionAvailability(file, {
+    sharedLibrary,
+    vaultMode,
+    deleteMode,
+  }).canToggleFavorite);
 
   return {
     downloadableFiles: selectedFiles.filter((file) => !file?.lockedFile && !file?.isTrash && (file?.type === "folder" || file?.downloadUrl || file?.presignedDownloadUrl || (file?.sharedWithMe && file?.downloadable))),
@@ -213,6 +218,8 @@ export function buildSelectedBaseFileGroups(selectedFiles = [], options = {}) {
     lockableFiles: selectedLockableFiles,
     lockCandidates: selectedLockableFiles.filter((file) => !file?.lockedFile),
     lockedFiles: selectedLockableFiles.filter((file) => file?.lockedFile),
+    favoriteCandidates: favoriteSelectableFiles.filter((file) => !file?.isFavorite),
+    favoritedFiles: favoriteSelectableFiles.filter((file) => Boolean(file?.isFavorite)),
     vaultMovableFiles: selectedFiles.filter((file) => getCollectionActionAvailability(file, {
       sharedLibrary,
       vaultMode,

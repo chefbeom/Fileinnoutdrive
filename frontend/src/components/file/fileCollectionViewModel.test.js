@@ -244,4 +244,22 @@ describe("fileCollectionViewModel", () => {
     await articles[0].trigger("dblclick");
     expect(handlePrimaryAction).toHaveBeenCalledWith({ id: 101, name: "past타", type: "folder" });
   });
+
+  it("exposes favorite status chip and toggle availability while blocking trashed or incoming shared items", () => {
+    expect(getCollectionStatusChips({ favorite: true }).map((chip) => chip.key))
+      .toContain("favorite");
+
+    expect(getCollectionActionAvailability({ id: 1, type: "folder" })).toMatchObject({
+      canToggleFavorite: true,
+    });
+    expect(getCollectionActionAvailability({ id: 2, type: "file", downloadUrl: "/d" })).toMatchObject({
+      canToggleFavorite: true,
+    });
+    expect(getCollectionActionAvailability({ id: 3, type: "file", sharedWithMe: true })).toMatchObject({
+      canToggleFavorite: false,
+    });
+    expect(getCollectionActionAvailability({ id: 4, type: "file" }, { deleteMode: "permanent" })).toMatchObject({
+      canToggleFavorite: false,
+    });
+  });
 });

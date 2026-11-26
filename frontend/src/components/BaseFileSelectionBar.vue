@@ -7,6 +7,8 @@ defineProps({
   ownedShareableCount: { type: Number, default: 0 },
   lockCandidateCount: { type: Number, default: 0 },
   lockedCount: { type: Number, default: 0 },
+  favoriteCandidateCount: { type: Number, default: 0 },
+  favoritedCount: { type: Number, default: 0 },
   vaultMovableCount: { type: Number, default: 0 },
   vaultExportableCount: { type: Number, default: 0 },
   sharedLibrary: { type: Boolean, default: false },
@@ -21,6 +23,7 @@ const emit = defineEmits([
   "cancel-sent-shares",
   "share",
   "lock",
+  "favorite",
   "move-to-vault",
   "move-from-vault",
   "restore",
@@ -50,6 +53,8 @@ const emit = defineEmits([
         <button v-if="!sharedLibrary && deleteMode !== 'permanent' && ownedShareableCount > 0" type="button" class="batch-button bg-white text-emerald-700 hover:bg-emerald-100" @click="emit('share')">선택 공유</button>
         <button v-if="!sharedLibrary && deleteMode !== 'permanent' && canCreateLocks && lockCandidateCount > 0" type="button" class="batch-button bg-white text-amber-700 hover:bg-amber-100" @click="emit('lock', true)">선택 잠금</button>
         <button v-if="!sharedLibrary && deleteMode !== 'permanent' && lockedCount > 0" type="button" class="batch-button bg-white text-slate-700 hover:bg-slate-200" @click="emit('lock', false)">잠금 해제</button>
+        <button v-if="!sharedLibrary && deleteMode !== 'permanent' && favoriteCandidateCount > 0" type="button" class="batch-button bg-white text-amber-700 hover:bg-amber-100" @click="emit('favorite', true)">즐겨찾기 추가</button>
+        <button v-if="!sharedLibrary && deleteMode !== 'permanent' && favoritedCount > 0" type="button" class="batch-button bg-white text-slate-700 hover:bg-slate-200" @click="emit('favorite', false)">즐겨찾기 해제</button>
         <button v-if="!sharedLibrary && !vaultMode && deleteMode !== 'permanent' && vaultMovableCount > 0" type="button" class="batch-button bg-white text-indigo-700 hover:bg-indigo-100" @click="emit('move-to-vault')">자체 비밀구역으로 옮기기</button>
         <button v-if="!sharedLibrary && vaultMode && deleteMode !== 'permanent' && vaultExportableCount > 0" type="button" class="batch-button bg-white text-emerald-700 hover:bg-emerald-100" @click="emit('move-from-vault')">일반 저장소로 꺼내기 (복호화)</button>
         <button v-if="!sharedLibrary && deleteMode === 'permanent'" type="button" class="batch-button bg-white text-emerald-700 hover:bg-emerald-100" @click="emit('restore')">원래 위치로 복구</button>

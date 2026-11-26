@@ -247,6 +247,7 @@ export function getCollectionActionAvailability(file, options = {}) {
     canShare: !sharedLibrary && !sharedWithMe && !isTrash && !locked && !isSecretNode && (canCreateShares || file?.sharedFile),
     canShareDownloadLink: !sharedLibrary && !sharedWithMe && !isFolder && !isTrash && !locked && !isSecretNode && !vaultMode && !hiddenContext,
     canToggleLock: !sharedLibrary && !sharedWithMe && !isFolder && !isTrash && (canCreateLocks || file?.lockedFile),
+    canToggleFavorite: !sharedLibrary && deleteMode !== "permanent" && !sharedWithMe && !isTrash,
     canSaveShared: sharedWithMe && !isFolder && !locked && Boolean(getCollectionPreviewUrl(file) || file?.downloadable),
     canManageSentShare: Boolean(sharedLibrary && file?.sharedFile && !sharedWithMe),
     isMovable: !sharedLibrary && deleteMode !== "permanent" && !sharedWithMe && !isTrash && !locked,
@@ -272,6 +273,10 @@ export function getCollectionDeleteConfirmMessage(file, deleteMode = "trash") {
 
 export function getCollectionStatusChips(file) {
   const chips = [];
+
+  if (file?.favorite || file?.isFavorite) {
+    chips.push({ key: "favorite", label: "즐겨찾기", icon: "star", tone: "amber" });
+  }
 
   if (file?.sharedWithMe) {
     chips.push({ key: "shared-with-me", label: "공유받음", icon: "in", tone: "shared-in" });

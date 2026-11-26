@@ -188,6 +188,8 @@ export const normalizeFileRecord = (rawFile, options = {}) => {
     isSharedFolder,
     sharedStorageIdx,
     lockedFile: Boolean(rawFile?.lockedFile),
+    favorite: Boolean(rawFile?.favorite ?? rawFile?.isFavorite),
+    isFavorite: Boolean(rawFile?.favorite ?? rawFile?.isFavorite),
     spaceType: String(rawFile?.spaceType || "DRIVE").toUpperCase(),
     isVaultSpace: String(rawFile?.spaceType || "DRIVE").toUpperCase() === "VAULT",
     encrypted,
