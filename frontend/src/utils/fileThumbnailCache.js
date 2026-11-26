@@ -6,8 +6,7 @@ import {
 const MAX_CACHE_SIZE = 1000;
 const MAX_CONCURRENT_THUMBNAIL_REQUESTS = 3;
 const MISS_RETRY_COOLDOWN_MS = 15_000;
-const PENDING_THUMBNAIL_RETRY_DELAY_MS = 2_200;
-const MAX_PENDING_THUMBNAIL_RETRIES = 2;
+const PENDING_THUMBNAIL_RETRY_DELAYS_MS = [1500, 2000, 2500, 3000, 3000, 3000, 3000, 3000];
 const thumbnailUrlCache = new Map();
 const thumbnailRequestCache = new Map();
 const thumbnailMissCache = new Map();
@@ -230,9 +229,10 @@ export const loadFileThumbnailUrl = async (file, options = {}) => {
       }
 
       let pendingAttempt = 0;
-      while (thumbnailResult?.__pendingThumbnail && pendingAttempt < MAX_PENDING_THUMBNAIL_RETRIES) {
+      while (thumbnailResult?.__pendingThumbnail && pendingAttempt < PENDING_THUMBNAIL_RETRY_DELAYS_MS.length) {
+        const retryDelayMs = PENDING_THUMBNAIL_RETRY_DELAYS_MS[pendingAttempt];
         pendingAttempt += 1;
-        await waitWithSignal(PENDING_THUMBNAIL_RETRY_DELAY_MS, signal);
+        await waitWithSignal(retryDelayMs, signal);
         thumbnailResult = await fetchOnce();
         if (typeof thumbnailResult === "string") {
           return thumbnailResult;

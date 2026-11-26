@@ -50,6 +50,12 @@ const router = createRouter({
           meta: { title: '즐겨찾기', requiresAuth: true },
         },
         {
+          path: 'secret-favorites',
+          name: 'secretFavorites',
+          component: () => import('../views/dashboard/SecretFavoritesView.vue'),
+          meta: { title: '비밀 즐겨찾기', requiresAuth: true },
+        },
+        {
           path: 'media',
           name: 'media',
           component: () => import('../views/dashboard/MediaView.vue'),

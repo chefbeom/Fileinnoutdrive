@@ -135,6 +135,7 @@ const {
             class="cursor-pointer select-none transition hover:bg-slate-50"
             :class="{
               'file-row--selected': selectedIdSet.has(String(file.id)),
+              'bg-amber-50/40 dark:bg-amber-500/5': Boolean(file.favorite || file.isFavorite),
               'ring-2 ring-blue-500 bg-blue-50/80': String(dragTargetId) === String(file.id),
             }"
             :aria-selected="selectedIdSet.has(String(file.id))"
@@ -236,17 +237,26 @@ const {
                     type="button"
                     data-testid="table-favorite-btn"
                     class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md transition-colors"
-                    :class="file.favorite
-                      ? 'text-amber-500 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-500/15'
+                    :class="(file.favorite || file.isFavorite)
+                      ? 'bg-amber-100 text-amber-600 hover:bg-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:hover:bg-amber-500/30'
                       : 'text-gray-300 hover:bg-amber-50 hover:text-amber-500 dark:text-slate-500 dark:hover:bg-slate-800'"
-                    :title="file.favorite ? '즐겨찾기 해제' : '즐겨찾기 추가'"
-                    :aria-label="file.favorite ? '즐겨찾기 해제' : '즐겨찾기 추가'"
-                    :aria-pressed="Boolean(file.favorite)"
+                    :title="(file.favorite || file.isFavorite) ? '즐겨찾기 해제' : '즐겨찾기 추가'"
+                    :aria-label="(file.favorite || file.isFavorite) ? '즐겨찾기 해제' : '즐겨찾기 추가'"
+                    :aria-pressed="Boolean(file.favorite || file.isFavorite)"
                     @click.stop="onClickToggleFavorite(file, $event)"
                   >
-                    <i :class="file.favorite ? 'fa-solid fa-star text-[11px]' : 'fa-regular fa-star text-[11px]'"></i>
+                    <i :class="(file.favorite || file.isFavorite) ? 'fa-solid fa-star text-[11px]' : 'fa-regular fa-star text-[11px]'"></i>
                   </button>
                   <p class="file-entry__title truncate text-sm font-semibold text-gray-900">{{ getFileName(file) }}</p>
+                  <span
+                    v-if="file.favorite || file.isFavorite"
+                    data-testid="table-favorite-badge"
+                    class="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-extrabold text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+                    title="즐겨찾기됨"
+                  >
+                    <i class="fa-solid fa-star text-[9px]"></i>
+                    즐겨찾기
+                  </span>
                   <span
                     v-if="isSharedFolder(file)"
                     class="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-extrabold text-blue-600"

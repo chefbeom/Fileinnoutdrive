@@ -902,6 +902,7 @@ export const useFileStore = defineStore("file", () => {
     return sortFavoriteList([...mergedById.values()]);
   });
   const vaultFavoriteFolders = computed(() => vaultFavoriteItems.value.filter((file) => file.type === "folder"));
+  const vaultFavoriteFilesOnly = computed(() => vaultFavoriteItems.value.filter((file) => file.type !== "folder"));
 
   const isEligibleUploadedCandidate = (file) => !(
     !file ||
@@ -1797,6 +1798,7 @@ export const useFileStore = defineStore("file", () => {
     favoriteFilesOnly,
     vaultFavoriteItems,
     vaultFavoriteFolders,
+    vaultFavoriteFilesOnly,
     trashFiles,
     allOnlyFiles,
     fetchFiles,

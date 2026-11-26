@@ -611,7 +611,8 @@ const handlePrimaryAction = (file) => {
 
   if (file.type === "folder") {
     if (props.deleteMode !== "permanent" && !props.sharedLibrary) {
-      if (router?.currentRoute?.value?.name === "favoriteFile") {
+      const currentRouteName = router?.currentRoute?.value?.name;
+      if (currentRouteName === "favoriteFile" || currentRouteName === "secretFavorites") {
         fileStore.navigateToFolder(file.id);
         router.push({ name: "home" });
       } else {
@@ -1391,6 +1392,7 @@ provide(FILE_COLLECTION_CONTEXT_KEY, {
   getImageCardUrl,
   getVideoCardUrl,
   getVideoPreviewStreamUrl,
+  getManagedThumbnailState,
   getStatusChips,
   isImage,
   isVideo,

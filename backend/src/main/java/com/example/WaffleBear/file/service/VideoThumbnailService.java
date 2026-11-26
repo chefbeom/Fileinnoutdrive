@@ -36,7 +36,7 @@ public class VideoThumbnailService {
     );
     private static final int MAX_THUMBNAIL_WIDTH = 480;
     private static final int MAX_THUMBNAIL_HEIGHT = 320;
-    private static final long FFMPEG_TIMEOUT_SECONDS = 12L;
+    private static final long FFMPEG_TIMEOUT_SECONDS = 20L;
     private static final ScheduledExecutorService FFMPEG_WATCHDOG = Executors.newSingleThreadScheduledExecutor(runnable -> {
         Thread thread = new Thread(runnable, "ffmpeg-video-watchdog");
         thread.setDaemon(true);
@@ -56,11 +56,11 @@ public class VideoThumbnailService {
             return new byte[0];
         }
 
-        byte[] seekFrame = runFfmpegThumbnail(inputSource, "00:00:01");
+        byte[] seekFrame = runFfmpegThumbnail(inputSource, "00:00:01", false);
         if (seekFrame.length > 0) {
             return seekFrame;
         }
-        return runFfmpegThumbnail(inputSource, "00:00:00");
+        return runFfmpegThumbnail(inputSource, "00:00:00", true);
     }
 
     public byte[] createThumbnail(Path videoPath) throws IOException, JCodecException {
@@ -89,7 +89,7 @@ public class VideoThumbnailService {
         }
     }
 
-    private byte[] runFfmpegThumbnail(String inputSource, String seekTimestamp) {
+    private byte[] runFfmpegThumbnail(String inputSource, String seekTimestamp, boolean tolerantFallback) {
         boolean isHttpSource = inputSource.startsWith("http://") || inputSource.startsWith("https://");
         List<String> command = new ArrayList<>();
         command.add("ffmpeg");
@@ -99,21 +99,31 @@ public class VideoThumbnailService {
         command.add("-nostdin");
         if (isHttpSource) {
             command.add("-rw_timeout");
-            command.add("10000000");
+            command.add("15000000");
         }
         command.add("-analyzeduration");
-        command.add("2000000");
+        command.add("5000000");
         command.add("-probesize");
-        command.add("2000000");
-        command.add("-noaccurate_seek");
+        command.add("10000000");
+        if (tolerantFallback) {
+            command.add("-err_detect");
+            command.add("ignore_err");
+        } else {
+            command.add("-noaccurate_seek");
+        }
         command.add("-ss");
         command.add(seekTimestamp);
         command.add("-i");
         command.add(inputSource);
+        command.add("-map");
+        command.add("0:v:0");
+        command.add("-an");
+        command.add("-sn");
+        command.add("-dn");
         command.add("-frames:v");
         command.add("1");
         command.add("-vf");
-        command.add("scale='min(" + MAX_THUMBNAIL_WIDTH + ",iw)':-2,format=yuvj420p");
+        command.add("scale='trunc(min(" + MAX_THUMBNAIL_WIDTH + ",iw)/2)*2':-2,format=yuvj420p");
         command.add("-strict");
         command.add("unofficial");
         command.add("-q:v");
@@ -163,16 +173,30 @@ public class VideoThumbnailService {
                 }
                 if (!finished) {
                     startedProcess.destroyForcibly();
-                    log.debug("ffmpeg thumbnail timed out at seek={} err={}", seekTimestamp, stderrBuffer.toString(StandardCharsets.UTF_8));
+                    String errText = stderrBuffer.toString(StandardCharsets.UTF_8);
+                    if (tolerantFallback) {
+                        log.warn("ffmpeg video thumbnail timed out seek={} err={}", seekTimestamp, errText);
+                    } else {
+                        log.debug("ffmpeg thumbnail timed out at seek={} err={}", seekTimestamp, errText);
+                    }
                     return new byte[0];
                 }
                 if (startedProcess.exitValue() == 0 && buffer.size() > 0) {
                     return buffer.toByteArray();
                 }
-                log.debug("ffmpeg thumbnail failed exit={} seek={} err={}", startedProcess.exitValue(), seekTimestamp, stderrBuffer.toString(StandardCharsets.UTF_8));
+                String errText = stderrBuffer.toString(StandardCharsets.UTF_8);
+                if (tolerantFallback) {
+                    log.warn("ffmpeg video thumbnail failed exit={} seek={} err={}", startedProcess.exitValue(), seekTimestamp, errText);
+                } else {
+                    log.debug("ffmpeg thumbnail failed exit={} seek={} err={}", startedProcess.exitValue(), seekTimestamp, errText);
+                }
             }
         } catch (Exception exception) {
-            log.debug("ffmpeg thumbnail execution error seek={}: {}", seekTimestamp, exception.getMessage());
+            if (tolerantFallback) {
+                log.warn("ffmpeg video thumbnail execution error seek={}: {}", seekTimestamp, exception.getMessage());
+            } else {
+                log.debug("ffmpeg thumbnail execution error seek={}: {}", seekTimestamp, exception.getMessage());
+            }
             if (process != null) {
                 process.destroyForcibly();
             }

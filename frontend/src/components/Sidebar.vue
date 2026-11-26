@@ -574,6 +574,25 @@ const handleAction = async (action, idx) => {
                 <span>비밀 파일</span>
               </button>
               <RouterLink
+                :to="{ name: 'secretFavorites' }"
+                data-testid="sidebar-secret-favorites-nav"
+                class="flex items-center justify-between gap-2 px-2.5 py-2 text-xs font-bold rounded-xl transition-colors no-underline"
+                :class="route.name === 'secretFavorites'
+                  ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-main)]'"
+              >
+                <div class="flex items-center gap-3">
+                  <i class="fa-solid fa-star fa-fw text-amber-500"></i>
+                  <span>비밀 즐겨찾기</span>
+                </div>
+                <span
+                  v-if="(fileStore.vaultFavoriteItems || []).length > 0"
+                  class="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-600 dark:text-amber-400"
+                >
+                  {{ (fileStore.vaultFavoriteItems || []).length }}
+                </span>
+              </RouterLink>
+              <RouterLink
                 :to="{ name: 'secretMedia' }"
                 class="flex items-center gap-3 px-2.5 py-2 text-xs font-bold rounded-xl transition-colors no-underline"
                 :class="route.name === 'secretMedia'
@@ -599,8 +618,16 @@ const handleAction = async (action, idx) => {
                 data-testid="sidebar-vault-favorites"
                 class="mt-1 border-t border-amber-400/25 pt-1.5 space-y-0.5"
               >
-                <div class="px-2 py-0.5 text-[10px] font-extrabold text-amber-600 dark:text-amber-400">
-                  비밀 즐겨찾기 · 바로가기
+                <div class="flex items-center justify-between px-2 py-0.5">
+                  <span class="text-[10px] font-extrabold text-amber-600 dark:text-amber-400">
+                    비밀 즐겨찾기 · 바로가기
+                  </span>
+                  <RouterLink
+                    :to="{ name: 'secretFavorites' }"
+                    class="text-[10px] font-bold text-amber-600 hover:underline no-underline dark:text-amber-300"
+                  >
+                    전체
+                  </RouterLink>
                 </div>
                 <button
                   v-for="item in sidebarVaultFavorites"

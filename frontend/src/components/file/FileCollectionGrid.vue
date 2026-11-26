@@ -29,6 +29,7 @@ const {
   getImageCardUrl,
   getVideoCardUrl,
   getVideoPreviewStreamUrl = () => "",
+  getManagedThumbnailState = () => "idle",
   getStatusChips,
   isImage,
   isVideo,
@@ -117,11 +118,12 @@ const {
       <article
         v-for="(file, index) in files"
         :key="file.id || file.idx || `${getFileName(file)}-${index}`"
-        class="file-entry group cursor-pointer select-none rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+        class="file-entry group relative cursor-pointer select-none rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
         :class="[
           viewMode === 'icon' ? 'file-entry--icon' : 'file-entry--card',
           {
             'file-entry--selected': selectedIdSet.has(String(file.id)),
+            'file-entry--favorite border-amber-300/90 ring-1 ring-amber-400/50 dark:border-amber-500/45 dark:ring-amber-400/35': Boolean(file.favorite || file.isFavorite),
             'ring-2 ring-blue-500 border-blue-500 bg-blue-50/80 shadow-md': String(dragTargetId) === String(file.id),
           },
         ]"
@@ -140,17 +142,28 @@ const {
           v-if="viewMode !== 'icon'"
           class="file-entry__header mb-3 flex items-start justify-between gap-2 sm:mb-4 sm:gap-3"
         >
-          <label
-            class="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-white/90 shadow-sm"
-            @click.stop
-          >
-            <input
-              type="checkbox"
-              class="h-4 w-4 cursor-pointer rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              :checked="selectedIdSet.has(String(file.id))"
-              @click.stop="toggleFileSelection(file.id, $event.target.checked, $event)"
-            />
-          </label>
+          <div class="flex items-center gap-1.5">
+            <label
+              class="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-white/90 shadow-sm"
+              @click.stop
+            >
+              <input
+                type="checkbox"
+                class="h-4 w-4 cursor-pointer rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                :checked="selectedIdSet.has(String(file.id))"
+                @click.stop="toggleFileSelection(file.id, $event.target.checked, $event)"
+              />
+            </label>
+            <span
+              v-if="file.favorite || file.isFavorite"
+              data-testid="card-favorite-badge"
+              class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-extrabold text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+              title="즐겨찾기됨"
+            >
+              <i class="fa-solid fa-star text-[9px]"></i>
+              <span>즐겨찾기</span>
+            </span>
+          </div>
 
           <div class="flex items-center gap-1">
             <button
@@ -158,15 +171,15 @@ const {
               type="button"
               data-testid="grid-favorite-btn"
               class="action-icon transition-colors"
-              :class="file.favorite
-                ? 'text-amber-500 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-500/15'
+              :class="(file.favorite || file.isFavorite)
+                ? 'bg-amber-100 text-amber-600 hover:bg-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:hover:bg-amber-500/30'
                 : 'text-gray-400 hover:bg-amber-50 hover:text-amber-500 dark:text-slate-400 dark:hover:bg-slate-800'"
-              :title="file.favorite ? '즐겨찾기 해제' : '즐겨찾기 추가'"
-              :aria-label="file.favorite ? '즐겨찾기 해제' : '즐겨찾기 추가'"
-              :aria-pressed="Boolean(file.favorite)"
+              :title="(file.favorite || file.isFavorite) ? '즐겨찾기 해제' : '즐겨찾기 추가'"
+              :aria-label="(file.favorite || file.isFavorite) ? '즐겨찾기 해제' : '즐겨찾기 추가'"
+              :aria-pressed="Boolean(file.favorite || file.isFavorite)"
               @click.stop="onClickToggleFavorite(file, $event)"
             >
-              <i :class="file.favorite ? 'fa-solid fa-star text-xs' : 'fa-regular fa-star text-xs'"></i>
+              <i :class="(file.favorite || file.isFavorite) ? 'fa-solid fa-star text-xs' : 'fa-regular fa-star text-xs'"></i>
             </button>
             <button
               type="button"
@@ -189,6 +202,29 @@ const {
             </button>
           </div>
         </div>
+
+        <button
+          v-if="viewMode === 'icon' && (file.favorite || file.isFavorite)"
+          type="button"
+          data-testid="card-favorite-badge"
+          class="absolute right-1.5 top-1.5 z-10 inline-flex items-center gap-1 rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-extrabold text-white shadow-sm ring-1 ring-amber-300/80 transition hover:bg-amber-600"
+          title="즐겨찾기됨 (클릭하여 해제)"
+          aria-label="즐겨찾기됨"
+          @click.stop="canToggleFavorite(file) && onClickToggleFavorite(file, $event)"
+        >
+          <i class="fa-solid fa-star text-[9px]"></i>
+          <span v-if="itemSize === 'large'">즐겨찾기</span>
+        </button>
+        <button
+          v-else-if="viewMode === 'icon' && canToggleFavorite(file)"
+          type="button"
+          class="absolute right-1.5 top-1.5 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/85 text-gray-400 opacity-0 shadow-xs transition group-hover:opacity-100 hover:text-amber-500 dark:bg-slate-900/80 dark:text-slate-400"
+          title="즐겨찾기 추가"
+          aria-label="즐겨찾기 추가"
+          @click.stop="onClickToggleFavorite(file, $event)"
+        >
+          <i class="fa-regular fa-star text-[10px]"></i>
+        </button>
 
         <div
           v-if="file.type === 'folder'"
@@ -230,7 +266,7 @@ const {
             @error="handlePreviewAssetError(file)"
           />
         </div>
-        <div v-else-if="isImage(file)" class="preview-box file-entry__preview flex items-center justify-center bg-emerald-50 text-emerald-600" :class="viewMode === 'icon' ? 'file-entry__preview--icon' : 'file-entry__preview--card'">
+        <div v-else-if="isImage(file)" class="preview-box file-entry__preview flex items-center justify-center bg-emerald-50 text-emerald-600" :class="[viewMode === 'icon' ? 'file-entry__preview--icon' : 'file-entry__preview--card', { 'animate-pulse': getManagedThumbnailState(file) === 'loading' }]">
           <svg class="file-entry__preview-graphic" fill="currentColor" viewBox="0 0 20 20">
             <path d="M4 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4Zm2 2v8l2.5-2.5 2 2L14 9v7H6V6Zm2 1.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" />
           </svg>
@@ -249,7 +285,7 @@ const {
             </svg>
           </span>
         </div>
-        <div v-else-if="isVideo(file)" class="preview-box file-entry__preview flex items-center justify-center bg-slate-900 text-white" :class="viewMode === 'icon' ? 'file-entry__preview--icon' : 'file-entry__preview--card'">
+        <div v-else-if="isVideo(file)" class="preview-box file-entry__preview flex items-center justify-center bg-slate-900 text-white" :class="[viewMode === 'icon' ? 'file-entry__preview--icon' : 'file-entry__preview--card', { 'animate-pulse': getManagedThumbnailState(file) === 'loading' }]">
           <svg class="file-entry__preview-graphic" fill="currentColor" viewBox="0 0 20 20">
             <path d="M6 4.5v11l9-5.5-9-5.5Z" />
           </svg>

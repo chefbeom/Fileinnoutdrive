@@ -315,6 +315,47 @@ class FileThumbnailServiceTest {
         assertThat(payload.bytes()).containsExactly(7, 8, 9);
     }
 
+    @Test
+    void scheduleEncryptedThumbnailPreGenerationDeduplicatesAndWaitsForPermit() throws Exception {
+        ReflectionTestUtils.setField(fileThumbnailService, "vaultFileCryptoService", vaultFileCryptoService);
+        when(videoThumbnailService.supports("mp4")).thenReturn(true);
+        // First statObject check sees missing .vthumb so generation path acquires FFmpeg permit;
+        // second check (inside permit block) finds the .vthumb ready.
+        when(minioClient.statObject(any(StatObjectArgs.class)))
+                .thenThrow(new RuntimeException("missing"))
+                .thenReturn(null);
+
+        java.util.List<Runnable> submitted = new java.util.ArrayList<>();
+        when(thumbnailTaskExecutor.runAsync(any(Runnable.class))).thenAnswer(invocation -> {
+            submitted.add(invocation.getArgument(0));
+            return CompletableFuture.completedFuture(null);
+        });
+
+        FileInfo encryptedVideo = encryptedVaultVideo(403L, "7/vault/dedup-clip.enc");
+        String thumbKey = "7/vault/thumbnails/dedup-clip.vthumb";
+        when(vaultFileCryptoService.loadDecryptedThumbnail(encryptedVideo, thumbKey))
+                .thenReturn(new byte[]{1, 2, 3});
+
+        // Scheduling the same encrypted video twice only enqueues one async task
+        fileThumbnailService.scheduleEncryptedThumbnailPreGeneration(encryptedVideo);
+        fileThumbnailService.scheduleEncryptedThumbnailPreGeneration(encryptedVideo);
+        assertThat(submitted).hasSize(1);
+
+        // Drain permits temporarily; background prewarm blocks on acquire() instead of bailing on tryAcquire()
+        Semaphore permits = (Semaphore) ReflectionTestUtils.getField(fileThumbnailService, "onDemandVideoFfmpegPermits");
+        int drained = permits.drainPermits();
+        CompletableFuture<Void> workerFuture = CompletableFuture.runAsync(submitted.get(0));
+        try {
+            Thread.sleep(60L);
+            assertThat(workerFuture.isDone()).isFalse();
+        } finally {
+            permits.release(drained);
+        }
+
+        workerFuture.get(3, java.util.concurrent.TimeUnit.SECONDS);
+        verify(vaultFileCryptoService).loadDecryptedThumbnail(encryptedVideo, thumbKey);
+    }
+
     private FileInfo encryptedVaultVideo(Long idx, String objectKey) {
         return FileInfo.builder()
                 .idx(idx)

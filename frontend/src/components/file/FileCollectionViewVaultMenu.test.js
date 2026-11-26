@@ -343,4 +343,39 @@ describe("FileCollectionView move-to-vault context menu", () => {
     expect(mockLoadFileThumbnailUrl).toHaveBeenCalledTimes(1);
     wrapper.unmount();
   });
+
+  it("renders visible favorite badges in grid, icon, and table views for favorited items", async () => {
+    const favItem = {
+      id: 850,
+      name: "starred-secret.mp4",
+      extension: "mp4",
+      type: "file",
+      favorite: true,
+      isFavorite: true,
+      spaceType: "VAULT",
+      isVaultSpace: true,
+      downloadUrl: "/api/file/secret/stream/850?st=tok",
+    };
+
+    const viewStore = useViewStore();
+    for (const mode of ["grid", "icon"]) {
+      viewStore.viewMode.value = mode;
+      const wrapper = mount(FileCollectionView, {
+        attachTo: document.body,
+        props: { files: [favItem], selectedIds: [], deleteMode: "trash", sharedLibrary: false },
+      });
+      const badge = wrapper.find("[data-testid='card-favorite-badge']");
+      expect(badge.exists()).toBe(true);
+      wrapper.unmount();
+    }
+
+    viewStore.viewMode.value = "table";
+    const tableWrapper = mount(FileCollectionView, {
+      attachTo: document.body,
+      props: { files: [favItem], selectedIds: [], deleteMode: "trash", sharedLibrary: false },
+    });
+    expect(tableWrapper.find("[data-testid='table-favorite-badge']").exists()).toBe(true);
+    expect(tableWrapper.find("[data-testid='table-favorite-btn']").attributes("aria-pressed")).toBe("true");
+    tableWrapper.unmount();
+  });
 });

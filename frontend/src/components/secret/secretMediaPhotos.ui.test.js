@@ -447,6 +447,7 @@ describe("Secret Media & Secret Photos UI gating & isolation", () => {
 
     const secretNav = wrapper.get("[data-testid='sidebar-secret-nav']");
     expect(secretNav.text()).toContain("비밀 파일");
+    expect(secretNav.text()).toContain("비밀 즐겨찾기");
     expect(secretNav.text()).toContain("비밀 미디어");
     expect(secretNav.text()).toContain("비밀 사진첩");
     expect(wrapper.find("span[title='이어보기 중인 동영상 수']").exists()).toBe(false);

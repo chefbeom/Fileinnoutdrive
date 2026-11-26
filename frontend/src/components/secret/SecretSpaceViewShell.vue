@@ -8,7 +8,7 @@ import { useSecretFolderStore } from "@/stores/useSecretFolderStore.js";
 const props = defineProps({
   mode: {
     type: String,
-    required: true, // 'media' | 'photos'
+    required: true, // 'media' | 'photos' | 'favorites'
   },
 });
 
@@ -24,7 +24,11 @@ const isVaultReady = computed(() =>
   Boolean(secretFolderStore.vaultMode && secretFolderStore.vaultUnlocked),
 );
 
-const spaceTitle = computed(() => (props.mode === "photos" ? "비밀 사진첩" : "비밀 미디어"));
+const spaceTitle = computed(() => {
+  if (props.mode === "favorites") return "비밀 즐겨찾기";
+  if (props.mode === "photos") return "비밀 사진첩";
+  return "비밀 미디어";
+});
 const peerRouteName = computed(() => (props.mode === "photos" ? "secretMedia" : "secretPhotos"));
 const peerButtonLabel = computed(() => (props.mode === "photos" ? "비밀 미디어" : "비밀 사진첩"));
 const peerButtonIcon = computed(() => (props.mode === "photos" ? "fa-solid fa-clapperboard" : "fa-solid fa-images"));
@@ -113,6 +117,18 @@ onMounted(async () => {
           </button>
 
           <button
+            v-if="mode !== 'favorites'"
+            type="button"
+            data-testid="secret-go-favorites"
+            class="inline-flex items-center gap-1.5 rounded-xl border border-amber-400/60 bg-amber-500/15 px-3 py-1.5 text-xs font-bold text-amber-900 transition hover:bg-amber-500/25 dark:border-amber-500/40 dark:text-amber-200"
+            @click="router.push({ name: 'secretFavorites' })"
+          >
+            <i class="fa-solid fa-star text-amber-500"></i>
+            <span>비밀 즐겨찾기</span>
+          </button>
+
+          <button
+            v-if="mode !== 'favorites'"
             type="button"
             data-testid="secret-go-peer"
             class="inline-flex items-center gap-1.5 rounded-xl border border-amber-400/60 bg-amber-500/15 px-3 py-1.5 text-xs font-bold text-amber-900 transition hover:bg-amber-500/25 dark:border-amber-500/40 dark:text-amber-200"
@@ -121,6 +137,27 @@ onMounted(async () => {
             <i :class="peerButtonIcon"></i>
             <span>{{ peerButtonLabel }}</span>
           </button>
+
+          <template v-else>
+            <button
+              type="button"
+              data-testid="secret-go-media"
+              class="inline-flex items-center gap-1.5 rounded-xl border border-amber-400/60 bg-amber-500/15 px-3 py-1.5 text-xs font-bold text-amber-900 transition hover:bg-amber-500/25 dark:border-amber-500/40 dark:text-amber-200"
+              @click="router.push({ name: 'secretMedia' })"
+            >
+              <i class="fa-solid fa-clapperboard"></i>
+              <span>비밀 미디어</span>
+            </button>
+            <button
+              type="button"
+              data-testid="secret-go-photos"
+              class="inline-flex items-center gap-1.5 rounded-xl border border-amber-400/60 bg-amber-500/15 px-3 py-1.5 text-xs font-bold text-amber-900 transition hover:bg-amber-500/25 dark:border-amber-500/40 dark:text-amber-200"
+              @click="router.push({ name: 'secretPhotos' })"
+            >
+              <i class="fa-solid fa-images"></i>
+              <span>비밀 사진첩</span>
+            </button>
+          </template>
 
           <button
             type="button"

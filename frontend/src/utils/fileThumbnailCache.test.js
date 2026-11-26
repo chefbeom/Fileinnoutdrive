@@ -124,6 +124,10 @@ describe("fileThumbnailCache", () => {
         })
         .mockImplementationOnce(async (fileId) => {
           fetchCalls.push(fileId);
+          return { __pendingThumbnail: true };
+        })
+        .mockImplementationOnce(async (fileId) => {
+          fetchCalls.push(fileId);
           return new Blob(["ready-thumb"], { type: "image/jpeg" });
         });
 
@@ -144,9 +148,12 @@ describe("fileThumbnailCache", () => {
       await Promise.resolve();
       expect(fetchCalls).toEqual([405]);
 
-      await vi.advanceTimersByTimeAsync(2300);
-      const resolvedUrl = await pendingPromise;
+      await vi.advanceTimersByTimeAsync(1600);
       expect(fetchCalls).toEqual([405, 405]);
+
+      await vi.advanceTimersByTimeAsync(2100);
+      const resolvedUrl = await pendingPromise;
+      expect(fetchCalls).toEqual([405, 405, 405]);
       expect(resolvedUrl).toBeTruthy();
     } finally {
       vi.useRealTimers();

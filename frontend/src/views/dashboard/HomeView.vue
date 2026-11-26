@@ -93,9 +93,9 @@ const handleDelete = async (fileId) => {
             </span>
           </div>
           <RouterLink
-            v-if="!isVaultUnlockedView"
-            :to="{ name: 'favoriteFile' }"
-            class="text-xs font-bold text-blue-600 hover:underline no-underline dark:text-blue-400"
+            :to="{ name: isVaultUnlockedView ? 'secretFavorites' : 'favoriteFile' }"
+            class="text-xs font-bold hover:underline no-underline"
+            :class="isVaultUnlockedView ? 'text-amber-600 dark:text-amber-300' : 'text-blue-600 dark:text-blue-400'"
           >
             전체 보기 →
           </RouterLink>

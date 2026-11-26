@@ -3282,12 +3282,15 @@ onBeforeUnmount(() => {
             <!-- Top-right Favorite Star -->
             <button
               type="button"
-              class="absolute right-2.5 top-2.5 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-xs transition hover:bg-black/80"
-              :class="item.isFavorite ? 'text-amber-400' : 'text-white/80 hover:text-white'"
-              title="즐겨찾기"
+              class="absolute right-2.5 top-2.5 flex items-center justify-center rounded-full text-xs transition"
+              :class="item.isFavorite
+                ? 'h-7 gap-1 bg-amber-500 px-2 font-extrabold text-white shadow-sm ring-1 ring-amber-300/70 hover:bg-amber-600'
+                : 'h-8 w-8 bg-black/60 text-white/80 hover:bg-black/80 hover:text-white'"
+              :title="item.isFavorite ? '즐겨찾기 해제' : '즐겨찾기 추가'"
               @click.stop="mediaPhotoStore.toggleMediaFavorite(item.id)"
             >
-              <i :class="item.isFavorite ? 'fa-solid fa-star' : 'fa-regular fa-star'"></i>
+              <i :class="item.isFavorite ? 'fa-solid fa-star text-[10px]' : 'fa-regular fa-star'"></i>
+              <span v-if="item.isFavorite" class="text-[10px]">즐겨찾기</span>
             </button>
 
             <!-- Bottom-right Duration -->
