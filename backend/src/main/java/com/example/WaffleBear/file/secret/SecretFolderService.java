@@ -7,6 +7,7 @@ import com.example.WaffleBear.feater.model.Feater;
 import com.example.WaffleBear.file.FileUpDownloadRepository;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
+import com.example.WaffleBear.file.service.FileThumbnailService;
 import com.example.WaffleBear.file.share.ShareRepository;
 import com.example.WaffleBear.user.model.User;
 import com.example.WaffleBear.user.repository.UserRepository;
@@ -33,6 +34,9 @@ public class SecretFolderService {
     private final SecretTokenService secretTokenService;
     private final SecretAccessGuard secretAccessGuard;
     private PinAttemptLimiter pinAttemptLimiter = new PinAttemptLimiter();
+
+    @Autowired(required = false)
+    private FileThumbnailService fileThumbnailService;
 
     @Autowired(required = false)
     public void setPinAttemptLimiter(PinAttemptLimiter pinAttemptLimiter) {
@@ -99,6 +103,9 @@ public class SecretFolderService {
     public SecretFolderDto.VaultStatusRes lockVault(Long userIdx) {
         validateUser(userIdx);
         secretTokenService.revokeVaultTokens(userIdx);
+        if (fileThumbnailService != null) {
+            fileThumbnailService.evictVaultCacheForUser(userIdx);
+        }
         boolean pinRegistered = featerRepository.findByUser_Idx(userIdx)
                 .map(Feater::hasVaultPin)
                 .orElse(false);
@@ -129,6 +136,9 @@ public class SecretFolderService {
         settings.updateVaultPinHash(passwordEncoder.encode(validNewPin));
         featerRepository.saveAndFlush(settings);
         secretTokenService.revokeVaultTokens(userIdx);
+        if (fileThumbnailService != null) {
+            fileThumbnailService.evictVaultCacheForUser(userIdx);
+        }
 
         return SecretFolderDto.UnlockRes.builder()
                 .unlocked(true)

@@ -6,6 +6,7 @@ import io.minio.RemoveObjectsArgs;
 import io.minio.Result;
 import io.minio.messages.DeleteObject;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -17,10 +18,16 @@ class FileObjectDeletionService {
     private final MinioClient minioClient;
     private final MinioProperties minioProperties;
 
+    @Autowired(required = false)
+    private FileThumbnailService fileThumbnailService;
+
     void deleteObjects(List<String> objectKeys) {
         List<String> normalizedObjectKeys = FileObjectRemovalRules.normalizeObjectKeys(objectKeys);
         if (normalizedObjectKeys.isEmpty()) {
             return;
+        }
+        if (fileThumbnailService != null) {
+            fileThumbnailService.evictThumbnailCacheForObjectKeys(normalizedObjectKeys);
         }
 
         try {

@@ -13,6 +13,9 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.Collection;
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -148,6 +151,43 @@ class FileListItemUrlServiceTest {
         assertThat(secretTokenService.verifyVaultStreamToken(st, 42L)).contains(7L);
         verify(minioPresignedUrlService, never()).getPresignedObjectUrl(any(GetPresignedObjectUrlArgs.class));
         verify(fileThumbnailService, never()).generatePresignedThumbnailUrl(any(FileInfo.class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void prepareThumbnailUrlsIncludesEncryptedVaultItemsForPrefixWarming() {
+        var normalItem = FileCommonDto.FileListItemRes.builder()
+                .idx(10L)
+                .nodeType(FileNodeType.FILE.name())
+                .spaceType("DRIVE")
+                .encrypted(false)
+                .fileOriginName("photo.jpg")
+                .fileSaveName("photo.jpg")
+                .fileSavePath("7/photo.jpg")
+                .fileFormat("jpg")
+                .build();
+        var encryptedVaultItem = FileCommonDto.FileListItemRes.builder()
+                .idx(42L)
+                .nodeType(FileNodeType.FILE.name())
+                .spaceType("VAULT")
+                .encrypted(true)
+                .encryptionMode(FileEncryptionMode.SERVER_ENVELOPE_V1.name())
+                .fileOriginName("secret.mp4")
+                .fileSaveName("vault.enc")
+                .fileSavePath("7/vault/vault.enc")
+                .fileFormat("mp4")
+                .build();
+
+        service.prepareThumbnailUrls(List.of(normalItem, encryptedVaultItem));
+
+        ArgumentCaptor<Collection<FileInfo>> captor = ArgumentCaptor.forClass(Collection.class);
+        verify(fileThumbnailService).warmThumbnailsForFiles(captor.capture());
+        assertThat(captor.getValue())
+                .extracting(FileInfo::getFileSavePath, FileInfo::isEncrypted)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("7/photo.jpg", false),
+                        org.assertj.core.groups.Tuple.tuple("7/vault/vault.enc", true)
+                );
     }
 
     private static FileCommonDto.FileListItemRes fileItem(boolean locked, String objectKey) {

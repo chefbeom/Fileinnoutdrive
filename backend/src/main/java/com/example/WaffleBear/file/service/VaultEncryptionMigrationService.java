@@ -14,6 +14,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Encrypts legacy plaintext files already stored inside a user's unlocked personal vault.
@@ -30,6 +31,9 @@ public class VaultEncryptionMigrationService {
 
     @Autowired(required = false)
     private SecretAccessGuard secretAccessGuard;
+
+    @Autowired(required = false)
+    private FileThumbnailService fileThumbnailService;
 
     public enum FileMigrationOutcome {
         MIGRATED,
@@ -100,6 +104,7 @@ public class VaultEncryptionMigrationService {
         }
 
         VaultFileCryptoService.VaultEncryptionResult encResult = null;
+        final AtomicReference<FileInfo> migratedFileRef = new AtomicReference<>();
         try {
             encResult = vaultFileCryptoService.encryptPlaintextObject(userIdx, expectedObjectKey, Math.max(0L, plainSize));
             final VaultFileCryptoService.VaultEncryptionResult finalizedEnc = encResult;
@@ -124,6 +129,7 @@ public class VaultEncryptionMigrationService {
                         finalizedEnc.encryptedFileSize()
                 );
                 fileUpDownloadRepository.saveAndFlush(managed);
+                migratedFileRef.set(managed);
                 FileObjectCleanupScheduler.deleteAfterCommit(
                         fileObjectDeletionService,
                         List.of(expectedObjectKey, FileContentUtils.buildThumbnailObjectKey(expectedObjectKey))
@@ -132,6 +138,9 @@ public class VaultEncryptionMigrationService {
             });
 
             if (Boolean.TRUE.equals(updated)) {
+                if (fileThumbnailService != null && migratedFileRef.get() != null) {
+                    fileThumbnailService.scheduleEncryptedThumbnailPreGeneration(migratedFileRef.get());
+                }
                 return FileMigrationOutcome.MIGRATED;
             }
             vaultFileCryptoService.deleteObjectQuietly(encResult.encryptedObjectKey());

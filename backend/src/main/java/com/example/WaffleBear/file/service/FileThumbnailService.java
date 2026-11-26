@@ -34,8 +34,11 @@ import java.time.ZoneId;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -48,6 +51,8 @@ public class FileThumbnailService {
     private static final long MAX_IMAGE_THUMBNAIL_SOURCE_BYTES = 50L * 1024 * 1024;
     private static final long THUMBNAIL_PREFIX_CACHE_TTL_MS = 30_000L;
     private static final long THUMBNAIL_MISSING_CACHE_TTL_MS = 15_000L;
+    private static final long MAX_MEMORY_CACHE_BYTES = 48L * 1024 * 1024;
+    private static final long MAX_MEMORY_CACHE_ENTRY_BYTES = 2L * 1024 * 1024;
     private static final Set<String> IMAGE_EXTENSIONS = Set.of(
             "jpg", "jpeg", "png", "gif", "svg", "webp", "bmp", "heic", "avif", "apng", "jfif", "tif", "tiff"
     );
@@ -72,6 +77,9 @@ public class FileThumbnailService {
     private final Set<String> failedThumbnailKeys = ConcurrentHashMap.newKeySet();
     private final Map<String, Long> scannedThumbnailPrefixes = new ConcurrentHashMap<>();
     private final Map<String, Long> missingThumbnailKeys = new ConcurrentHashMap<>();
+    private final Object memoryCacheLock = new Object();
+    private final Map<String, CachedThumbnailEntry> thumbnailMemoryCache = new LinkedHashMap<>(256, 0.75f, true);
+    private long currentMemoryCacheBytes = 0L;
 
     public ThumbnailPayload loadThumbnail(FileInfo file) {
         validateFile(file);
@@ -105,22 +113,31 @@ public class FileThumbnailService {
             return null;
         }
 
+        String eTag = buildEtag(file);
+
         if (isImage && NON_TRANSCODABLE_IMAGE_EXTENSIONS.contains(extension)) {
             if (file.getFileSize() != null && file.getFileSize() > MAX_IMAGE_THUMBNAIL_SOURCE_BYTES) {
                 return null;
+            }
+            String rawCacheKey = buildEncryptedRawCacheKey(objectKey);
+            ThumbnailPayload memoryCached = getCachedThumbnail(rawCacheKey, eTag);
+            if (memoryCached != null) {
+                return memoryCached;
             }
             try {
                 byte[] original = vaultFileCryptoService.readDecryptedBytes(file);
                 if (original == null || original.length == 0) {
                     return null;
                 }
-                return new ThumbnailPayload(
+                ThumbnailPayload payload = new ThumbnailPayload(
                         original,
                         resolveImageContentType(extension),
-                        buildEtag(file),
+                        eTag,
                         resolveLastModifiedEpochMillis(file),
                         true
                 );
+                putCachedThumbnail(rawCacheKey, payload, objectKey);
+                return payload;
             } catch (Exception ignored) {
                 return null;
             }
@@ -131,16 +148,23 @@ public class FileThumbnailService {
             return null;
         }
 
+        ThumbnailPayload memoryCached = getCachedThumbnail(encryptedThumbKey, eTag);
+        if (memoryCached != null) {
+            return memoryCached;
+        }
+
         if (objectExists(encryptedThumbKey)) {
             byte[] cached = vaultFileCryptoService.loadDecryptedThumbnail(file, encryptedThumbKey);
             if (cached != null && cached.length > 0) {
-                return new ThumbnailPayload(
+                ThumbnailPayload payload = new ThumbnailPayload(
                         cached,
                         "image/jpeg",
-                        buildEtag(file),
+                        eTag,
                         resolveLastModifiedEpochMillis(file),
                         true
                 );
+                putCachedThumbnail(encryptedThumbKey, payload, objectKey);
+                return payload;
             }
         }
 
@@ -160,13 +184,15 @@ public class FileThumbnailService {
             if (objectExistsDirect(encryptedThumbKey)) {
                 byte[] existing = vaultFileCryptoService.loadDecryptedThumbnail(file, encryptedThumbKey);
                 if (existing != null && existing.length > 0) {
-                    return new ThumbnailPayload(
+                    ThumbnailPayload payload = new ThumbnailPayload(
                             existing,
                             "image/jpeg",
-                            buildEtag(file),
+                            eTag,
                             resolveLastModifiedEpochMillis(file),
                             true
                     );
+                    putCachedThumbnail(encryptedThumbKey, payload, objectKey);
+                    return payload;
                 }
             }
 
@@ -184,13 +210,15 @@ public class FileThumbnailService {
                 existingThumbnailKeys.add(encryptedThumbKey);
                 missingThumbnailKeys.remove(encryptedThumbKey);
                 failedThumbnailKeys.remove(encryptedThumbKey);
-                return new ThumbnailPayload(
+                ThumbnailPayload payload = new ThumbnailPayload(
                         generatedBytes,
                         "image/jpeg",
-                        buildEtag(file),
+                        eTag,
                         resolveLastModifiedEpochMillis(file),
                         true
                 );
+                putCachedThumbnail(encryptedThumbKey, payload, objectKey);
+                return payload;
             }
             failedThumbnailKeys.add(encryptedThumbKey);
             return null;
@@ -302,15 +330,22 @@ public class FileThumbnailService {
         Set<String> prefixesToScan = new HashSet<>();
         long now = System.currentTimeMillis();
         for (FileInfo file : files) {
-            if (!isPresignedThumbnailEligible(file)) {
+            boolean presignedEligible = isPresignedThumbnailEligible(file);
+            boolean encryptedEligible = !presignedEligible && isEncryptedThumbnailWarmEligible(file);
+            if (!presignedEligible && !encryptedEligible) {
                 continue;
             }
             String objectKey = file.getFileSavePath();
             if (objectKey == null || objectKey.isBlank()) {
                 continue;
             }
-            String thumbnailObjectKey = buildThumbnailObjectKey(objectKey);
-            if (existingThumbnailKeys.contains(thumbnailObjectKey) || failedThumbnailKeys.contains(thumbnailObjectKey)) {
+            String thumbnailObjectKey = encryptedEligible
+                    ? FileContentUtils.buildEncryptedThumbnailObjectKey(objectKey)
+                    : buildThumbnailObjectKey(objectKey);
+            if (thumbnailObjectKey == null
+                    || thumbnailObjectKey.isBlank()
+                    || existingThumbnailKeys.contains(thumbnailObjectKey)
+                    || failedThumbnailKeys.contains(thumbnailObjectKey)) {
                 continue;
             }
             String prefix = extractThumbnailDirectoryPrefix(thumbnailObjectKey);
@@ -325,6 +360,103 @@ public class FileThumbnailService {
 
         for (String prefix : prefixesToScan) {
             scanThumbnailPrefix(prefix, now);
+        }
+    }
+
+    public void scheduleEncryptedThumbnailPreGeneration(FileInfo file) {
+        if (file == null || vaultFileCryptoService == null || !isEncryptedThumbnailWarmEligible(file)) {
+            return;
+        }
+
+        String objectKey = file.getFileSavePath();
+        if (objectKey == null || objectKey.isBlank()) {
+            return;
+        }
+
+        String encryptedThumbKey = FileContentUtils.buildEncryptedThumbnailObjectKey(objectKey);
+        if (encryptedThumbKey == null
+                || encryptedThumbKey.isBlank()
+                || existingThumbnailKeys.contains(encryptedThumbKey)
+                || failedThumbnailKeys.contains(encryptedThumbKey)) {
+            return;
+        }
+
+        try {
+            thumbnailTaskExecutor.runAsync(() -> {
+                try {
+                    loadThumbnail(file);
+                } catch (Exception ignored) {
+                }
+            });
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    public void evictThumbnailCacheForObjectKeys(Collection<String> objectKeys) {
+        if (objectKeys == null || objectKeys.isEmpty()) {
+            return;
+        }
+
+        Set<String> targetKeys = new HashSet<>();
+        Set<String> sourceKeys = new HashSet<>();
+        for (String rawKey : objectKeys) {
+            if (rawKey == null || rawKey.isBlank()) {
+                continue;
+            }
+            String key = rawKey.trim();
+            sourceKeys.add(key);
+            targetKeys.add(key);
+            targetKeys.add(buildEncryptedRawCacheKey(key));
+            String plainThumbKey = buildThumbnailObjectKey(key);
+            if (!plainThumbKey.isBlank()) {
+                targetKeys.add(plainThumbKey);
+            }
+            String encryptedThumbKey = FileContentUtils.buildEncryptedThumbnailObjectKey(key);
+            if (encryptedThumbKey != null && !encryptedThumbKey.isBlank()) {
+                targetKeys.add(encryptedThumbKey);
+            }
+        }
+
+        for (String key : targetKeys) {
+            existingThumbnailKeys.remove(key);
+            missingThumbnailKeys.remove(key);
+            failedThumbnailKeys.remove(key);
+        }
+
+        synchronized (memoryCacheLock) {
+            Iterator<Map.Entry<String, CachedThumbnailEntry>> iterator = thumbnailMemoryCache.entrySet().iterator();
+            while (iterator.hasNext()) {
+                Map.Entry<String, CachedThumbnailEntry> entry = iterator.next();
+                CachedThumbnailEntry value = entry.getValue();
+                if (targetKeys.contains(entry.getKey())
+                        || (value != null && sourceKeys.contains(value.sourceObjectKey()))) {
+                    currentMemoryCacheBytes = Math.max(0L, currentMemoryCacheBytes - value.byteLength());
+                    iterator.remove();
+                }
+            }
+        }
+    }
+
+    public void evictVaultCacheForUser(Long userIdx) {
+        if (userIdx == null || userIdx <= 0L) {
+            return;
+        }
+
+        String vaultPrefix = userIdx + "/vault/";
+        String rawVaultPrefix = "enc-raw:" + vaultPrefix;
+        synchronized (memoryCacheLock) {
+            Iterator<Map.Entry<String, CachedThumbnailEntry>> iterator = thumbnailMemoryCache.entrySet().iterator();
+            while (iterator.hasNext()) {
+                Map.Entry<String, CachedThumbnailEntry> entry = iterator.next();
+                String cacheKey = entry.getKey();
+                CachedThumbnailEntry value = entry.getValue();
+                String sourceObjectKey = value != null ? value.sourceObjectKey() : null;
+                if ((cacheKey != null && (cacheKey.startsWith(vaultPrefix) || cacheKey.startsWith(rawVaultPrefix)))
+                        || (sourceObjectKey != null && sourceObjectKey.startsWith(vaultPrefix))) {
+                    currentMemoryCacheBytes = Math.max(0L, currentMemoryCacheBytes - (value != null ? value.byteLength() : 0L));
+                    iterator.remove();
+                }
+            }
         }
     }
 
@@ -367,12 +499,14 @@ public class FileThumbnailService {
 
         byte[] generatedBytes = ensureVideoThumbnailSynchronously(file, thumbnailObjectKey);
         if (generatedBytes != null && generatedBytes.length > 0) {
-            return new ThumbnailPayload(
+            ThumbnailPayload payload = new ThumbnailPayload(
                     generatedBytes,
                     "image/jpeg",
                     buildEtag(file),
                     resolveLastModifiedEpochMillis(file)
             );
+            putCachedThumbnail(thumbnailObjectKey, payload, objectKey);
+            return payload;
         }
 
         if (objectExists(thumbnailObjectKey)) {
@@ -400,12 +534,14 @@ public class FileThumbnailService {
         if (!failedThumbnailKeys.contains(thumbnailObjectKey)) {
             byte[] generatedBytes = ensureImageThumbnail(objectKey, thumbnailObjectKey);
             if (generatedBytes != null && generatedBytes.length > 0) {
-                return new ThumbnailPayload(
+                ThumbnailPayload payload = new ThumbnailPayload(
                         generatedBytes,
                         "image/jpeg",
                         buildEtag(file),
                         resolveLastModifiedEpochMillis(file)
                 );
+                putCachedThumbnail(thumbnailObjectKey, payload, objectKey);
+                return payload;
             }
         }
 
@@ -586,6 +722,12 @@ public class FileThumbnailService {
     }
 
     private ThumbnailPayload readObject(String objectKey, String contentType, FileInfo file) {
+        String eTag = buildEtag(file);
+        ThumbnailPayload memoryCached = getCachedThumbnail(objectKey, eTag);
+        if (memoryCached != null) {
+            return memoryCached;
+        }
+
         try (var objectStream = minioClient.getObject(
                 GetObjectArgs.builder()
                         .bucket(minioProperties.getBucket_cloud())
@@ -594,12 +736,14 @@ public class FileThumbnailService {
         );
              ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
             objectStream.transferTo(outputStream);
-            return new ThumbnailPayload(
+            ThumbnailPayload payload = new ThumbnailPayload(
                     outputStream.toByteArray(),
                     contentType,
-                    buildEtag(file),
+                    eTag,
                     resolveLastModifiedEpochMillis(file)
             );
+            putCachedThumbnail(objectKey, payload, file != null ? file.getFileSavePath() : null);
+            return payload;
         } catch (Exception ignored) {
             return null;
         }
@@ -751,6 +895,98 @@ public class FileThumbnailService {
 
         String extension = resolveExtension(file);
         return VIDEO_EXTENSIONS.contains(extension) || isPresignedRasterImage(file, extension);
+    }
+
+    private boolean isEncryptedThumbnailWarmEligible(FileInfo file) {
+        if (file == null
+                || resolveNodeType(file) != FileNodeType.FILE
+                || file.isLockedFile()
+                || file.isTrashed()
+                || !file.isEncrypted()) {
+            return false;
+        }
+
+        String extension = resolveExtension(file);
+        return VIDEO_EXTENSIONS.contains(extension) || isPresignedRasterImage(file, extension);
+    }
+
+    private String buildEncryptedRawCacheKey(String objectKey) {
+        return "enc-raw:" + (objectKey == null ? "" : objectKey);
+    }
+
+    private ThumbnailPayload getCachedThumbnail(String cacheKey, String expectedEtag) {
+        if (cacheKey == null || cacheKey.isBlank()) {
+            return null;
+        }
+
+        synchronized (memoryCacheLock) {
+            CachedThumbnailEntry cached = thumbnailMemoryCache.get(cacheKey);
+            if (cached == null) {
+                return null;
+            }
+            if (expectedEtag != null && !Objects.equals(cached.eTag(), expectedEtag)) {
+                currentMemoryCacheBytes = Math.max(0L, currentMemoryCacheBytes - cached.byteLength());
+                thumbnailMemoryCache.remove(cacheKey);
+                return null;
+            }
+            return new ThumbnailPayload(
+                    cached.bytes(),
+                    cached.contentType(),
+                    cached.eTag(),
+                    cached.lastModifiedEpochMillis(),
+                    cached.privateNoStore()
+            );
+        }
+    }
+
+    private void putCachedThumbnail(String cacheKey, ThumbnailPayload payload, String sourceObjectKey) {
+        if (cacheKey == null
+                || cacheKey.isBlank()
+                || payload == null
+                || payload.bytes() == null
+                || payload.bytes().length == 0
+                || payload.bytes().length > MAX_MEMORY_CACHE_ENTRY_BYTES) {
+            return;
+        }
+
+        CachedThumbnailEntry nextEntry = new CachedThumbnailEntry(
+                payload.bytes(),
+                payload.contentType(),
+                payload.eTag(),
+                payload.lastModifiedEpochMillis(),
+                payload.privateNoStore(),
+                sourceObjectKey
+        );
+
+        synchronized (memoryCacheLock) {
+            CachedThumbnailEntry previous = thumbnailMemoryCache.remove(cacheKey);
+            if (previous != null) {
+                currentMemoryCacheBytes = Math.max(0L, currentMemoryCacheBytes - previous.byteLength());
+            }
+            thumbnailMemoryCache.put(cacheKey, nextEntry);
+            currentMemoryCacheBytes += nextEntry.byteLength();
+
+            Iterator<Map.Entry<String, CachedThumbnailEntry>> iterator = thumbnailMemoryCache.entrySet().iterator();
+            while (currentMemoryCacheBytes > MAX_MEMORY_CACHE_BYTES && iterator.hasNext()) {
+                Map.Entry<String, CachedThumbnailEntry> eldest = iterator.next();
+                CachedThumbnailEntry removed = eldest.getValue();
+                currentMemoryCacheBytes = Math.max(0L, currentMemoryCacheBytes - (removed != null ? removed.byteLength() : 0L));
+                iterator.remove();
+            }
+        }
+    }
+
+    private record CachedThumbnailEntry(
+            byte[] bytes,
+            String contentType,
+            String eTag,
+            long lastModifiedEpochMillis,
+            boolean privateNoStore,
+            String sourceObjectKey
+    ) {
+        long byteLength() {
+            return bytes == null ? 0L : bytes.length;
+        }
     }
 
     private boolean isPresignedRasterImage(FileInfo file, String extension) {

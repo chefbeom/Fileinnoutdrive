@@ -3,16 +3,17 @@ import {
   fetchSharedFileThumbnailBlob,
 } from "@/api/filesApi.js";
 
-const MAX_CACHE_SIZE = 400;
-const MAX_CONCURRENT_THUMBNAIL_REQUESTS = 4;
+const MAX_CACHE_SIZE = 1000;
+const MAX_CONCURRENT_THUMBNAIL_REQUESTS = 6;
 const MISS_RETRY_COOLDOWN_MS = 15_000;
 const thumbnailUrlCache = new Map();
 const thumbnailRequestCache = new Map();
 const thumbnailMissCache = new Map();
 let activeThumbnailRequests = 0;
-const pendingThumbnailQueue = [];
+const highPriorityThumbnailQueue = [];
+const normalPriorityThumbnailQueue = [];
 
-const acquireThumbnailSlot = (signal) => {
+const acquireThumbnailSlot = (signal, priority = "normal") => {
   if (signal?.aborted) {
     return Promise.reject(new DOMException("Aborted", "AbortError"));
   }
@@ -21,6 +22,8 @@ const acquireThumbnailSlot = (signal) => {
     activeThumbnailRequests += 1;
     return Promise.resolve();
   }
+
+  const targetQueue = priority === "high" ? highPriorityThumbnailQueue : normalPriorityThumbnailQueue;
 
   return new Promise((resolve, reject) => {
     const entry = {
@@ -34,9 +37,9 @@ const acquireThumbnailSlot = (signal) => {
     };
 
     const onAbort = () => {
-      const idx = pendingThumbnailQueue.indexOf(entry);
+      const idx = targetQueue.indexOf(entry);
       if (idx >= 0) {
-        pendingThumbnailQueue.splice(idx, 1);
+        targetQueue.splice(idx, 1);
       }
       reject(new DOMException("Aborted", "AbortError"));
     };
@@ -45,15 +48,22 @@ const acquireThumbnailSlot = (signal) => {
       signal.addEventListener("abort", onAbort, { once: true });
     }
 
-    pendingThumbnailQueue.push(entry);
+    targetQueue.push(entry);
   });
 };
 
 const releaseThumbnailSlot = () => {
-  while (pendingThumbnailQueue.length > 0) {
-    const next = pendingThumbnailQueue.shift();
-    if (next) {
-      next.resolve();
+  while (highPriorityThumbnailQueue.length > 0) {
+    const nextHigh = highPriorityThumbnailQueue.shift();
+    if (nextHigh) {
+      nextHigh.resolve();
+      return;
+    }
+  }
+  while (normalPriorityThumbnailQueue.length > 0) {
+    const nextNormal = normalPriorityThumbnailQueue.shift();
+    if (nextNormal) {
+      nextNormal.resolve();
       return;
     }
   }
@@ -149,10 +159,11 @@ export const loadFileThumbnailUrl = async (file, options = {}) => {
     }
   }
 
+  const priority = options?.priority === "high" ? "high" : "normal";
   const request = (async () => {
     let slotAcquired = false;
     try {
-      await acquireThumbnailSlot(signal);
+      await acquireThumbnailSlot(signal, priority);
       slotAcquired = true;
 
       const existingCachedUrl = thumbnailUrlCache.get(cacheKey);

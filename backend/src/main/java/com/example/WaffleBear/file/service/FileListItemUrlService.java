@@ -34,7 +34,6 @@ class FileListItemUrlService {
         fileThumbnailService.warmThumbnailsForFiles(
                 items.stream()
                         .filter(Objects::nonNull)
-                        .filter(item -> !isEncryptedItem(item))
                         .map(FileDownloadRules::toFileInfoUrlSnapshot)
                         .toList()
         );

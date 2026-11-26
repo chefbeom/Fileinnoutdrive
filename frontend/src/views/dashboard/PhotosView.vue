@@ -85,9 +85,89 @@ const photoSourcePickerSearch = ref("");
 const photoSourcePickerSelectedFileIds = ref([]);
 const photoSourcePickerSelectedFolderIds = ref([]);
 
-// Thumbnail map
+// Thumbnail map & viewport priority observer
 const thumbnailMap = ref({});
 let thumbAbortController = null;
+const pendingThumbKeys = new Set();
+const observedThumbItems = new WeakMap();
+let thumbnailObserver = null;
+
+const ensureThumbAbortController = () => {
+  if (!thumbAbortController || thumbAbortController.signal.aborted) {
+    thumbAbortController = new AbortController();
+  }
+  return thumbAbortController;
+};
+
+const loadSinglePhotoThumbnail = (photo, priority = "high") => {
+  if (!photo || photo.id == null) return;
+  const key = String(photo.id);
+  if (thumbnailMap.value[key]) return;
+
+  const cached =
+    getCachedFileThumbnailUrl(photo) ||
+    resolveFileThumbnailFallbackUrl(photo) ||
+    (!isEncryptedVaultFile(photo) ? resolveFilePlaybackUrl(photo) : "");
+  if (cached) {
+    thumbnailMap.value = { ...thumbnailMap.value, [key]: cached };
+    return;
+  }
+
+  if (pendingThumbKeys.has(key)) return;
+  pendingThumbKeys.add(key);
+
+  const controller = ensureThumbAbortController();
+  loadFileThumbnailUrl(photo, { signal: controller.signal, priority })
+    .then((url) => {
+      const resolved = url || (isEncryptedVaultFile(photo) ? resolveFilePlaybackUrl(photo) : "");
+      if (resolved && !controller.signal.aborted) {
+        thumbnailMap.value = { ...thumbnailMap.value, [key]: resolved };
+      }
+    })
+    .catch(() => {
+      if (isEncryptedVaultFile(photo) && !controller.signal.aborted) {
+        const fallbackUrl = resolveFilePlaybackUrl(photo);
+        if (fallbackUrl) {
+          thumbnailMap.value = { ...thumbnailMap.value, [key]: fallbackUrl };
+        }
+      }
+    })
+    .finally(() => {
+      pendingThumbKeys.delete(key);
+    });
+};
+
+const ensureThumbnailObserver = () => {
+  if (thumbnailObserver || typeof IntersectionObserver === "undefined") {
+    return thumbnailObserver;
+  }
+  thumbnailObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const photo = observedThumbItems.get(entry.target);
+        if (photo) {
+          loadSinglePhotoThumbnail(photo, "high");
+        }
+        thumbnailObserver?.unobserve(entry.target);
+      }
+    },
+    { rootMargin: "320px 0px" },
+  );
+  return thumbnailObserver;
+};
+
+const observePhotoThumbnailEl = (el, photo) => {
+  if (!el || !photo || photo.id == null) return;
+  const key = String(photo.id);
+  if (thumbnailMap.value[key]) return;
+  const observer = ensureThumbnailObserver();
+  if (!observer) {
+    return;
+  }
+  observedThumbItems.set(el, photo);
+  observer.observe(el);
+};
 
 // Share dialog integration
 const canCreateShares = computed(() => !props.vaultOnly && Boolean(fileStore.planCapabilities?.shareEnabled));
@@ -426,21 +506,23 @@ const handleStartSlideshow = () => {
   handleOpenPhoto(visiblePhotos.value[0], true);
 };
 
-// Prime thumbnails
+// Prime cached thumbnails synchronously; defer remote loads to IntersectionObserver when available
 const primeThumbnails = async () => {
   if (thumbAbortController) {
     thumbAbortController.abort();
   }
+  pendingThumbKeys.clear();
   const controller = new AbortController();
   thumbAbortController = controller;
 
   const candidates = [
-    ...visiblePhotos.value.slice(0, 80),
+    ...visiblePhotos.value,
     ...albums.value.map((a) => a.coverPhoto).filter(Boolean),
   ];
 
   const seen = new Set();
   const cachedUpdates = {};
+  const uncachedCandidates = [];
   for (const photo of candidates) {
     if (!photo || photo.id == null) continue;
     const key = String(photo.id);
@@ -456,24 +538,17 @@ const primeThumbnails = async () => {
       continue;
     }
 
-    loadFileThumbnailUrl(photo, { signal: controller.signal })
-      .then((url) => {
-        const resolved = url || (isEncryptedVaultFile(photo) ? resolveFilePlaybackUrl(photo) : "");
-        if (resolved && !controller.signal.aborted) {
-          thumbnailMap.value = { ...thumbnailMap.value, [key]: resolved };
-        }
-      })
-      .catch(() => {
-        if (isEncryptedVaultFile(photo) && !controller.signal.aborted) {
-          const fallbackUrl = resolveFilePlaybackUrl(photo);
-          if (fallbackUrl) {
-            thumbnailMap.value = { ...thumbnailMap.value, [key]: fallbackUrl };
-          }
-        }
-      });
+    uncachedCandidates.push(photo);
   }
   if (Object.keys(cachedUpdates).length > 0) {
     thumbnailMap.value = { ...thumbnailMap.value, ...cachedUpdates };
+  }
+
+  // Fallback for environments without IntersectionObserver (e.g. jsdom unit tests)
+  if (typeof IntersectionObserver === "undefined") {
+    for (const photo of uncachedCandidates.slice(0, 24)) {
+      loadSinglePhotoThumbnail(photo, "high");
+    }
   }
 };
 
@@ -792,6 +867,11 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("click", closeFloatingPopovers);
+  if (thumbnailObserver) {
+    thumbnailObserver.disconnect();
+    thumbnailObserver = null;
+  }
+  pendingThumbKeys.clear();
   if (thumbAbortController) {
     thumbAbortController.abort();
   }
@@ -1311,6 +1391,7 @@ onBeforeUnmount(() => {
           class="group flex flex-col overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-elevated)] shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
         >
           <div
+            :ref="(el) => observePhotoThumbnailEl(el, album.coverPhoto)"
             class="relative aspect-[4/3] w-full cursor-pointer overflow-hidden bg-slate-900"
             @click="selectedAlbumId = album.id"
           >
@@ -1530,6 +1611,7 @@ onBeforeUnmount(() => {
             <div
               v-for="photo in dayGroup.photos"
               :key="photo.id"
+              :ref="(el) => observePhotoThumbnailEl(el, photo)"
               class="group relative cursor-pointer overflow-hidden rounded-2xl border bg-slate-900 transition"
               :class="[
                 photoThumbAspectClass,

@@ -413,7 +413,7 @@ export async function fetchFileThumbnailBlob(fileId, version = "", options = {})
   const response = await api.get(`/file/${fileId}/thumbnail`, {
     params: version ? { v: version } : undefined,
     responseType: "blob",
-    timeout: options?.timeout ?? 8000,
+    timeout: options?.timeout ?? 25000,
     signal: options?.signal,
   });
 
@@ -430,7 +430,7 @@ export async function fetchSharedFileThumbnailBlob(fileId, version = "", options
   const response = await api.get(`/file/share/shared/${fileId}/thumbnail`, {
     params: version ? { v: version } : undefined,
     responseType: "blob",
-    timeout: options?.timeout ?? 8000,
+    timeout: options?.timeout ?? 25000,
     signal: options?.signal,
   });
 

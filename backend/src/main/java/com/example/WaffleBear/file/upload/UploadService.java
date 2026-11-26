@@ -9,6 +9,7 @@ import com.example.WaffleBear.file.FileUpDownloadRepository;
 import com.example.WaffleBear.file.crypto.VaultFileCryptoService;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
+import com.example.WaffleBear.file.service.FileThumbnailService;
 import com.example.WaffleBear.file.service.StoragePlanService;
 import com.example.WaffleBear.file.version.FileVersionLifecycleService;
 import com.example.WaffleBear.file.version.FileVersionService;
@@ -47,6 +48,9 @@ public class UploadService {
 
     @Autowired(required = false)
     private VaultFileCryptoService vaultFileCryptoService;
+
+    @Autowired(required = false)
+    private FileThumbnailService fileThumbnailService;
 
     private record CompleteUploadPlan(
             Optional<FileInfo> existingFile,
@@ -200,6 +204,13 @@ public class UploadService {
                 persistedObjectKey,
                 fileOriginName
         );
+        if (encryptionResult != null && fileThumbnailService != null) {
+            try {
+                fileUpDownloadRepository.findByUser_IdxAndFileSavePath(userIdx, persistedObjectKey)
+                        .ifPresent(fileThumbnailService::scheduleEncryptedThumbnailPreGeneration);
+            } catch (RuntimeException ignored) {
+            }
+        }
 
         return UploadDto.CompleteRes.builder()
                 .fileOriginName(fileOriginName)

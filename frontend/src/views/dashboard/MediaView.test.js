@@ -202,4 +202,33 @@ describe("MediaView.vue streamlined layout & guided setup", () => {
     await batchExcludeBtn.trigger("click");
     expect(mockMediaPhotoStore.excludeMediaFiles).toHaveBeenCalledWith(["501"]);
   });
+
+  it("does not spawn video preload=metadata elements for uncached video cards", () => {
+    mockRoute.query = { section: "all" };
+    mockMediaPhotoStore.preferences.mediaSourceMode = "all";
+    mockMediaPhotoStore.preferences.mediaShowThumbnails = true;
+    mockMediaPhotoStore.candidateVideos = [
+      {
+        id: 777,
+        name: "vault-clip.mp4",
+        displayTitle: "vault-clip",
+        mediaKind: "video",
+        downloadUrl: "/api/file/secret/stream/777?st=token",
+        presignedDownloadUrl: "/api/file/secret/stream/777?st=token",
+        sizeLabel: "120 MB",
+      },
+    ];
+    mockMediaPhotoStore.allVideos = [...mockMediaPhotoStore.candidateVideos];
+
+    const wrapper = mount(MediaView, {
+      global: {
+        stubs: {
+          Teleport: true,
+          BaseFileShareDialog: true,
+        },
+      },
+    });
+
+    expect(wrapper.findAll("video[preload='metadata']").length).toBe(0);
+  });
 });

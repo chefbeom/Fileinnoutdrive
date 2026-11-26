@@ -2707,11 +2707,31 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     clearVaultThumbnails();
   };
 
+  const leaveVaultModeWhileUnlocked = () => {
+    if (activeLightboxIsVault.value) {
+      closePhotoLightbox();
+    }
+    if (libraryScope.value === "vault") {
+      spotlightFileId.value = null;
+      setLibraryScope("normal");
+    }
+  };
+
   watch(
-    () => Boolean(secretFolderStore.vaultMode && secretFolderStore.vaultUnlocked),
-    (active) => {
-      if (!active) {
+    () => Boolean(secretFolderStore.vaultUnlocked),
+    (unlocked) => {
+      if (!unlocked) {
         clearVaultMediaSession();
+      }
+    },
+    { flush: "sync" },
+  );
+
+  watch(
+    () => Boolean(secretFolderStore.vaultMode),
+    (inVaultMode) => {
+      if (!inVaultMode && secretFolderStore.vaultUnlocked) {
+        leaveVaultModeWhileUnlocked();
       }
     },
     { flush: "sync" },

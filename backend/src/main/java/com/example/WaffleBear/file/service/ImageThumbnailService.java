@@ -21,8 +21,8 @@ import java.util.concurrent.TimeUnit;
 @Service
 public class ImageThumbnailService {
 
-    private static final int MAX_THUMBNAIL_WIDTH = 640;
-    private static final int MAX_THUMBNAIL_HEIGHT = 360;
+    private static final int MAX_THUMBNAIL_WIDTH = 480;
+    private static final int MAX_THUMBNAIL_HEIGHT = 320;
     private static final long FFMPEG_TIMEOUT_SECONDS = 10L;
     private static final ScheduledExecutorService FFMPEG_WATCHDOG = Executors.newSingleThreadScheduledExecutor(runnable -> {
         Thread thread = new Thread(runnable, "ffmpeg-image-watchdog");

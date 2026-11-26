@@ -248,12 +248,15 @@ const primeManagedThumbnails = async (files = []) => {
   thumbnailSourceByKey.value = nextSourceMap;
   thumbnailStateByKey.value = nextStateMap;
 
-  await Promise.allSettled(candidates.map(async ({ file, cacheKey }) => {
+  await Promise.allSettled(candidates.map(async ({ file, cacheKey }, index) => {
     if (controller.signal.aborted) {
       return;
     }
 
-    const objectUrl = await loadFileThumbnailUrl(file, { signal: controller.signal });
+    const objectUrl = await loadFileThumbnailUrl(file, {
+      signal: controller.signal,
+      priority: index < 24 ? "high" : "normal",
+    });
     if (controller.signal.aborted) {
       return;
     }

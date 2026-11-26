@@ -304,6 +304,34 @@ describe("useMediaPhotoStore vault isolation & security lifecycle", () => {
     expect(mockResetScope).toHaveBeenCalledWith("secretPhotos");
   });
 
+  it("preserves vault files and vault thumbnails when leaving vaultMode while vault remains unlocked", async () => {
+    mockSecretFolderStore.vaultMode = true;
+    mockSecretFolderStore.vaultUnlocked = true;
+
+    const store = useMediaPhotoStore();
+    await store.ensureCatalogLoaded({ scope: "vault" });
+    expect(store.isVaultScope).toBe(true);
+
+    mockClearVaultFiles.mockClear();
+    mockClearVaultThumbnails.mockClear();
+    mockResetScope.mockClear();
+
+    // Navigate back to normal routes without locking the vault
+    mockSecretFolderStore.vaultMode = false;
+    await nextTick();
+
+    expect(store.libraryScope).toBe("normal");
+    expect(mockClearVaultFiles).not.toHaveBeenCalled();
+    expect(mockClearVaultThumbnails).not.toHaveBeenCalled();
+
+    // Actually locking the vault must wipe both immediately
+    mockSecretFolderStore.vaultUnlocked = false;
+    await nextTick();
+
+    expect(mockClearVaultFiles).toHaveBeenCalled();
+    expect(mockClearVaultThumbnails).toHaveBeenCalled();
+  });
+
   it("navigates to original vault folder cleanly without exposing normal drive routes", async () => {
     mockSecretFolderStore.vaultMode = true;
     mockSecretFolderStore.vaultUnlocked = true;

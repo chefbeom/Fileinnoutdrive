@@ -2,8 +2,11 @@ package com.example.WaffleBear.file.service;
 
 import com.example.WaffleBear.config.MinioProperties;
 import com.example.WaffleBear.config.MinioPresignedUrlService;
+import com.example.WaffleBear.file.crypto.VaultFileCryptoService;
+import com.example.WaffleBear.file.model.FileEncryptionMode;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
+import com.example.WaffleBear.file.model.FileSpaceType;
 import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.ListObjectsArgs;
 import io.minio.MinioClient;
@@ -15,14 +18,17 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -43,6 +49,9 @@ class FileThumbnailServiceTest {
 
     @Mock
     private ThumbnailTaskExecutor thumbnailTaskExecutor;
+
+    @Mock
+    private VaultFileCryptoService vaultFileCryptoService;
 
     private FileThumbnailService fileThumbnailService;
 
@@ -143,6 +152,137 @@ class FileThumbnailServiceTest {
         assertThat(fileThumbnailService.generatePresignedThumbnailUrl(textFile())).isNull();
 
         verify(thumbnailTaskExecutor, never()).runAsync(any(Runnable.class));
+    }
+
+    @Test
+    void warmThumbnailsScansEncryptedVaultPrefixAndSkipsStatObject() throws Exception {
+        ReflectionTestUtils.setField(fileThumbnailService, "vaultFileCryptoService", vaultFileCryptoService);
+
+        Item existingEncryptedThumb = mock(Item.class);
+        when(existingEncryptedThumb.isDir()).thenReturn(false);
+        when(existingEncryptedThumb.objectName()).thenReturn("7/vault/thumbnails/clip.vthumb");
+        @SuppressWarnings("unchecked")
+        Result<Item> thumbResult = mock(Result.class);
+        when(thumbResult.get()).thenReturn(existingEncryptedThumb);
+        when(minioClient.listObjects(any(ListObjectsArgs.class))).thenReturn(List.of(thumbResult));
+
+        FileInfo encryptedVideo = encryptedVaultVideo(101L, "7/vault/clip.enc");
+        byte[] thumbBytes = new byte[]{1, 2, 3, 4};
+        when(vaultFileCryptoService.loadDecryptedThumbnail(encryptedVideo, "7/vault/thumbnails/clip.vthumb"))
+                .thenReturn(thumbBytes);
+
+        fileThumbnailService.warmThumbnailsForFiles(List.of(encryptedVideo));
+        FileThumbnailService.ThumbnailPayload payload = fileThumbnailService.loadThumbnail(encryptedVideo);
+
+        assertThat(payload).isNotNull();
+        assertThat(payload.bytes()).containsExactly(thumbBytes);
+        assertThat(payload.privateNoStore()).isTrue();
+        verify(minioClient).listObjects(any(ListObjectsArgs.class));
+        verify(minioClient, never()).statObject(any(StatObjectArgs.class));
+    }
+
+    @Test
+    void loadEncryptedThumbnailUsesInMemoryCacheOnRepeatedAccess() throws Exception {
+        ReflectionTestUtils.setField(fileThumbnailService, "vaultFileCryptoService", vaultFileCryptoService);
+
+        FileInfo encryptedVideo = encryptedVaultVideo(102L, "7/vault/cached.enc");
+        when(minioClient.statObject(any(StatObjectArgs.class))).thenReturn(null);
+        when(vaultFileCryptoService.loadDecryptedThumbnail(encryptedVideo, "7/vault/thumbnails/cached.vthumb"))
+                .thenReturn(new byte[]{9, 8, 7});
+
+        FileThumbnailService.ThumbnailPayload first = fileThumbnailService.loadThumbnail(encryptedVideo);
+        FileThumbnailService.ThumbnailPayload second = fileThumbnailService.loadThumbnail(encryptedVideo);
+
+        assertThat(first).isNotNull();
+        assertThat(second).isNotNull();
+        assertThat(second.bytes()).containsExactly(9, 8, 7);
+        verify(vaultFileCryptoService, times(1))
+                .loadDecryptedThumbnail(encryptedVideo, "7/vault/thumbnails/cached.vthumb");
+    }
+
+    @Test
+    void evictVaultCacheForUserClearsOnlyTargetUsersVaultThumbnails() throws Exception {
+        ReflectionTestUtils.setField(fileThumbnailService, "vaultFileCryptoService", vaultFileCryptoService);
+
+        FileInfo user7Video = encryptedVaultVideo(201L, "7/vault/u7.enc");
+        FileInfo user8Video = encryptedVaultVideo(202L, "8/vault/u8.enc");
+        when(minioClient.statObject(any(StatObjectArgs.class))).thenReturn(null);
+        when(vaultFileCryptoService.loadDecryptedThumbnail(user7Video, "7/vault/thumbnails/u7.vthumb"))
+                .thenReturn(new byte[]{7, 7});
+        when(vaultFileCryptoService.loadDecryptedThumbnail(user8Video, "8/vault/thumbnails/u8.vthumb"))
+                .thenReturn(new byte[]{8, 8});
+
+        fileThumbnailService.loadThumbnail(user7Video);
+        fileThumbnailService.loadThumbnail(user8Video);
+
+        fileThumbnailService.evictVaultCacheForUser(7L);
+
+        fileThumbnailService.loadThumbnail(user7Video);
+        fileThumbnailService.loadThumbnail(user8Video);
+
+        verify(vaultFileCryptoService, times(2))
+                .loadDecryptedThumbnail(user7Video, "7/vault/thumbnails/u7.vthumb");
+        verify(vaultFileCryptoService, times(1))
+                .loadDecryptedThumbnail(user8Video, "8/vault/thumbnails/u8.vthumb");
+    }
+
+    @Test
+    void evictThumbnailCacheForObjectKeysClearsCachedEntry() throws Exception {
+        ReflectionTestUtils.setField(fileThumbnailService, "vaultFileCryptoService", vaultFileCryptoService);
+
+        FileInfo encryptedVideo = encryptedVaultVideo(203L, "7/vault/delete-me.enc");
+        when(minioClient.statObject(any(StatObjectArgs.class))).thenReturn(null);
+        when(vaultFileCryptoService.loadDecryptedThumbnail(encryptedVideo, "7/vault/thumbnails/delete-me.vthumb"))
+                .thenReturn(new byte[]{5, 4, 3});
+
+        fileThumbnailService.loadThumbnail(encryptedVideo);
+        fileThumbnailService.evictThumbnailCacheForObjectKeys(List.of("7/vault/delete-me.enc"));
+        fileThumbnailService.loadThumbnail(encryptedVideo);
+
+        verify(vaultFileCryptoService, times(2))
+                .loadDecryptedThumbnail(encryptedVideo, "7/vault/thumbnails/delete-me.vthumb");
+    }
+
+    @Test
+    void scheduleEncryptedThumbnailPreGenerationRunsAsyncForEncryptedMediaOnly() {
+        ReflectionTestUtils.setField(fileThumbnailService, "vaultFileCryptoService", vaultFileCryptoService);
+        when(thumbnailTaskExecutor.runAsync(any(Runnable.class))).thenReturn(CompletableFuture.completedFuture(null));
+
+        FileInfo plainVideo = videoFile();
+        FileInfo encryptedText = FileInfo.builder()
+                .idx(301L)
+                .nodeType(FileNodeType.FILE)
+                .spaceType(FileSpaceType.VAULT)
+                .encryptionMode(FileEncryptionMode.SERVER_ENVELOPE_V1)
+                .fileOriginName("secret.txt")
+                .fileFormat("txt")
+                .fileSaveName("secret.enc")
+                .fileSavePath("7/vault/secret.enc")
+                .build();
+        FileInfo encryptedVideo = encryptedVaultVideo(302L, "7/vault/pregen.enc");
+
+        fileThumbnailService.scheduleEncryptedThumbnailPreGeneration(plainVideo);
+        fileThumbnailService.scheduleEncryptedThumbnailPreGeneration(encryptedText);
+        verify(thumbnailTaskExecutor, never()).runAsync(any(Runnable.class));
+
+        fileThumbnailService.scheduleEncryptedThumbnailPreGeneration(encryptedVideo);
+        verify(thumbnailTaskExecutor, times(1)).runAsync(any(Runnable.class));
+    }
+
+    private FileInfo encryptedVaultVideo(Long idx, String objectKey) {
+        return FileInfo.builder()
+                .idx(idx)
+                .nodeType(FileNodeType.FILE)
+                .spaceType(FileSpaceType.VAULT)
+                .encryptionMode(FileEncryptionMode.SERVER_ENVELOPE_V1)
+                .fileOriginName("secret.mp4")
+                .fileFormat("mp4")
+                .fileSaveName("secret.enc")
+                .fileSavePath(objectKey)
+                .fileSize(4096L)
+                .lockedFile(false)
+                .trashed(false)
+                .build();
     }
 
     private FileInfo videoFile() {

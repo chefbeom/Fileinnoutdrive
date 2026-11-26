@@ -93,6 +93,9 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
     @Autowired(required = false)
     private SecretTokenService secretTokenService;
 
+    @Autowired(required = false)
+    private FileThumbnailService fileThumbnailService;
+
     private record FileListPageReadResult(
             List<FileCommonDto.FileListItemRes> fileList,
             List<FileCommonDto.FileBreadcrumbRes> breadcrumbs,
@@ -702,6 +705,14 @@ public class FileUpDownloadMinioService implements FileUpDownloadService {
                 encryptionResults.values().forEach(enc -> vaultFileCryptoService.deleteObjectQuietly(enc.encryptedObjectKey()));
             }
             throw exception;
+        }
+
+        if (!filesToEncrypt.isEmpty() && fileThumbnailService != null) {
+            for (FileInfo encryptedFile : filesToEncrypt) {
+                if (encryptedFile != null && encryptedFile.isEncrypted()) {
+                    fileThumbnailService.scheduleEncryptedThumbnailPreGeneration(encryptedFile);
+                }
+            }
         }
 
         return FileCommonDto.FileActionRes.builder()

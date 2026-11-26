@@ -6,10 +6,7 @@ import { useHeaderSearchStore } from "@/stores/useHeaderSearchStore.js";
 import { useMediaPhotoStore } from "@/stores/useMediaPhotoStore.js";
 import { downloadFileAsset } from "@/api/filesApi.js";
 import { getCachedFileThumbnailUrl, loadFileThumbnailUrl } from "@/utils/fileThumbnailCache.js";
-import {
-  resolveFilePlaybackUrl,
-  resolveFileThumbnailFallbackUrl,
-} from "@/utils/fileMediaUrl.js";
+import { resolveFileThumbnailFallbackUrl } from "@/utils/fileMediaUrl.js";
 import { triggerDesktopUpload } from "@/utils/desktopDropUpload.js";
 import { matchesSearchItem } from "@/utils/fileSearch.js";
 import BaseFileShareDialog from "@/components/BaseFileShareDialog.vue";
@@ -179,9 +176,78 @@ const selectedAreaFolderId = ref("all");
 const areaBrowserFolderId = ref("");
 const areaBrowserGroupingMode = ref("children-as-series");
 
-// Thumbnail loading map
+// Thumbnail loading map & viewport priority observer
 const thumbnailMap = ref({});
 let thumbAbortController = null;
+const pendingThumbKeys = new Set();
+const observedThumbItems = new WeakMap();
+let thumbnailObserver = null;
+
+const ensureThumbAbortController = () => {
+  if (!thumbAbortController || thumbAbortController.signal.aborted) {
+    thumbAbortController = new AbortController();
+  }
+  return thumbAbortController;
+};
+
+const loadSingleMediaThumbnail = (item, priority = "high") => {
+  if (!item || item.id == null) return;
+  const key = String(item.id);
+  if (thumbnailMap.value[key]) return;
+
+  const cached = getCachedFileThumbnailUrl(item) || resolveFileThumbnailFallbackUrl(item);
+  if (cached) {
+    thumbnailMap.value = { ...thumbnailMap.value, [key]: cached };
+    return;
+  }
+
+  if (pendingThumbKeys.has(key)) return;
+  pendingThumbKeys.add(key);
+
+  const controller = ensureThumbAbortController();
+  loadFileThumbnailUrl(item, { signal: controller.signal, priority })
+    .then((url) => {
+      if (url && !controller.signal.aborted) {
+        thumbnailMap.value = { ...thumbnailMap.value, [key]: url };
+      }
+    })
+    .catch(() => {})
+    .finally(() => {
+      pendingThumbKeys.delete(key);
+    });
+};
+
+const ensureThumbnailObserver = () => {
+  if (thumbnailObserver || typeof IntersectionObserver === "undefined") {
+    return thumbnailObserver;
+  }
+  thumbnailObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const item = observedThumbItems.get(entry.target);
+        if (item) {
+          loadSingleMediaThumbnail(item, "high");
+        }
+        thumbnailObserver?.unobserve(entry.target);
+      }
+    },
+    { rootMargin: "320px 0px" },
+  );
+  return thumbnailObserver;
+};
+
+const observeThumbnailEl = (el, item) => {
+  if (!el || !item || item.id == null) return;
+  const key = String(item.id);
+  if (thumbnailMap.value[key]) return;
+  const observer = ensureThumbnailObserver();
+  if (!observer) {
+    return;
+  }
+  observedThumbItems.set(el, item);
+  observer.observe(el);
+};
 
 // Share dialog integration
 const canCreateShares = computed(() => !props.vaultOnly && Boolean(fileStore.planCapabilities?.shareEnabled));
@@ -760,24 +826,26 @@ const clearSelection = () => {
   selectedIds.value = [];
 };
 
-// Prime thumbnails for visible videos, series covers & collection covers
+// Prime cached thumbnails synchronously; defer remote loads to IntersectionObserver when available
 const primeThumbnails = async () => {
   if (thumbAbortController) {
     thumbAbortController.abort();
   }
+  pendingThumbKeys.clear();
   const controller = new AbortController();
   thumbAbortController = controller;
 
   const candidates = [
     ...(mediaPhotoStore.resolvedMediaSeries || []).map((s) => s.coverEpisode).filter(Boolean),
-    ...visibleSeriesEpisodes.value.slice(0, 36),
-    ...mediaPhotoStore.continueWatchingVideos.slice(0, 12),
-    ...visibleMainItems.value.slice(0, 48),
+    ...visibleSeriesEpisodes.value,
+    ...mediaPhotoStore.continueWatchingVideos,
+    ...visibleMainItems.value,
     ...collections.value.map((c) => c.coverItem).filter(Boolean),
   ];
 
   const seen = new Set();
   const cachedUpdates = {};
+  const uncachedCandidates = [];
   for (const item of candidates) {
     if (!item || item.id == null) continue;
     const key = String(item.id);
@@ -790,35 +858,18 @@ const primeThumbnails = async () => {
       continue;
     }
 
-    loadFileThumbnailUrl(item, { signal: controller.signal })
-      .then((url) => {
-        if (url && !controller.signal.aborted) {
-          thumbnailMap.value = { ...thumbnailMap.value, [key]: url };
-        }
-      })
-      .catch(() => {});
+    uncachedCandidates.push(item);
   }
   if (Object.keys(cachedUpdates).length > 0) {
     thumbnailMap.value = { ...thumbnailMap.value, ...cachedUpdates };
   }
-};
 
-const onHoverVideoLoadedMetadata = (event, item) => {
-  const el = event?.target;
-  if (!el || !item) return;
-  if (el.duration || el.videoWidth) {
-    mediaPhotoStore.recordVideoMetadata(item.id, {
-      durationSeconds: el.duration,
-      width: el.videoWidth,
-      height: el.videoHeight,
-    });
+  // Fallback for environments without IntersectionObserver (e.g. jsdom unit tests)
+  if (typeof IntersectionObserver === "undefined") {
+    for (const item of uncachedCandidates.slice(0, 12)) {
+      loadSingleMediaThumbnail(item, "high");
+    }
   }
-};
-
-const getVideoPreviewSrc = (item) => {
-  const raw = resolveFilePlaybackUrl(item);
-  if (!raw) return "";
-  return raw.includes("#") ? raw : `${raw}#t=0.1`;
 };
 
 const handlePlayItem = (item, pool = visibleMainItems.value, collectionId = null) => {
@@ -1281,6 +1332,11 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("click", closeFloatingMenus);
+  if (thumbnailObserver) {
+    thumbnailObserver.disconnect();
+    thumbnailObserver = null;
+  }
+  pendingThumbKeys.clear();
   if (thumbAbortController) {
     thumbAbortController.abort();
   }
@@ -1510,6 +1566,7 @@ onBeforeUnmount(() => {
         >
           <div
             v-if="showThumbnails"
+            :ref="(el) => observeThumbnailEl(el, video)"
             class="relative w-full cursor-pointer overflow-hidden bg-slate-900"
             :class="thumbAspectClass"
             @click="handlePlayItem(video, filteredContinueWatching)"
@@ -1520,15 +1577,9 @@ onBeforeUnmount(() => {
               :alt="video.name"
               class="h-full w-full object-cover transition duration-300 group-hover:scale-105"
             />
-            <video
-              v-else-if="video.downloadUrl || video.presignedDownloadUrl"
-              :src="getVideoPreviewSrc(video)"
-              preload="metadata"
-              muted
-              playsinline
-              class="h-full w-full object-cover"
-              @loadedmetadata="onHoverVideoLoadedMetadata($event, video)"
-            ></video>
+            <div v-else class="flex h-full w-full items-center justify-center text-slate-500">
+              <i class="fa-solid fa-film text-3xl"></i>
+            </div>
 
             <div class="absolute inset-0 flex items-center justify-center bg-black/35 opacity-0 transition group-hover:opacity-100 max-sm:opacity-60">
               <div class="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600 text-white shadow-xl">
@@ -1875,6 +1926,7 @@ onBeforeUnmount(() => {
           <!-- Series Poster / Cover Stage -->
           <div
             v-if="showThumbnails"
+            :ref="(el) => observeThumbnailEl(el, series.coverEpisode)"
             class="relative w-full cursor-pointer overflow-hidden bg-slate-900"
             :class="thumbAspectClass"
             @click="openSeriesDetail(series)"
@@ -1886,15 +1938,6 @@ onBeforeUnmount(() => {
               loading="lazy"
               class="h-full w-full object-cover transition duration-300 group-hover:scale-105"
             />
-            <video
-              v-else-if="series.coverEpisode && (series.coverEpisode.downloadUrl || series.coverEpisode.presignedDownloadUrl)"
-              :src="getVideoPreviewSrc(series.coverEpisode)"
-              preload="metadata"
-              muted
-              playsinline
-              class="h-full w-full object-cover"
-              @loadedmetadata="onHoverVideoLoadedMetadata($event, series.coverEpisode)"
-            ></video>
             <div v-else class="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-800 to-slate-950 text-slate-400">
               <i class="fa-solid fa-tv text-3xl"></i>
             </div>
@@ -2159,6 +2202,7 @@ onBeforeUnmount(() => {
             />
             <div
               v-if="showThumbnails"
+              :ref="(el) => observeThumbnailEl(el, series.coverEpisode)"
               class="relative shrink-0 cursor-pointer overflow-hidden rounded-xl bg-slate-900"
               :class="listThumbSizeClass"
               @click="openSeriesDetail(series)"
@@ -2170,15 +2214,6 @@ onBeforeUnmount(() => {
                 loading="lazy"
                 class="h-full w-full object-cover"
               />
-              <video
-                v-else-if="series.coverEpisode && (series.coverEpisode.downloadUrl || series.coverEpisode.presignedDownloadUrl)"
-                :src="getVideoPreviewSrc(series.coverEpisode)"
-                preload="metadata"
-                muted
-                playsinline
-                class="h-full w-full object-cover"
-                @loadedmetadata="onHoverVideoLoadedMetadata($event, series.coverEpisode)"
-              ></video>
               <div v-else class="flex h-full w-full items-center justify-center text-slate-500">
                 <i class="fa-solid fa-tv text-lg"></i>
               </div>
@@ -2476,6 +2511,7 @@ onBeforeUnmount(() => {
         >
           <div
             v-if="showThumbnails"
+            :ref="(el) => observeThumbnailEl(el, ep)"
             class="relative w-full cursor-pointer overflow-hidden bg-slate-900"
             :class="thumbAspectClass"
             @click="handlePlaySeries(selectedSeries, ep)"
@@ -2487,15 +2523,6 @@ onBeforeUnmount(() => {
               loading="lazy"
               class="h-full w-full object-cover transition duration-300 group-hover:scale-105"
             />
-            <video
-              v-else-if="ep.downloadUrl || ep.presignedDownloadUrl"
-              :src="getVideoPreviewSrc(ep)"
-              preload="metadata"
-              muted
-              playsinline
-              class="h-full w-full object-cover"
-              @loadedmetadata="onHoverVideoLoadedMetadata($event, ep)"
-            ></video>
             <div v-else class="flex h-full w-full items-center justify-center text-slate-500">
               <i class="fa-solid fa-film text-3xl"></i>
             </div>
@@ -2630,6 +2657,7 @@ onBeforeUnmount(() => {
           <div class="flex min-w-0 flex-1 items-center gap-3">
             <div
               v-if="showThumbnails"
+              :ref="(el) => observeThumbnailEl(el, ep)"
               class="relative shrink-0 cursor-pointer overflow-hidden rounded-xl bg-slate-900"
               :class="listThumbSizeClass"
               @click="handlePlaySeries(selectedSeries, ep)"
@@ -2641,15 +2669,6 @@ onBeforeUnmount(() => {
                 loading="lazy"
                 class="h-full w-full object-cover"
               />
-              <video
-                v-else-if="ep.downloadUrl || ep.presignedDownloadUrl"
-                :src="getVideoPreviewSrc(ep)"
-                preload="metadata"
-                muted
-                playsinline
-                class="h-full w-full object-cover"
-                @loadedmetadata="onHoverVideoLoadedMetadata($event, ep)"
-              ></video>
               <div v-else class="flex h-full w-full items-center justify-center text-slate-500">
                 <i class="fa-solid fa-film text-lg"></i>
               </div>
@@ -2776,6 +2795,7 @@ onBeforeUnmount(() => {
         >
           <div
             v-if="showThumbnails"
+            :ref="(el) => observeThumbnailEl(el, col.coverItem)"
             class="relative w-full cursor-pointer overflow-hidden bg-slate-900"
             :class="thumbAspectClass"
             @click="openCollectionDetail(col)"
@@ -3014,6 +3034,7 @@ onBeforeUnmount(() => {
           <!-- Thumbnail Stage -->
           <div
             v-if="showThumbnails"
+            :ref="(el) => observeThumbnailEl(el, item)"
             class="relative w-full cursor-pointer overflow-hidden bg-slate-900"
             :class="thumbAspectClass"
             @click="handlePlayItem(item, visibleMainItems)"
@@ -3025,15 +3046,6 @@ onBeforeUnmount(() => {
               loading="lazy"
               class="h-full w-full object-cover transition duration-300 group-hover:scale-105"
             />
-            <video
-              v-else-if="item.mediaKind === 'video' && (item.downloadUrl || item.presignedDownloadUrl)"
-              :src="getVideoPreviewSrc(item)"
-              preload="metadata"
-              muted
-              playsinline
-              class="h-full w-full object-cover"
-              @loadedmetadata="onHoverVideoLoadedMetadata($event, item)"
-            ></video>
             <div v-else class="flex h-full w-full items-center justify-center text-slate-500">
               <i :class="item.mediaKind === 'image' ? 'fa-regular fa-image text-3xl' : 'fa-solid fa-film text-3xl'"></i>
             </div>
@@ -3296,6 +3308,7 @@ onBeforeUnmount(() => {
             />
             <div
               v-if="showThumbnails"
+              :ref="(el) => observeThumbnailEl(el, item)"
               class="relative shrink-0 cursor-pointer overflow-hidden rounded-xl bg-slate-900"
               :class="listThumbSizeClass"
               @click="handlePlayItem(item, visibleMainItems)"
@@ -3306,15 +3319,6 @@ onBeforeUnmount(() => {
                 :alt="item.name"
                 class="h-full w-full object-cover"
               />
-              <video
-                v-else-if="item.mediaKind === 'video' && (item.downloadUrl || item.presignedDownloadUrl)"
-                :src="getVideoPreviewSrc(item)"
-                preload="metadata"
-                muted
-                playsinline
-                class="h-full w-full object-cover"
-                @loadedmetadata="onHoverVideoLoadedMetadata($event, item)"
-              ></video>
               <div v-else class="flex h-full w-full items-center justify-center text-slate-500">
                 <i :class="item.mediaKind === 'image' ? 'fa-regular fa-image text-lg' : 'fa-solid fa-film text-lg'"></i>
               </div>
