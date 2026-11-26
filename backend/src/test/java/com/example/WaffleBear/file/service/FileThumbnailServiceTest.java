@@ -2,6 +2,7 @@ package com.example.WaffleBear.file.service;
 
 import com.example.WaffleBear.config.MinioProperties;
 import com.example.WaffleBear.config.MinioPresignedUrlService;
+import com.example.WaffleBear.file.FileUpDownloadRepository;
 import com.example.WaffleBear.file.crypto.VaultFileCryptoService;
 import com.example.WaffleBear.file.model.FileEncryptionMode;
 import com.example.WaffleBear.file.model.FileInfo;
@@ -20,14 +21,19 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Semaphore;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -54,6 +60,9 @@ class FileThumbnailServiceTest {
 
     @Mock
     private VaultFileCryptoService vaultFileCryptoService;
+
+    @Mock
+    private FileUpDownloadRepository fileUpDownloadRepository;
 
     private FileThumbnailService fileThumbnailService;
 
@@ -354,6 +363,94 @@ class FileThumbnailServiceTest {
 
         workerFuture.get(3, java.util.concurrent.TimeUnit.SECONDS);
         verify(vaultFileCryptoService).loadDecryptedThumbnail(encryptedVideo, thumbKey);
+    }
+
+    @Test
+    void hydratesEncryptedFileMetadataFromRepositoryWhenSnapshotLacksKeys() throws Exception {
+        ReflectionTestUtils.setField(fileThumbnailService, "vaultFileCryptoService", vaultFileCryptoService);
+        ReflectionTestUtils.setField(fileThumbnailService, "fileUpDownloadRepository", fileUpDownloadRepository);
+
+        FileInfo snapshot = encryptedVaultVideo(501L, "7/vault/snapshot.enc");
+        FileInfo hydrated = FileInfo.builder()
+                .idx(501L)
+                .nodeType(FileNodeType.FILE)
+                .spaceType(FileSpaceType.VAULT)
+                .encryptionMode(FileEncryptionMode.SERVER_ENVELOPE_V1)
+                .encryptionKeyVersion(1)
+                .wrappedDek("wrapped-dek")
+                .encryptionNoncePrefix("nonce123456")
+                .encryptionChunkSize(1048576)
+                .fileOriginName("secret.mp4")
+                .fileFormat("mp4")
+                .fileSaveName("secret.enc")
+                .fileSavePath("7/vault/snapshot.enc")
+                .fileSize(4096L)
+                .lockedFile(false)
+                .trashed(false)
+                .build();
+
+        String thumbKey = "7/vault/thumbnails/snapshot.vthumb";
+        when(fileUpDownloadRepository.findById(501L)).thenReturn(Optional.of(hydrated));
+        when(minioClient.statObject(any(StatObjectArgs.class))).thenReturn(null);
+        when(vaultFileCryptoService.loadDecryptedThumbnail(hydrated, thumbKey))
+                .thenReturn(new byte[]{4, 5, 6});
+
+        FileThumbnailService.ThumbnailPayload payload = fileThumbnailService.loadThumbnail(snapshot);
+
+        assertThat(payload).isNotNull();
+        assertThat(payload.bytes()).containsExactly(4, 5, 6);
+        verify(vaultFileCryptoService).loadDecryptedThumbnail(hydrated, thumbKey);
+    }
+
+    @Test
+    void loopbackEncryptedVideoServerSendsConnectionCloseHeader() throws Exception {
+        ReflectionTestUtils.setField(fileThumbnailService, "vaultFileCryptoService", vaultFileCryptoService);
+
+        FileInfo encryptedVideo = FileInfo.builder()
+                .idx(502L)
+                .nodeType(FileNodeType.FILE)
+                .spaceType(FileSpaceType.VAULT)
+                .encryptionMode(FileEncryptionMode.SERVER_ENVELOPE_V1)
+                .encryptionKeyVersion(1)
+                .wrappedDek("wrapped-dek")
+                .encryptionNoncePrefix("nonce123456")
+                .encryptionChunkSize(1048576)
+                .fileOriginName("secret.mp4")
+                .fileFormat("mp4")
+                .fileSaveName("secret.enc")
+                .fileSavePath("7/vault/loopback-close.enc")
+                .fileSize(4096L)
+                .lockedFile(false)
+                .trashed(false)
+                .build();
+
+        when(videoThumbnailService.supports("mp4")).thenReturn(true);
+        when(minioClient.statObject(any(StatObjectArgs.class))).thenThrow(new RuntimeException("missing"));
+        doAnswer(invocation -> {
+            OutputStream out = invocation.getArgument(3);
+            out.write(new byte[]{10, 20, 30, 40});
+            out.flush();
+            return null;
+        }).when(vaultFileCryptoService).streamDecryptedRange(eq(encryptedVideo), eq(0L), eq(3L), any(OutputStream.class));
+
+        when(videoThumbnailService.createThumbnailFromSource(any(String.class))).thenAnswer(invocation -> {
+            String url = invocation.getArgument(0);
+            HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("Range", "bytes=0-3");
+            assertThat(conn.getResponseCode()).isEqualTo(206);
+            assertThat(conn.getHeaderField("Connection")).isEqualToIgnoringCase("close");
+            assertThat(conn.getHeaderField("Content-Range")).isEqualTo("bytes 0-3/4096");
+            byte[] body = conn.getInputStream().readAllBytes();
+            conn.disconnect();
+            assertThat(body).containsExactly(10, 20, 30, 40);
+            return new byte[]{(byte) 0xFF, (byte) 0xD8, 1};
+        });
+
+        FileThumbnailService.ThumbnailPayload payload = fileThumbnailService.loadThumbnail(encryptedVideo);
+
+        assertThat(payload).isNotNull();
+        assertThat(payload.bytes()).containsExactly((byte) 0xFF, (byte) 0xD8, 1);
     }
 
     private FileInfo encryptedVaultVideo(Long idx, String objectKey) {

@@ -100,6 +100,8 @@ public class VideoThumbnailService {
         if (isHttpSource) {
             command.add("-rw_timeout");
             command.add("15000000");
+            command.add("-multiple_requests");
+            command.add("0");
         }
         command.add("-analyzeduration");
         command.add("5000000");

@@ -4,6 +4,7 @@ import com.example.WaffleBear.common.exception.BaseException;
 import com.example.WaffleBear.common.model.BaseResponseStatus;
 import com.example.WaffleBear.config.MinioProperties;
 import com.example.WaffleBear.config.MinioPresignedUrlService;
+import com.example.WaffleBear.file.FileUpDownloadRepository;
 import com.example.WaffleBear.file.crypto.VaultFileCryptoService;
 import com.example.WaffleBear.file.model.FileInfo;
 import com.example.WaffleBear.file.model.FileNodeType;
@@ -80,6 +81,9 @@ public class FileThumbnailService {
     @Autowired(required = false)
     private VaultFileCryptoService vaultFileCryptoService;
 
+    @Autowired(required = false)
+    private FileUpDownloadRepository fileUpDownloadRepository;
+
     private static final SecureRandom EPHEMERAL_RANDOM = new SecureRandom();
     private static final AtomicInteger LOOPBACK_THREAD_COUNTER = new AtomicInteger(1);
     private static final ExecutorService LOOPBACK_HTTP_EXECUTOR = Executors.newCachedThreadPool(runnable -> {
@@ -139,19 +143,29 @@ public class FileThumbnailService {
             return null;
         }
 
-        String eTag = buildEtag(file);
+        FileInfo resolvedFile = hydrateEncryptedFileIfNeeded(file);
+        if (resolvedFile == null) {
+            log.warn("Encrypted thumbnail skipped due to missing encryption metadata fileIdx={} ext={}", file.getIdx(), extension);
+            return null;
+        }
+        String resolvedObjectKey = resolvedFile.getFileSavePath();
+        if (resolvedObjectKey == null || resolvedObjectKey.isBlank()) {
+            return null;
+        }
+
+        String eTag = buildEtag(resolvedFile);
 
         if (isImage && NON_TRANSCODABLE_IMAGE_EXTENSIONS.contains(extension)) {
-            if (file.getFileSize() != null && file.getFileSize() > MAX_IMAGE_THUMBNAIL_SOURCE_BYTES) {
+            if (resolvedFile.getFileSize() != null && resolvedFile.getFileSize() > MAX_IMAGE_THUMBNAIL_SOURCE_BYTES) {
                 return null;
             }
-            String rawCacheKey = buildEncryptedRawCacheKey(objectKey);
+            String rawCacheKey = buildEncryptedRawCacheKey(resolvedObjectKey);
             ThumbnailPayload memoryCached = getCachedThumbnail(rawCacheKey, eTag);
             if (memoryCached != null) {
                 return memoryCached;
             }
             try {
-                byte[] original = vaultFileCryptoService.readDecryptedBytes(file);
+                byte[] original = vaultFileCryptoService.readDecryptedBytes(resolvedFile);
                 if (original == null || original.length == 0) {
                     return null;
                 }
@@ -159,17 +173,17 @@ public class FileThumbnailService {
                         original,
                         resolveImageContentType(extension),
                         eTag,
-                        resolveLastModifiedEpochMillis(file),
+                        resolveLastModifiedEpochMillis(resolvedFile),
                         true
                 );
-                putCachedThumbnail(rawCacheKey, payload, objectKey);
+                putCachedThumbnail(rawCacheKey, payload, resolvedObjectKey);
                 return payload;
             } catch (Exception ignored) {
                 return null;
             }
         }
 
-        String encryptedThumbKey = FileContentUtils.buildEncryptedThumbnailObjectKey(objectKey);
+        String encryptedThumbKey = FileContentUtils.buildEncryptedThumbnailObjectKey(resolvedObjectKey);
         if (isThumbnailFailedRecently(encryptedThumbKey)) {
             return null;
         }
@@ -180,16 +194,16 @@ public class FileThumbnailService {
         }
 
         if (objectExists(encryptedThumbKey)) {
-            byte[] cached = vaultFileCryptoService.loadDecryptedThumbnail(file, encryptedThumbKey);
+            byte[] cached = vaultFileCryptoService.loadDecryptedThumbnail(resolvedFile, encryptedThumbKey);
             if (cached != null && cached.length > 0) {
                 ThumbnailPayload payload = new ThumbnailPayload(
                         cached,
                         "image/jpeg",
                         eTag,
-                        resolveLastModifiedEpochMillis(file),
+                        resolveLastModifiedEpochMillis(resolvedFile),
                         true
                 );
-                putCachedThumbnail(encryptedThumbKey, payload, objectKey);
+                putCachedThumbnail(encryptedThumbKey, payload, resolvedObjectKey);
                 return payload;
             }
         }
@@ -198,7 +212,7 @@ public class FileThumbnailService {
             markThumbnailFailed(encryptedThumbKey);
             return null;
         }
-        if (!isVideo && !isPresignedRasterImage(file, extension)) {
+        if (!isVideo && !isPresignedRasterImage(resolvedFile, extension)) {
             return null;
         }
 
@@ -219,7 +233,7 @@ public class FileThumbnailService {
             } else {
                 acquiredPermit = onDemandVideoFfmpegPermits.tryAcquire();
                 if (!acquiredPermit) {
-                    scheduleEncryptedThumbnailPreGeneration(file);
+                    scheduleEncryptedThumbnailPreGeneration(resolvedFile);
                     return ThumbnailPayload.pendingPayload();
                 }
             }
@@ -234,31 +248,31 @@ public class FileThumbnailService {
 
         try {
             if (objectExistsDirect(encryptedThumbKey)) {
-                byte[] existing = vaultFileCryptoService.loadDecryptedThumbnail(file, encryptedThumbKey);
+                byte[] existing = vaultFileCryptoService.loadDecryptedThumbnail(resolvedFile, encryptedThumbKey);
                 if (existing != null && existing.length > 0) {
                     ThumbnailPayload payload = new ThumbnailPayload(
                             existing,
                             "image/jpeg",
                             eTag,
-                            resolveLastModifiedEpochMillis(file),
+                            resolveLastModifiedEpochMillis(resolvedFile),
                             true
                     );
-                    putCachedThumbnail(encryptedThumbKey, payload, objectKey);
+                    putCachedThumbnail(encryptedThumbKey, payload, resolvedObjectKey);
                     return payload;
                 }
             }
 
             byte[] generatedBytes;
             if (isVideo) {
-                generatedBytes = createEncryptedVideoThumbnailBytes(file, extension);
+                generatedBytes = createEncryptedVideoThumbnailBytes(resolvedFile, extension);
             } else {
-                try (var plainStream = vaultFileCryptoService.openDecryptedInputStream(file)) {
+                try (var plainStream = vaultFileCryptoService.openDecryptedInputStream(resolvedFile)) {
                     generatedBytes = imageThumbnailService.createThumbnail(plainStream);
                 }
             }
 
             if (generatedBytes != null && generatedBytes.length > 0) {
-                vaultFileCryptoService.encryptAndStoreThumbnail(file, encryptedThumbKey, generatedBytes);
+                vaultFileCryptoService.encryptAndStoreThumbnail(resolvedFile, encryptedThumbKey, generatedBytes);
                 existingThumbnailKeys.add(encryptedThumbKey);
                 missingThumbnailKeys.remove(encryptedThumbKey);
                 clearThumbnailFailed(encryptedThumbKey);
@@ -266,26 +280,26 @@ public class FileThumbnailService {
                         generatedBytes,
                         "image/jpeg",
                         eTag,
-                        resolveLastModifiedEpochMillis(file),
+                        resolveLastModifiedEpochMillis(resolvedFile),
                         true
                 );
-                putCachedThumbnail(encryptedThumbKey, payload, objectKey);
+                putCachedThumbnail(encryptedThumbKey, payload, resolvedObjectKey);
                 return payload;
             }
             log.warn(
                     "Encrypted thumbnail generation failed fileIdx={} ext={} size={} err=empty-output",
-                    file.getIdx(),
+                    resolvedFile.getIdx(),
                     extension,
-                    file.getFileSize()
+                    resolvedFile.getFileSize()
             );
             markThumbnailFailed(encryptedThumbKey);
             return null;
         } catch (Exception ex) {
             log.warn(
                     "Encrypted thumbnail generation failed fileIdx={} ext={} size={} err={}",
-                    file.getIdx(),
+                    resolvedFile.getIdx(),
                     extension,
-                    file.getFileSize(),
+                    resolvedFile.getFileSize(),
                     ex.getMessage()
             );
             markThumbnailFailed(encryptedThumbKey);
@@ -328,6 +342,7 @@ public class FileThumbnailService {
             long plainSize
     ) throws IOException {
         try {
+            exchange.getResponseHeaders().set("Connection", "close");
             String method = exchange.getRequestMethod();
             String path = exchange.getRequestURI() != null ? exchange.getRequestURI().getPath() : "";
             if (!expectedPath.equals(path) || (!"GET".equalsIgnoreCase(method) && !"HEAD".equalsIgnoreCase(method))) {
@@ -385,12 +400,71 @@ public class FileThumbnailService {
             exchange.sendResponseHeaders(statusCode, length);
             try (OutputStream out = exchange.getResponseBody()) {
                 vaultFileCryptoService.streamDecryptedRange(file, start, end, out);
-            } catch (IOException ignored) {
-                // ffmpeg closes stream as soon as keyframe/moov atom is decoded
+            } catch (IOException ioException) {
+                if (!isExpectedLoopbackClientAbort(ioException)) {
+                    log.warn(
+                            "Loopback encrypted video stream failed fileIdx={} range={}-{}: {}",
+                            file.getIdx(),
+                            start,
+                            end,
+                            ioException.getMessage()
+                    );
+                }
+            } catch (RuntimeException runtimeException) {
+                log.warn(
+                        "Loopback encrypted video stream error fileIdx={} range={}-{}: {}",
+                        file.getIdx(),
+                        start,
+                        end,
+                        runtimeException.getMessage()
+                );
             }
         } finally {
             exchange.close();
         }
+    }
+
+    private FileInfo hydrateEncryptedFileIfNeeded(FileInfo file) {
+        if (file == null || !file.isEncrypted() || hasEncryptionKeyMaterial(file)) {
+            return file;
+        }
+        if (fileUpDownloadRepository == null || file.getIdx() == null) {
+            return file;
+        }
+        FileInfo hydrated = fileUpDownloadRepository.findById(file.getIdx()).orElse(null);
+        if (hydrated == null
+                || !hydrated.isEncrypted()
+                || hydrated.isTrashed()
+                || hydrated.isLockedFile()
+                || !hasEncryptionKeyMaterial(hydrated)) {
+            return null;
+        }
+        return hydrated;
+    }
+
+    private boolean hasEncryptionKeyMaterial(FileInfo file) {
+        return file != null
+                && file.getWrappedDek() != null
+                && !file.getWrappedDek().isBlank()
+                && file.getEncryptionNoncePrefix() != null
+                && !file.getEncryptionNoncePrefix().isBlank()
+                && file.getEncryptionKeyVersion() != null
+                && file.getEncryptionKeyVersion() > 0;
+    }
+
+    private boolean isExpectedLoopbackClientAbort(Throwable throwable) {
+        Throwable cursor = throwable;
+        while (cursor != null) {
+            String message = cursor.getMessage();
+            if (message != null && (message.contains("Broken pipe")
+                    || message.contains("Connection reset")
+                    || message.contains("stream is closed")
+                    || message.contains("insufficient bytes written to stream"))) {
+                return true;
+            }
+            cursor = cursor.getCause();
+        }
+        return false;
     }
 
     public void warmThumbnailsForFiles(Collection<FileInfo> files) {
