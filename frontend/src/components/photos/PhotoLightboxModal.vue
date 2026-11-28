@@ -528,10 +528,10 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <div
       v-if="currentPhoto"
-      class="fixed inset-0 z-[295] flex h-[100dvh] flex-col bg-slate-950/95 text-slate-100 backdrop-blur-md"
+      class="fixed inset-0 z-[295] flex flex-col bg-slate-950 text-slate-100 isolate"
     >
       <!-- Top Control Bar -->
-      <header class="relative flex items-center justify-between gap-2 border-b border-slate-800/80 bg-slate-900/90 px-3 py-2 sm:px-6 sm:py-2.5 shrink-0">
+      <header class="relative flex items-center justify-between gap-2 border-b border-slate-800/80 bg-slate-900 px-3 py-2 sm:px-6 sm:py-2.5 shrink-0 [transform:translateZ(0)]">
         <div class="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
           <button
             type="button"
@@ -778,7 +778,7 @@ onBeforeUnmount(() => {
             v-if="hasPrev"
             type="button"
             data-testid="lightbox-prev-btn"
-            class="absolute left-3 z-20 flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-full border border-white/15 bg-slate-900/75 text-white shadow-xl backdrop-blur transition hover:bg-blue-600 sm:left-6"
+            class="absolute left-3 z-20 flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-full border border-white/15 bg-slate-900/90 text-white shadow-xl transition hover:bg-blue-600 sm:left-6"
             title="이전 사진 (←)"
             aria-label="이전 사진"
             @touchstart.stop
@@ -843,7 +843,7 @@ onBeforeUnmount(() => {
             v-if="hasNext"
             type="button"
             data-testid="lightbox-next-btn"
-            class="absolute right-3 z-20 flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-full border border-white/15 bg-slate-900/75 text-white shadow-xl backdrop-blur transition hover:bg-blue-600 sm:right-6"
+            class="absolute right-3 z-20 flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-full border border-white/15 bg-slate-900/90 text-white shadow-xl transition hover:bg-blue-600 sm:right-6"
             title="다음 사진 (→)"
             aria-label="다음 사진"
             @touchstart.stop
@@ -857,7 +857,7 @@ onBeforeUnmount(() => {
         <!-- Right Info Drawer / Mobile Bottom Sheet -->
         <aside
           v-if="isInfoDrawerOpen"
-          class="absolute inset-x-0 bottom-0 z-30 max-h-[75vh] w-full overflow-y-auto rounded-t-3xl border-t border-slate-700 bg-slate-900/98 p-5 shadow-2xl backdrop-blur-lg sm:static sm:inset-auto sm:max-h-none sm:w-80 sm:rounded-none sm:border-l sm:border-t-0 sm:bg-slate-900/95"
+          class="absolute inset-x-0 bottom-0 z-30 max-h-[75vh] w-full overflow-y-auto rounded-t-3xl border-t border-slate-700 bg-slate-900 p-5 shadow-2xl sm:static sm:inset-auto sm:max-h-none sm:w-80 sm:rounded-none sm:border-l sm:border-t-0"
         >
           <!-- Mobile Drag Handle -->
           <div class="mx-auto mb-3 h-1 w-10 rounded-full bg-slate-700 sm:hidden"></div>

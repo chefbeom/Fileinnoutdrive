@@ -22,8 +22,10 @@ const activeFile = computed(() => {
   return mediaPhotoStore.getMediaItemById(mediaPhotoStore.miniPlayer.fileId);
 });
 
+const lockedStreamUrl = ref("");
 const streamUrl = computed(() => (
   refreshedStreamUrl.value ||
+  lockedStreamUrl.value ||
   resolveFilePlaybackUrl(activeFile.value)
 ));
 
@@ -67,7 +69,10 @@ const onLoadedMetadata = () => {
 const onTimeUpdate = () => {
   const el = miniVideoRef.value;
   if (!el || !activeFile.value) return;
-  currentTime.value = Number(el.currentTime || 0);
+  const rawTime = Number(el.currentTime || 0);
+  if (Math.floor(rawTime) !== Math.floor(currentTime.value)) {
+    currentTime.value = rawTime;
+  }
   if (!progressTimer) {
     progressTimer = setTimeout(() => {
       progressTimer = null;
@@ -108,8 +113,10 @@ watch(
   () => mediaPhotoStore.miniPlayer.fileId,
   () => {
     refreshedStreamUrl.value = "";
+    lockedStreamUrl.value = resolveFilePlaybackUrl(activeFile.value);
     hasRetriedStreamToken.value = false;
   },
+  { immediate: true },
 );
 
 watch(
@@ -117,6 +124,7 @@ watch(
   (active) => {
     if (!active) {
       refreshedStreamUrl.value = "";
+      lockedStreamUrl.value = "";
       hasRetriedStreamToken.value = false;
     }
     if (!active && progressTimer) {
@@ -144,17 +152,17 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <div
       v-if="activeFile && streamUrl"
-      class="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] right-3 z-[240] w-72 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900/95 text-white shadow-2xl backdrop-blur-md md:bottom-6 md:right-6 md:w-80"
+      class="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] right-3 z-[240] w-72 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900 text-white shadow-2xl isolate [transform:translateZ(0)] md:bottom-6 md:right-6 md:w-80"
     >
       <div class="relative aspect-video w-full bg-black">
         <video
           ref="miniVideoRef"
-          :key="`${activeFile.id}:${streamUrl}`"
+          :key="`${activeFile.id}:${refreshedStreamUrl}`"
           :src="streamUrl"
           playsinline
           webkit-playsinline
           preload="metadata"
-          class="h-full w-full object-contain"
+          class="h-full w-full object-contain [transform:translateZ(0)]"
           @loadedmetadata="onLoadedMetadata"
           @timeupdate="onTimeUpdate"
           @play="isPlaying = true"
@@ -188,7 +196,7 @@ onBeforeUnmount(() => {
       <div class="flex items-center justify-between gap-2 px-3 py-2">
         <div class="min-w-0 flex-1 cursor-pointer" @click="handleExpand">
           <p class="truncate text-xs font-bold text-slate-100">{{ activeFile.displayTitle || activeFile.name }}</p>
-          <p class="text-[10px] font-mono text-slate-400">
+          <p class="text-[10px] font-mono tabular-nums text-slate-400">
             {{ formatDurationClock(currentTime) }} / {{ formatDurationClock(duration || activeFile.durationSeconds) }}
           </p>
         </div>

@@ -199,13 +199,14 @@ const previewKind = computed(() => {
 });
 
 const refreshedPreviewUrl = ref("");
+const lockedPreviewUrl = ref("");
 const hasRetriedStreamToken = ref(false);
 const isMediaLoading = ref(false);
 const mediaLoadError = ref("");
 const mediaRetryCount = ref(0);
 const isEncryptedFile = computed(() => isEncryptedVaultFile(props.file));
-const previewUrl = computed(() => refreshedPreviewUrl.value || resolveFilePlaybackUrl(props.file));
-const previewMediaKey = computed(() => `${props.file?.id ?? ""}:${previewUrl.value}:${mediaRetryCount.value}`);
+const previewUrl = computed(() => refreshedPreviewUrl.value || lockedPreviewUrl.value || resolveFilePlaybackUrl(props.file));
+const previewMediaKey = computed(() => `${props.file?.id ?? ""}:${mediaRetryCount.value}:${refreshedPreviewUrl.value}`);
 const isLockedFile = computed(() => Boolean(props.file?.lockedFile));
 const canDownload = computed(() => Boolean(!isLockedFile.value && (previewUrl.value || (props.file?.sharedWithMe && props.file?.downloadable))));
 const canManageVersions = computed(() => Boolean(
@@ -496,39 +497,54 @@ const loadTextPreview = async () => {
 watch(
   () => props.file,
   (file, prevFile) => {
-    if ((file?.id ?? null) !== (prevFile?.id ?? null)) {
+    const nextId = file?.id ?? null;
+    const prevId = prevFile?.id ?? null;
+    const isDifferentFile = nextId !== prevId;
+
+    if (isDifferentFile) {
       if (videoPreviewRef.value) safePauseMedia(videoPreviewRef.value);
       if (audioPreviewRef.value) safePauseMedia(audioPreviewRef.value);
       refreshedPreviewUrl.value = "";
+      lockedPreviewUrl.value = file ? resolveFilePlaybackUrl(file) : "";
       hasRetriedStreamToken.value = false;
       mediaLoadError.value = "";
       mediaRetryCount.value = 0;
+    } else if (file && !lockedPreviewUrl.value) {
+      lockedPreviewUrl.value = resolveFilePlaybackUrl(file);
     }
+
     window.removeEventListener("keydown", handlePreviewKeydown);
     if (file) {
       lockBodyScroll();
-      isMediaLoading.value = (previewKind.value === "video" || previewKind.value === "image") && !isLockedFile.value && Boolean(previewUrl.value);
-      if (previewKind.value === "video" && !isLockedFile.value) {
-        holdVideoThumbnailPriority();
-      } else {
-        releaseVideoThumbnailPriority();
+      if (isDifferentFile) {
+        isMediaLoading.value = (previewKind.value === "video" || previewKind.value === "image") && !isLockedFile.value && Boolean(previewUrl.value);
+        if (previewKind.value === "video" && !isLockedFile.value) {
+          holdVideoThumbnailPriority();
+        } else {
+          releaseVideoThumbnailPriority();
+        }
+        fileStore.recordFileAccess?.(file);
+        loadTextPreview();
+        loadFileVersions();
       }
-      fileStore.recordFileAccess?.(file);
       window.addEventListener("keydown", handlePreviewKeydown);
-      if (prevFile?.id && file.id) {
-        historyManager.updateItem(file.id);
+      if (prevId && nextId) {
+        if (isDifferentFile) {
+          historyManager.updateItem(nextId);
+        }
       } else {
-        historyManager.open(file.id);
+        historyManager.open(nextId);
       }
     } else {
       isMediaLoading.value = false;
       mediaLoadError.value = "";
+      lockedPreviewUrl.value = "";
       releaseVideoThumbnailPriority();
       unlockBodyScroll();
       historyManager.destroy();
+      loadTextPreview();
+      loadFileVersions();
     }
-    loadTextPreview();
-    loadFileVersions();
   },
   { immediate: true },
 );
@@ -545,12 +561,12 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <div
       v-if="file"
-      class="fixed inset-0 z-[270] flex items-center justify-center bg-slate-900/70 p-0 sm:px-4 sm:py-3"
+      class="fixed inset-0 z-[270] flex items-center justify-center bg-slate-900/75 p-0 sm:px-4 sm:py-3 isolate"
       @click.self="handleClose"
     >
-      <div class="flex h-[100dvh] w-full max-w-6xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-slate-900 sm:h-[min(92dvh,780px)] sm:rounded-3xl lg:flex-row">
+      <div class="flex h-full w-full max-w-6xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-slate-900 sm:h-[min(92dvh,780px)] sm:rounded-3xl lg:flex-row">
         <!-- Mobile Top Bar (non-overlapping with media stage) -->
-        <header class="flex shrink-0 items-center justify-between gap-2 border-b border-slate-800 bg-slate-950 px-3 py-2 text-white lg:hidden">
+        <header class="flex shrink-0 items-center justify-between gap-2 border-b border-slate-800 bg-slate-950 px-3 py-2 text-white [transform:translateZ(0)] isolate lg:hidden">
           <div class="flex min-w-0 flex-1 items-center gap-2">
             <button
               type="button"
@@ -609,14 +625,14 @@ onBeforeUnmount(() => {
 
         <div class="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
           <section
-            class="relative flex min-h-[240px] shrink-0 flex-col items-center justify-center bg-slate-950 p-3 sm:min-h-[340px] sm:p-4 lg:h-full lg:min-h-0 lg:flex-1"
+            class="relative flex min-h-[240px] shrink-0 flex-col items-center justify-center bg-slate-950 p-3 sm:min-h-[340px] sm:p-4 lg:h-full lg:min-h-0 lg:flex-1 isolate"
             @touchstart.passive="onStageTouchStart"
             @touchend.passive="onStageTouchEnd"
           >
             <!-- Desktop Index Counter Badge -->
             <div
               v-if="navigableFiles.length > 1 && currentIndex >= 0"
-              class="absolute left-4 top-4 z-20 hidden rounded-full border border-white/15 bg-slate-900/80 px-2.5 py-1 text-[11px] font-bold text-slate-200 backdrop-blur lg:inline-flex"
+              class="absolute left-4 top-4 z-20 hidden rounded-full border border-white/15 bg-slate-900/90 px-2.5 py-1 text-[11px] font-bold text-slate-200 lg:inline-flex"
             >
               {{ currentIndex + 1 }} / {{ navigableFiles.length }}
             </div>
@@ -626,7 +642,7 @@ onBeforeUnmount(() => {
               v-if="hasPrevFile"
               type="button"
               data-testid="preview-prev-desktop"
-              class="absolute left-3 top-1/2 z-20 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-slate-900/75 text-white shadow-lg backdrop-blur transition hover:bg-blue-600 lg:inline-flex"
+              class="absolute left-3 top-1/2 z-20 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-slate-900/90 text-white shadow-lg transition hover:bg-blue-600 lg:inline-flex"
               title="이전 파일 (←)"
               aria-label="이전 파일"
               @click.stop="goPrevFile"
@@ -637,7 +653,7 @@ onBeforeUnmount(() => {
               v-if="hasNextFile"
               type="button"
               data-testid="preview-next-desktop"
-              class="absolute right-3 top-1/2 z-20 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-slate-900/75 text-white shadow-lg backdrop-blur transition hover:bg-blue-600 lg:inline-flex"
+              class="absolute right-3 top-1/2 z-20 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-slate-900/90 text-white shadow-lg transition hover:bg-blue-600 lg:inline-flex"
               title="다음 파일 (→)"
               aria-label="다음 파일"
               @click.stop="goNextFile"
@@ -704,9 +720,12 @@ onBeforeUnmount(() => {
                 playsinline
                 webkit-playsinline
                 preload="metadata"
-                class="max-h-[44dvh] sm:max-h-[50dvh] max-w-full rounded-2xl bg-black lg:max-h-full"
+                class="max-h-[44dvh] sm:max-h-[50dvh] max-w-full rounded-2xl bg-black [transform:translateZ(0)] lg:max-h-full"
+                @loadedmetadata="onMediaReady"
                 @loadeddata="onMediaReady"
                 @canplay="onMediaReady"
+                @playing="onMediaReady"
+                @play="onMediaReady"
                 @error="handlePreviewAssetError"
               ></video>
             </template>
@@ -736,7 +755,7 @@ onBeforeUnmount(() => {
             <!-- Subtle Loading Indicator -->
             <div
               v-if="isMediaLoading && !mediaLoadError && (previewKind === 'video' || previewKind === 'image')"
-              class="pointer-events-none absolute right-4 top-4 z-10 inline-flex items-center gap-1.5 rounded-full bg-slate-900/80 px-2.5 py-1 text-[11px] font-semibold text-slate-200 backdrop-blur"
+              class="pointer-events-none absolute right-4 top-4 z-10 inline-flex items-center gap-1.5 rounded-full bg-slate-900/95 px-2.5 py-1 text-[11px] font-semibold text-slate-200"
             >
               <i class="fa-solid fa-spinner fa-spin text-blue-400"></i>
               <span>불러오는 중</span>
@@ -747,7 +766,7 @@ onBeforeUnmount(() => {
               <button
                 v-if="previewKind === 'video'"
                 type="button"
-                class="inline-flex items-center gap-1.5 rounded-full border border-purple-400/40 bg-purple-500/20 px-4 py-1.5 text-xs font-extrabold text-purple-200 shadow-lg backdrop-blur transition hover:bg-purple-500/30"
+                class="inline-flex items-center gap-1.5 rounded-full border border-purple-400/40 bg-purple-950/90 px-4 py-1.5 text-xs font-extrabold text-purple-200 shadow-lg transition hover:bg-purple-900"
                 @click="handleOpenInMediaTheater"
               >
                 <i class="fa-solid fa-clapperboard"></i>
@@ -756,7 +775,7 @@ onBeforeUnmount(() => {
               <button
                 v-else-if="previewKind === 'image'"
                 type="button"
-                class="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/40 bg-emerald-500/20 px-4 py-1.5 text-xs font-extrabold text-emerald-200 shadow-lg backdrop-blur transition hover:bg-emerald-500/30"
+                class="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/40 bg-emerald-950/90 px-4 py-1.5 text-xs font-extrabold text-emerald-200 shadow-lg transition hover:bg-emerald-900"
                 @click="handleOpenInPhotoLightbox"
               >
                 <i class="fa-solid fa-images"></i>

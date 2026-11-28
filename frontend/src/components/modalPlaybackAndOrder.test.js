@@ -344,4 +344,81 @@ describe("Modal playback, ordering & mobile touch guarantees", () => {
 
     wrapper.unmount();
   });
+
+  it("avoids mobile GPU backdrop-blur over video, debounces buffering spinner, throttles timeupdate, and avoids loading flash on same-file updates", async () => {
+    vi.useFakeTimers();
+    try {
+      const vid = {
+        id: "701",
+        name: "mobile-flicker-check.mp4",
+        extension: "mp4",
+        mediaKind: "video",
+        downloadUrl: "/api/file/preview/701?v=1",
+        sizeLabel: "25 MB",
+        sizeBytes: 25 * 1024 * 1024,
+        folderPathLabel: "홈 / 영상",
+        durationSeconds: 120,
+      };
+      storeState.candidateVideoById.set("701", vid);
+
+      // 1. FilePreviewModal: no backdrop-blur, clears loading on loadedmetadata, no re-flash on same-id prop update
+      const previewWrapper = mount(FilePreviewModal, {
+        props: { file: vid, files: [vid] },
+        global: { stubs: { Teleport: true } },
+      });
+      await nextTick();
+      expect(previewWrapper.html()).not.toContain("backdrop-blur");
+      expect(previewWrapper.text()).toContain("불러오는 중");
+
+      await previewWrapper.get("video").trigger("loadedmetadata");
+      await nextTick();
+      expect(previewWrapper.text()).not.toContain("불러오는 중");
+
+      mockFileStore.recordFileAccess.mockClear();
+      await previewWrapper.setProps({ file: { ...vid, downloadUrl: "/api/file/preview/701?v=2" } });
+      await nextTick();
+      expect(previewWrapper.text()).not.toContain("불러오는 중");
+      expect(mockFileStore.recordFileAccess).not.toHaveBeenCalled();
+      previewWrapper.unmount();
+
+      // 2. MediaTheaterModal: no backdrop-blur, debounced buffering, 1Hz timeupdate throttle
+      const theaterWrapper = mount(MediaTheaterModal, {
+        props: { videoId: "701", playlistIds: ["701"] },
+        global: { stubs: { Teleport: true } },
+      });
+      await nextTick();
+
+      expect(theaterWrapper.html()).not.toContain("backdrop-blur");
+      expect(theaterWrapper.find("[data-testid='theater-buffering-indicator']").exists()).toBe(false);
+
+      const videoEl = theaterWrapper.get("video");
+      await videoEl.trigger("waiting");
+      await nextTick();
+      // Should not flash synchronously before debounce delay
+      expect(theaterWrapper.find("[data-testid='theater-buffering-indicator']").exists()).toBe(false);
+
+      vi.advanceTimersByTime(400);
+      await nextTick();
+      expect(theaterWrapper.find("[data-testid='theater-buffering-indicator']").exists()).toBe(true);
+
+      await videoEl.trigger("playing");
+      await nextTick();
+      expect(theaterWrapper.find("[data-testid='theater-buffering-indicator']").exists()).toBe(false);
+
+      // Timeupdate throttle to 1Hz
+      Object.defineProperty(videoEl.element, "currentTime", { value: 4.2, configurable: true, writable: true });
+      await videoEl.trigger("timeupdate");
+      await nextTick();
+      expect(theaterWrapper.get("[data-testid='theater-time-clock']").text()).toContain("00:04");
+
+      Object.defineProperty(videoEl.element, "currentTime", { value: 4.9, configurable: true, writable: true });
+      await videoEl.trigger("timeupdate");
+      await nextTick();
+      expect(theaterWrapper.get("[data-testid='theater-time-clock']").text()).toContain("00:04");
+
+      theaterWrapper.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

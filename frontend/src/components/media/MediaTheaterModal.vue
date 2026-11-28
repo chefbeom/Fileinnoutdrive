@@ -64,12 +64,14 @@ const activeSubtitleId = ref("none");
 const autoLoadedSubtitleTracks = ref([]);
 const thumbnailMap = ref({});
 const refreshedStreamUrl = ref("");
+const lockedStreamUrl = ref("");
 const hasRetriedStreamToken = ref(false);
 const streamRetryCount = ref(0);
 const pendingResumeTime = ref(null);
 
 let progressThrottleTimer = null;
 let resumeToastTimer = null;
+let bufferingShowTimer = null;
 let isClosingToMiniPlayer = false;
 let stageTouchStartX = 0;
 let stageTouchStartY = 0;
@@ -85,6 +87,7 @@ const isImageItem = computed(() => currentItem.value?.mediaKind === "image");
 
 const streamUrl = computed(() => (
   refreshedStreamUrl.value ||
+  lockedStreamUrl.value ||
   resolveFilePlaybackUrl(currentItem.value)
 ));
 
@@ -238,6 +241,24 @@ const availableSubtitleTracks = computed(() => {
   return tracks;
 });
 
+const clearBufferingIndicator = () => {
+  if (bufferingShowTimer) {
+    clearTimeout(bufferingShowTimer);
+    bufferingShowTimer = null;
+  }
+  isBuffering.value = false;
+};
+
+const scheduleBufferingIndicator = () => {
+  if (playbackError.value || isBuffering.value || bufferingShowTimer) return;
+  bufferingShowTimer = setTimeout(() => {
+    bufferingShowTimer = null;
+    if (!playbackError.value) {
+      isBuffering.value = true;
+    }
+  }, 350);
+};
+
 const playSafely = (el) => {
   if (!el || typeof el.play !== "function") return;
   try {
@@ -245,12 +266,12 @@ const playSafely = (el) => {
     if (promise && typeof promise.catch === "function") {
       promise.catch(() => {
         isPlaying.value = false;
-        isBuffering.value = false;
+        clearBufferingIndicator();
       });
     }
   } catch {
     isPlaying.value = false;
-    isBuffering.value = false;
+    clearBufferingIndicator();
   }
 };
 
@@ -317,20 +338,18 @@ const onLoadedMetadata = () => {
 
 const onCanPlay = () => {
   releaseTheaterThumbnailPriority();
-  isBuffering.value = false;
+  clearBufferingIndicator();
   if (videoRef.value && pendingResumeTime.value != null) {
     tryApplyPendingResume(videoRef.value);
   }
 };
 
 const onWaiting = () => {
-  if (!playbackError.value) {
-    isBuffering.value = true;
-  }
+  scheduleBufferingIndicator();
 };
 
 const onPlaying = () => {
-  isBuffering.value = false;
+  clearBufferingIndicator();
   isPlaying.value = true;
   playbackError.value = "";
 };
@@ -353,22 +372,29 @@ const restartFromBeginning = () => {
   void loadQueueThumbnails();
 };
 
-const onTimeUpdate = () => {
-  const el = videoRef.value;
+const onTimeUpdate = (event) => {
+  const el = event?.target || videoRef.value;
   if (!el || !currentItem.value) return;
-  currentTime.value = Number(el.currentTime || 0);
-  if (el.duration && Number.isFinite(el.duration)) {
+  const rawTime = Number(el.currentTime || 0);
+  if (isBuffering.value && rawTime > currentTime.value) {
+    clearBufferingIndicator();
+  }
+  if (Math.floor(rawTime) !== Math.floor(currentTime.value)) {
+    currentTime.value = rawTime;
+  }
+  if (el.duration && Number.isFinite(el.duration) && el.duration !== duration.value) {
     duration.value = el.duration;
   }
 
   if (!progressThrottleTimer) {
     progressThrottleTimer = setTimeout(() => {
       progressThrottleTimer = null;
-      if (currentItem.value && videoRef.value) {
+      const targetEl = videoRef.value || el;
+      if (currentItem.value && targetEl) {
         mediaPhotoStore.recordWatchProgress(
           currentItem.value.id,
-          videoRef.value.currentTime,
-          videoRef.value.duration || duration.value,
+          targetEl.currentTime,
+          targetEl.duration || duration.value,
         );
       }
     }, 3500);
@@ -377,11 +403,12 @@ const onTimeUpdate = () => {
 
 const onPlay = () => {
   isPlaying.value = true;
-  isBuffering.value = false;
+  clearBufferingIndicator();
 };
 
 const onPause = () => {
   isPlaying.value = false;
+  clearBufferingIndicator();
   if (currentItem.value && videoRef.value) {
     mediaPhotoStore.recordWatchProgress(
       currentItem.value.id,
@@ -393,7 +420,7 @@ const onPause = () => {
 
 const onEnded = () => {
   isPlaying.value = false;
-  isBuffering.value = false;
+  clearBufferingIndicator();
   if (currentItem.value) {
     mediaPhotoStore.markVideoCompleted(currentItem.value.id);
   }
@@ -415,7 +442,7 @@ const onVideoError = async (event) => {
     return;
   }
   isPlaying.value = false;
-  isBuffering.value = false;
+  clearBufferingIndicator();
   releaseTheaterThumbnailPriority();
   if (isEncryptedVaultFile(currentItem.value) && !hasRetriedStreamToken.value) {
     hasRetriedStreamToken.value = true;
@@ -424,7 +451,7 @@ const onVideoError = async (event) => {
       if (freshUrl) {
         refreshedStreamUrl.value = freshUrl;
         playbackError.value = "";
-        isBuffering.value = true;
+        scheduleBufferingIndicator();
         return;
       }
     } catch {
@@ -439,7 +466,8 @@ const onVideoError = async (event) => {
 const retryVideoPlayback = async () => {
   if (!currentItem.value) return;
   playbackError.value = "";
-  isBuffering.value = true;
+  clearBufferingIndicator();
+  scheduleBufferingIndicator();
   isPlaying.value = false;
   if (isEncryptedVaultFile(currentItem.value)) {
     hasRetriedStreamToken.value = true;
@@ -685,7 +713,8 @@ const unlockBodyScroll = () => {
 watch(
   () => props.videoId,
   async (newId, oldId) => {
-    if (oldId != null && String(oldId) !== String(newId ?? "")) {
+    const isDifferentVideo = oldId == null || newId == null || String(oldId) !== String(newId);
+    if (oldId != null && newId != null && String(oldId) !== String(newId)) {
       if (videoRef.value) {
         mediaPhotoStore.recordWatchProgress(
           oldId,
@@ -696,36 +725,47 @@ watch(
       }
     }
 
-    isPlaying.value = false;
-    isBuffering.value = false;
-    pendingResumeTime.value = null;
-    refreshedStreamUrl.value = "";
-    hasRetriedStreamToken.value = false;
-    streamRetryCount.value = 0;
-    playbackError.value = "";
-    showResumeToast.value = false;
-    currentTime.value = 0;
-    duration.value = Number(currentItem.value?.durationSeconds || 0);
+    if (isDifferentVideo) {
+      isPlaying.value = false;
+      clearBufferingIndicator();
+      pendingResumeTime.value = null;
+      refreshedStreamUrl.value = "";
+      lockedStreamUrl.value = currentItem.value ? resolveFilePlaybackUrl(currentItem.value) : "";
+      hasRetriedStreamToken.value = false;
+      streamRetryCount.value = 0;
+      playbackError.value = "";
+      showResumeToast.value = false;
+      currentTime.value = 0;
+      duration.value = Number(currentItem.value?.durationSeconds || 0);
+    } else if (currentItem.value && !lockedStreamUrl.value) {
+      lockedStreamUrl.value = resolveFilePlaybackUrl(currentItem.value);
+    }
 
     if (newId != null && currentItem.value) {
       lockBodyScroll();
-      isBuffering.value = !isImageItem.value;
+      if (isDifferentVideo && !isImageItem.value) {
+        scheduleBufferingIndicator();
+      }
       if (oldId != null) {
-        historyManager.updateItem(newId);
+        if (isDifferentVideo) {
+          historyManager.updateItem(newId);
+        }
       } else {
         historyManager.open(newId);
       }
     } else {
+      clearBufferingIndicator();
+      lockedStreamUrl.value = "";
       unlockBodyScroll();
       historyManager.destroy();
     }
 
     await nextTick();
-    if (currentItem.value && !isImageItem.value) {
+    if (currentItem.value && !isImageItem.value && isDifferentVideo) {
       holdTheaterThumbnailPriority();
       void loadMatchingSubtitles(currentItem.value);
       void loadQueueThumbnails();
-    } else {
+    } else if (!currentItem.value || isImageItem.value) {
       releaseTheaterThumbnailPriority();
     }
   },
@@ -742,6 +782,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleKeydown);
   if (progressThrottleTimer) clearTimeout(progressThrottleTimer);
   if (resumeToastTimer) clearTimeout(resumeToastTimer);
+  clearBufferingIndicator();
   clearSubtitleBlobs();
   historyManager.destroy();
 });
@@ -751,11 +792,12 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <div
       v-if="currentItem"
-      class="fixed inset-0 z-[290] flex h-[100dvh] flex-col bg-slate-950/95 text-slate-100 backdrop-blur-md"
+      data-testid="media-theater-root"
+      class="fixed inset-0 z-[290] flex flex-col bg-slate-950 text-slate-100 isolate"
       @click.self="handleClose"
     >
       <!-- Top Bar -->
-      <header class="flex items-center justify-between gap-2 border-b border-slate-800/80 bg-slate-900/90 px-3 py-2 sm:px-6 sm:py-3 shrink-0">
+      <header class="flex items-center justify-between gap-2 border-b border-slate-800/80 bg-slate-900 px-3 py-2 sm:px-6 sm:py-3 shrink-0 [transform:translateZ(0)]">
         <div class="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
           <button
             type="button"
@@ -888,7 +930,7 @@ onBeforeUnmount(() => {
           <!-- Resume Toast Banner -->
           <div
             v-if="showResumeToast"
-            class="absolute left-3 right-3 sm:left-4 sm:right-auto top-3 z-20 flex flex-wrap items-center gap-2 sm:gap-3 rounded-2xl border border-blue-400/40 bg-slate-900/90 px-3.5 py-2 text-xs font-semibold text-blue-100 shadow-2xl backdrop-blur-md"
+            class="absolute left-3 right-3 sm:left-4 sm:right-auto top-3 z-20 flex flex-wrap items-center gap-2 sm:gap-3 rounded-2xl border border-blue-400/40 bg-slate-900/95 px-3.5 py-2 text-xs font-semibold text-blue-100 shadow-2xl"
           >
             <i class="fa-solid fa-rotate-right text-blue-400"></i>
             <span>이전에 시청하던 <strong>{{ formatDurationClock(resumedFromSeconds) }}</strong> 위치부터 이어서 재생합니다.</span>
@@ -912,7 +954,7 @@ onBeforeUnmount(() => {
           <div
             v-if="playbackError"
             data-testid="theater-playback-error"
-            class="flex max-w-lg flex-col items-center justify-center rounded-3xl border border-amber-400/30 bg-slate-900/90 p-6 sm:p-8 text-center shadow-2xl"
+            class="flex max-w-lg flex-col items-center justify-center rounded-3xl border border-amber-400/30 bg-slate-900/95 p-6 sm:p-8 text-center shadow-2xl"
           >
             <div class="flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/20 text-amber-300">
               <i class="fa-solid fa-triangle-exclamation text-xl"></i>
@@ -959,7 +1001,7 @@ onBeforeUnmount(() => {
               v-if="hasPrevItem"
               type="button"
               data-testid="theater-image-prev"
-              class="absolute left-2 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-slate-900/75 text-white shadow-xl backdrop-blur transition hover:bg-blue-600 sm:left-4"
+              class="absolute left-2 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-slate-900/90 text-white shadow-xl transition hover:bg-blue-600 sm:left-4"
               title="이전 항목 (←)"
               aria-label="이전 항목"
               @click.stop="playPlaylistIndex(currentIndex - 1)"
@@ -967,7 +1009,7 @@ onBeforeUnmount(() => {
               <i class="fa-solid fa-chevron-left"></i>
             </button>
             <img
-              :key="`${currentItem.id}:${streamUrl}:${streamRetryCount}`"
+              :key="`${currentItem.id}:${streamRetryCount}:${refreshedStreamUrl}`"
               :src="streamUrl"
               :alt="currentItem.name"
               class="max-h-full max-w-full rounded-2xl object-contain shadow-2xl"
@@ -977,7 +1019,7 @@ onBeforeUnmount(() => {
               v-if="hasNextItem"
               type="button"
               data-testid="theater-image-next"
-              class="absolute right-2 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-slate-900/75 text-white shadow-xl backdrop-blur transition hover:bg-blue-600 sm:right-4"
+              class="absolute right-2 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-slate-900/90 text-white shadow-xl transition hover:bg-blue-600 sm:right-4"
               title="다음 항목 (→)"
               aria-label="다음 항목"
               @click.stop="playPlaylistIndex(currentIndex + 1)"
@@ -989,17 +1031,17 @@ onBeforeUnmount(() => {
           <!-- Video Streaming Element -->
           <div
             v-else-if="streamUrl"
-            class="relative flex min-h-0 flex-1 w-full max-w-6xl items-center justify-center overflow-hidden rounded-2xl bg-black"
+            class="relative flex min-h-0 flex-1 w-full max-w-6xl items-center justify-center overflow-hidden rounded-2xl bg-black isolate [transform:translateZ(0)]"
           >
             <video
               ref="videoRef"
-              :key="`${currentItem.id}:${streamUrl}:${streamRetryCount}`"
+              :key="`${currentItem.id}:${streamRetryCount}:${refreshedStreamUrl}`"
               :src="streamUrl"
               controls
               playsinline
               webkit-playsinline
               preload="auto"
-              class="max-h-full max-w-full w-full h-full bg-black object-contain shadow-2xl"
+              class="max-h-full max-w-full w-full h-full bg-black object-contain shadow-2xl [transform:translateZ(0)]"
               @loadedmetadata="onLoadedMetadata"
               @loadeddata="onCanPlay"
               @canplay="onCanPlay"
@@ -1024,9 +1066,10 @@ onBeforeUnmount(() => {
 
             <div
               v-if="isBuffering && !playbackError"
-              class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/25"
+              data-testid="theater-buffering-indicator"
+              class="pointer-events-none absolute inset-0 flex items-center justify-center"
             >
-              <div class="flex h-12 w-12 items-center justify-center rounded-full bg-slate-900/80 text-blue-400 shadow-lg backdrop-blur">
+              <div class="flex h-12 w-12 items-center justify-center rounded-full bg-slate-900/90 text-blue-400 shadow-lg">
                 <i class="fa-solid fa-spinner fa-spin text-lg"></i>
               </div>
             </div>
@@ -1035,7 +1078,7 @@ onBeforeUnmount(() => {
           <!-- Custom Quick Controls Bar Under Player -->
           <div
             v-if="!playbackError && !isImageItem"
-            class="mt-2 flex w-full max-w-6xl shrink-0 items-center justify-between gap-2 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/90 px-2.5 py-1.5 sm:px-3.5 sm:py-2 text-xs sm:flex-wrap"
+            class="mt-2 flex w-full max-w-6xl shrink-0 items-center justify-between gap-2 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900 px-2.5 py-1.5 sm:px-3.5 sm:py-2 text-xs sm:flex-wrap [transform:translateZ(0)] isolate"
           >
             <div class="flex shrink-0 items-center gap-1.5">
               <button
@@ -1090,7 +1133,10 @@ onBeforeUnmount(() => {
                 <i class="fa-solid fa-forward-step"></i>
               </button>
 
-              <span class="ml-1 whitespace-nowrap font-mono text-[11px] font-bold text-slate-300">
+              <span
+                data-testid="theater-time-clock"
+                class="ml-1 whitespace-nowrap font-mono tabular-nums text-[11px] font-bold text-slate-300"
+              >
                 {{ formatDurationClock(currentTime) }} / {{ formatDurationClock(duration || currentItem.durationSeconds) }}
               </span>
             </div>
