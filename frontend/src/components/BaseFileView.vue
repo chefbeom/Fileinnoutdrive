@@ -1582,7 +1582,12 @@ onBeforeUnmount(() => {
       <Teleport to="body">
         <div
           v-if="emptyContextMenu.visible"
-          class="fixed z-[260] w-60 overflow-hidden rounded-2xl border border-gray-200 bg-white py-1.5 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+          class="fixed inset-0 z-[255] bg-slate-950/35 backdrop-blur-[1px] sm:hidden"
+          @click="closeEmptyContextMenu"
+        ></div>
+        <div
+          v-if="emptyContextMenu.visible"
+          class="fixed z-[260] w-60 overflow-hidden rounded-2xl border border-gray-200 bg-white py-1.5 shadow-2xl max-sm:!bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] max-sm:!left-3 max-sm:!right-3 max-sm:!top-auto max-sm:!w-auto max-sm:max-h-[75dvh] max-sm:overflow-y-auto max-sm:rounded-3xl max-sm:py-2.5 dark:border-slate-700 dark:bg-slate-900"
           :style="{ left: `${emptyContextMenu.x}px`, top: `${emptyContextMenu.y}px` }"
           @click.stop
           @contextmenu.prevent.stop
@@ -1774,8 +1779,10 @@ onBeforeUnmount(() => {
     />
     <FilePreviewModal
       :file="previewTarget"
+      :files="paginatedFiles"
       :allow-download-link-share="!isVaultMode && !sharedLibrary"
       @close="closeFilePreview"
+      @select-file="openFilePreview"
       @share-download-link="openDownloadLinkDialog"
     />
     <DownloadShareLinkDialog

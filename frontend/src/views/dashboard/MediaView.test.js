@@ -272,4 +272,43 @@ describe("MediaView.vue streamlined layout & guided setup", () => {
     await wrapper.get("[data-testid='series-favorite-btn']").trigger("click");
     expect(mockMediaPhotoStore.toggleSeriesFavorite).toHaveBeenCalledWith("series-10");
   });
+
+  it("opens series episode in theater using the active season's visibleSeriesEpisodes order", async () => {
+    const s1Ep1 = { id: "901", name: "S1E01.mp4", displayTitle: "1화", mediaKind: "video", seasonFolderId: "s1", uploadedAtMs: 1000 };
+    const s1Ep2 = { id: "902", name: "S1E02.mp4", displayTitle: "2화", mediaKind: "video", seasonFolderId: "s1", uploadedAtMs: 2000 };
+    const s2Ep1 = { id: "903", name: "S2E01.mp4", displayTitle: "S2 1화", mediaKind: "video", seasonFolderId: "s2", uploadedAtMs: 3000 };
+
+    mockMediaPhotoStore.resolvedMediaSeries = [
+      {
+        id: "series-order-test",
+        title: "시즌 테스트",
+        episodeCount: 3,
+        seasonCount: 2,
+        seasons: [
+          { folderId: "s1", seasonLabel: "시즌 1", episodeCount: 2, isSpecial: false, episodes: [s1Ep1, s1Ep2], pathLabel: "홈 / S1" },
+          { folderId: "s2", seasonLabel: "시즌 2", episodeCount: 1, isSpecial: false, episodes: [s2Ep1], pathLabel: "홈 / S2" },
+        ],
+        allEpisodes: [s1Ep1, s1Ep2, s2Ep1],
+      },
+    ];
+    mockMediaPhotoStore.openTheater.mockClear();
+    mockRoute.query = { seriesId: "series-order-test", season: "s1" };
+
+    const wrapper = mount(MediaView, {
+      global: {
+        stubs: {
+          Teleport: true,
+          BaseFileShareDialog: true,
+        },
+      },
+    });
+
+    const epTitle = wrapper.findAll("h3").find((h) => h.text().includes("2화"));
+    expect(epTitle).toBeDefined();
+    await epTitle.trigger("click");
+
+    expect(mockMediaPhotoStore.openTheater).toHaveBeenCalledWith("902", expect.objectContaining({
+      playlistIds: ["901", "902"],
+    }));
+  });
 });

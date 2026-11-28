@@ -883,10 +883,13 @@ const primeThumbnails = async () => {
 
 const handlePlayItem = (item, pool = visibleMainItems.value, collectionId = null) => {
   if (!item) return;
-  const playlistIds = (pool || [item]).map((i) => String(i.id));
+  const effectivePool = Array.isArray(pool) && pool.length > 0 ? pool : [item];
+  const playlistIds = effectivePool.map((i) => String(i.id));
   mediaPhotoStore.openTheater(item.id, {
     playlistIds,
     collectionId: collectionId || activeCollection.value?.id || null,
+    file: item,
+    files: effectivePool,
   });
 };
 
@@ -2657,7 +2660,7 @@ onBeforeUnmount(() => {
             :ref="(el) => observeThumbnailEl(el, ep)"
             class="relative w-full cursor-pointer overflow-hidden bg-slate-900"
             :class="thumbAspectClass"
-            @click="handlePlaySeries(selectedSeries, ep)"
+            @click="handlePlayItem(ep, visibleSeriesEpisodes)"
           >
             <img
               v-if="thumbnailMap[String(ep.id)]"
@@ -2744,7 +2747,7 @@ onBeforeUnmount(() => {
                   type="button"
                   class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs text-white hover:bg-blue-500"
                   title="재생"
-                  @click="handlePlaySeries(selectedSeries, ep)"
+                  @click="handlePlayItem(ep, visibleSeriesEpisodes)"
                 >
                   <i class="fa-solid fa-play ml-0.5"></i>
                 </button>
@@ -2752,7 +2755,7 @@ onBeforeUnmount(() => {
               <h3
                 class="cursor-pointer truncate text-sm font-extrabold text-[var(--text-main)] hover:text-blue-500"
                 :title="ep.name"
-                @click="handlePlaySeries(selectedSeries, ep)"
+                @click="handlePlayItem(ep, visibleSeriesEpisodes)"
               >
                 {{ ep.displayTitle || ep.name }}
               </h3>
@@ -2803,7 +2806,7 @@ onBeforeUnmount(() => {
               :ref="(el) => observeThumbnailEl(el, ep)"
               class="relative shrink-0 cursor-pointer overflow-hidden rounded-xl bg-slate-900"
               :class="listThumbSizeClass"
-              @click="handlePlaySeries(selectedSeries, ep)"
+              @click="handlePlayItem(ep, visibleSeriesEpisodes)"
             >
               <img
                 v-if="thumbnailMap[String(ep.id)]"
@@ -2833,7 +2836,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <div class="min-w-0 flex-1 cursor-pointer" @click="handlePlaySeries(selectedSeries, ep)">
+            <div class="min-w-0 flex-1 cursor-pointer" @click="handlePlayItem(ep, visibleSeriesEpisodes)">
               <div class="flex flex-wrap items-center gap-1.5">
                 <span
                   v-if="selectedSeasonFolderId === 'all-seasons' || selectedSeasonFolderId === 'specials'"

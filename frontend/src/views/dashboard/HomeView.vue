@@ -37,6 +37,10 @@ const totalShortcutCount = computed(() =>
     : (fileStore.favoriteItems || []).length,
 );
 
+const homeShortcutPreviewFiles = computed(() =>
+  homeShortcutItems.value.filter((item) => item && item.type !== "folder" && !item.lockedFile),
+);
+
 const handleClickShortcut = (item) => {
   if (!item) return;
   if (item.type === "folder") {
@@ -124,6 +128,8 @@ const handleDelete = async (fileId) => {
 
   <FilePreviewModal
     :file="previewFile"
+    :files="homeShortcutPreviewFiles"
     @close="previewFile = null"
+    @select-file="previewFile = $event"
   />
 </template>

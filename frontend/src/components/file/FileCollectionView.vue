@@ -1268,16 +1268,38 @@ const handleContextCreateMediaCollectionFromFolder = async (folder) => {
   }
 };
 
+const isTargetVaultFile = (target) => Boolean(
+  target?.isVaultSpace || String(target?.spaceType || "").toUpperCase() === "VAULT",
+);
+
 const handleContextOpenInMediaTheater = (target) => {
   closeContextMenu();
   if (!target || !ensureUnlocked(target)) return;
-  mediaPhotoStore.openTheater(target.id);
+  const videoFiles = (props.files || []).filter(
+    (item) => item && item.type !== "folder" && !isLocked(item) && (isVideo(item) || String(item.id) === String(target.id)),
+  );
+  const playlistIds = videoFiles.map((item) => String(item.id));
+  mediaPhotoStore.openTheater(target.id, {
+    playlistIds,
+    vaultScope: isTargetVaultFile(target),
+    file: target,
+    files: videoFiles,
+  });
 };
 
 const handleContextOpenInPhotoLightbox = (target) => {
   closeContextMenu();
   if (!target || !ensureUnlocked(target)) return;
-  mediaPhotoStore.openPhotoLightbox(target.id);
+  const imageFiles = (props.files || []).filter(
+    (item) => item && item.type !== "folder" && !isLocked(item) && (isImage(item) || String(item.id) === String(target.id)),
+  );
+  const poolIds = imageFiles.map((item) => String(item.id));
+  mediaPhotoStore.openPhotoLightbox(target.id, {
+    poolIds,
+    vaultScope: isTargetVaultFile(target),
+    file: target,
+    files: imageFiles,
+  });
 };
 
 const isFolderIncludedInMedia = (folder) => {
@@ -1524,7 +1546,7 @@ provide(FILE_COLLECTION_CONTEXT_KEY, {
       ></div>
       <div
         v-if="contextMenu.visible"
-        class="fixed z-[260] w-60 overflow-hidden rounded-2xl border border-gray-200 bg-white py-1.5 shadow-2xl max-sm:!bottom-4 max-sm:!left-3 max-sm:!right-3 max-sm:!top-auto max-sm:!w-auto max-sm:max-h-[78vh] max-sm:overflow-y-auto max-sm:rounded-3xl max-sm:py-2.5 dark:border-slate-700 dark:bg-slate-900"
+        class="fixed z-[260] w-60 overflow-hidden rounded-2xl border border-gray-200 bg-white py-1.5 shadow-2xl max-sm:!bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] max-sm:!left-3 max-sm:!right-3 max-sm:!top-auto max-sm:!w-auto max-sm:max-h-[78dvh] max-sm:overflow-y-auto max-sm:rounded-3xl max-sm:py-2.5 dark:border-slate-700 dark:bg-slate-900"
         :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
         @click.stop
         @contextmenu.prevent.stop

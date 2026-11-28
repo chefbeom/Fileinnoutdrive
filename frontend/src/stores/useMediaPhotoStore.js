@@ -1010,6 +1010,42 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     allDriveFolders.value.filter((folder) => photoExcludedFolderSet.value.has(String(folder.id))),
   );
 
+  const adHocMediaItems = ref({});
+
+  const registerAdHocMediaItem = (file) => {
+    if (!file || typeof file !== "object") return;
+    const rawId = file.id ?? file.idx;
+    if (rawId == null) return;
+    const key = String(rawId);
+    const normalized = isImageFileRecord(file)
+      ? enrichPhotoItem(file)
+      : isVideoFileRecord(file)
+        ? enrichVideoItem(file)
+        : file;
+    adHocMediaItems.value = {
+      ...adHocMediaItems.value,
+      [key]: normalized,
+    };
+  };
+
+  const resolveOrderedIdPool = (currentKey, explicitIds = null, fallbackItems = []) => {
+    const seen = new Set();
+    const ordered = [];
+    const hasExplicit = Array.isArray(explicitIds) && explicitIds.length > 0;
+    const sourceIds = hasExplicit
+      ? explicitIds.map((id) => String(id))
+      : fallbackItems.map((item) => String(item.id));
+    for (const rawId of sourceIds) {
+      if (!rawId || seen.has(rawId)) continue;
+      seen.add(rawId);
+      ordered.push(rawId);
+    }
+    if (!ordered.includes(currentKey)) {
+      return hasExplicit ? [currentKey, ...ordered] : [currentKey];
+    }
+    return ordered;
+  };
+
   const candidateVideoById = computed(() => {
     const map = new Map();
     for (const video of candidateVideos.value) {
@@ -1045,7 +1081,12 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
   // Lookup any video or photo by ID (even if opened directly from Drive)
   const getMediaItemById = (fileId) => {
     const key = String(fileId ?? "");
-    return candidateVideoById.value.get(key) || candidatePhotoById.value.get(key) || null;
+    return (
+      candidateVideoById.value.get(key) ||
+      candidatePhotoById.value.get(key) ||
+      adHocMediaItems.value[key] ||
+      null
+    );
   };
 
   const pruneRemovedSeriesEntries = ({ folderIds = [], fileIds = [] } = {}) => {
@@ -2574,10 +2615,13 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     if (fileId == null) return;
     const key = String(fileId);
 
-    const fileObj = typeof fileOrId === "object" ? fileOrId : null;
+    const fileObj = (typeof fileOrId === "object" ? fileOrId : null) || options.file || null;
+    const catalogRecord = unifiedLiveFileMap.value.get(key) || candidateVideoById.value.get(key) || candidatePhotoById.value.get(key) || adHocMediaItems.value[key] || null;
+    const effectiveFile = fileObj || catalogRecord;
+
     const isVaultRequest = Boolean(
       options.vaultScope ??
-      (isVaultScope.value || fileObj?.isVaultSpace || fileObj?.spaceType === "VAULT"),
+      (isVaultScope.value || effectiveFile?.isVaultSpace || String(effectiveFile?.spaceType || "").toUpperCase() === "VAULT"),
     );
 
     if (isVaultRequest) {
@@ -2593,17 +2637,25 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
       }
     }
 
+    if (Array.isArray(options.files)) {
+      for (const item of options.files) {
+        const itemId = item?.id ?? item?.idx;
+        if (itemId != null && !candidateVideoById.value.get(String(itemId)) && !candidatePhotoById.value.get(String(itemId))) {
+          registerAdHocMediaItem(item);
+        }
+      }
+    }
+    if (fileObj && !candidateVideoById.value.get(key) && !candidatePhotoById.value.get(key)) {
+      registerAdHocMediaItem(fileObj);
+    }
+
     miniPlayer.value = {
       ...miniPlayer.value,
       active: false,
       isVault: false,
     };
 
-    const playlistIds = Array.isArray(options.playlistIds) && options.playlistIds.length > 0
-      ? options.playlistIds.map((id) => String(id))
-      : allVideos.value.length > 0
-        ? allVideos.value.map((v) => String(v.id))
-        : [key];
+    const playlistIds = resolveOrderedIdPool(key, options.playlistIds, allVideos.value);
 
     activeTheaterIsVault.value = isVaultRequest;
     activeTheaterVideoId.value = key;
@@ -2683,10 +2735,13 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     if (fileId == null) return;
     const key = String(fileId);
 
-    const fileObj = typeof fileOrId === "object" ? fileOrId : null;
+    const fileObj = (typeof fileOrId === "object" ? fileOrId : null) || options.file || null;
+    const catalogRecord = unifiedLiveFileMap.value.get(key) || candidatePhotoById.value.get(key) || candidateVideoById.value.get(key) || adHocMediaItems.value[key] || null;
+    const effectiveFile = fileObj || catalogRecord;
+
     const isVaultRequest = Boolean(
       options.vaultScope ??
-      (isVaultScope.value || fileObj?.isVaultSpace || fileObj?.spaceType === "VAULT"),
+      (isVaultScope.value || effectiveFile?.isVaultSpace || String(effectiveFile?.spaceType || "").toUpperCase() === "VAULT"),
     );
 
     if (isVaultRequest) {
@@ -2702,11 +2757,19 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
       }
     }
 
-    const poolIds = Array.isArray(options.poolIds) && options.poolIds.length > 0
-      ? options.poolIds.map((id) => String(id))
-      : allPhotos.value.length > 0
-        ? allPhotos.value.map((p) => String(p.id))
-        : [key];
+    if (Array.isArray(options.files)) {
+      for (const item of options.files) {
+        const itemId = item?.id ?? item?.idx;
+        if (itemId != null && !candidatePhotoById.value.get(String(itemId)) && !candidateVideoById.value.get(String(itemId))) {
+          registerAdHocMediaItem(item);
+        }
+      }
+    }
+    if (fileObj && !candidatePhotoById.value.get(key) && !candidateVideoById.value.get(key)) {
+      registerAdHocMediaItem(fileObj);
+    }
+
+    const poolIds = resolveOrderedIdPool(key, options.poolIds, allPhotos.value);
 
     activeLightboxIsVault.value = isVaultRequest;
     activeLightboxPhotoId.value = key;
@@ -2733,6 +2796,7 @@ export const useMediaPhotoStore = defineStore("mediaPhoto", () => {
     }
     cachedVaultPayload = null;
     hasLoadedRemoteVaultLibrary.value = false;
+    adHocMediaItems.value = {};
 
     if (activeTheaterIsVault.value) {
       closeTheater();

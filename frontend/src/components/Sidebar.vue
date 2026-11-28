@@ -66,6 +66,7 @@ const isSidebarOpen = ref(!isMobileViewport.value) // 모바일에서는 기본 
 const openMenuId = ref(null) // 현재 열려있는 메뉴의 ID 관리
 const isSidebarPrefsOpen = ref(false)
 const sidebarPreviewFile = ref(null)
+const sidebarPreviewPool = ref([])
 
 // 공유 모달 관련 상태
 const isShareModalOpen = ref(false);
@@ -365,13 +366,16 @@ const openSidebarFavoriteFolder = async (folder) => {
   }
 };
 
-const openSidebarFile = (file) => {
+const openSidebarFile = (file, pool = []) => {
   if (!file) return;
   if (file.lockedFile) {
     window.alert('이 파일은 잠겨있습니다.');
     return;
   }
   fileStore.recordFileAccess?.(file);
+  sidebarPreviewPool.value = Array.isArray(pool) && pool.length > 0
+    ? pool.filter((item) => item && item.type !== 'folder' && !item.lockedFile)
+    : [file];
   sidebarPreviewFile.value = file;
 };
 
@@ -478,7 +482,9 @@ const handleAction = async (action, idx) => {
     />
     <FilePreviewModal
       :file="sidebarPreviewFile"
-      @close="sidebarPreviewFile = null"
+      :files="sidebarPreviewPool"
+      @close="sidebarPreviewFile = null; sidebarPreviewPool = []"
+      @select-file="sidebarPreviewFile = $event"
     />
     <StorageShareCenterModal
       :is-open="isStorageShareModalOpen"
@@ -634,7 +640,7 @@ const handleAction = async (action, idx) => {
                   :key="'vault-fav-' + item.id"
                   type="button"
                   class="w-full flex items-center gap-2 px-2 py-1 text-left text-[11px] font-bold text-[var(--text-secondary)] rounded-lg hover:bg-[var(--bg-input)] hover:text-[var(--text-main)]"
-                  @click="item.type === 'folder' ? openSidebarFavoriteFolder(item) : openSidebarFile(item)"
+                  @click="item.type === 'folder' ? openSidebarFavoriteFolder(item) : openSidebarFile(item, sidebarVaultFavorites)"
                 >
                   <i :class="item.type === 'folder' ? 'fa-solid fa-folder text-amber-500' : getSidebarFileIconClass(item)" class="w-3.5 text-center shrink-0"></i>
                   <span class="truncate">{{ item.name }}</span>
@@ -978,7 +984,7 @@ const handleAction = async (action, idx) => {
               <div
                 v-for="file in sidebarFavoriteFiles"
                 :key="'sidebar-fav-file-' + file.id"
-                @click="openSidebarFile(file)"
+                @click="openSidebarFile(file, sidebarFavoriteFiles)"
                 class="group px-3 py-1.5 text-xs text-[var(--text-secondary)] rounded-xl cursor-pointer flex items-center justify-between gap-2 transition-all duration-200 hover:bg-[var(--bg-input)] hover:text-[var(--text-main)]"
                 :title="`${file.name} (${file.sizeLabel || '-'})`"
               >
@@ -1031,7 +1037,7 @@ const handleAction = async (action, idx) => {
                 <div
                   v-for="file in sidebarUploadedFiles"
                   :key="'sidebar-uploaded-' + file.id"
-                  @click="openSidebarFile(file)"
+                  @click="openSidebarFile(file, sidebarUploadedFiles)"
                   class="group px-3 py-1.5 text-xs text-[var(--text-secondary)] rounded-xl cursor-pointer flex items-center justify-between gap-2 transition-all duration-200 hover:bg-[var(--bg-input)] hover:text-[var(--text-main)]"
                   :title="`${file.name} (${file.sizeLabel || '-'})`"
                 >
@@ -1095,7 +1101,7 @@ const handleAction = async (action, idx) => {
                 <div
                   v-for="file in sidebarAccessedFiles"
                   :key="'sidebar-accessed-' + file.id"
-                  @click="openSidebarFile(file)"
+                  @click="openSidebarFile(file, sidebarAccessedFiles)"
                   class="group px-3 py-1.5 text-xs text-[var(--text-secondary)] rounded-xl cursor-pointer flex items-center justify-between gap-2 transition-all duration-200 hover:bg-[var(--bg-input)] hover:text-[var(--text-main)]"
                   :title="`${file.name} (${file.sizeLabel || '-'})`"
                 >

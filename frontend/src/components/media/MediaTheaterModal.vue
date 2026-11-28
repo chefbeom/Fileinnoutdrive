@@ -44,6 +44,7 @@ const mediaPhotoStore = useMediaPhotoStore();
 const videoRef = ref(null);
 const subtitleInputRef = ref(null);
 const isPlaying = ref(false);
+const isBuffering = ref(false);
 const currentTime = ref(0);
 const duration = ref(0);
 const playbackRate = ref(1.0);
@@ -55,6 +56,7 @@ const isDownloading = ref(false);
 const showResumeToast = ref(false);
 const resumedFromSeconds = ref(0);
 const activePanelTab = ref("queue"); // 'queue' | 'info' | 'collections'
+const isMobileSidebarOpen = ref(false);
 const newCollectionName = ref("");
 const customSubtitleTrackUrl = ref("");
 const customSubtitleLabel = ref("");
@@ -63,9 +65,14 @@ const autoLoadedSubtitleTracks = ref([]);
 const thumbnailMap = ref({});
 const refreshedStreamUrl = ref("");
 const hasRetriedStreamToken = ref(false);
+const streamRetryCount = ref(0);
+const pendingResumeTime = ref(null);
 
 let progressThrottleTimer = null;
 let resumeToastTimer = null;
+let isClosingToMiniPlayer = false;
+let stageTouchStartX = 0;
+let stageTouchStartY = 0;
 
 const playbackRateOptions = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
@@ -128,7 +135,8 @@ const holdTheaterThumbnailPriority = () => {
 };
 
 const loadQueueThumbnails = async () => {
-  for (const item of playlistItems.value.slice(0, 12)) {
+  const startIdx = Math.max(0, currentIndex.value - 4);
+  for (const item of playlistItems.value.slice(startIdx, startIdx + 16)) {
     const key = String(item.id);
     if (thumbnailMap.value[key]) continue;
     const cached = getCachedFileThumbnailUrl(item) || resolveFileThumbnailFallbackUrl(item);
@@ -230,6 +238,47 @@ const availableSubtitleTracks = computed(() => {
   return tracks;
 });
 
+const playSafely = (el) => {
+  if (!el || typeof el.play !== "function") return;
+  try {
+    const promise = el.play();
+    if (promise && typeof promise.catch === "function") {
+      promise.catch(() => {
+        isPlaying.value = false;
+        isBuffering.value = false;
+      });
+    }
+  } catch {
+    isPlaying.value = false;
+    isBuffering.value = false;
+  }
+};
+
+const tryApplyPendingResume = (el) => {
+  if (!el || pendingResumeTime.value == null) return;
+  const target = Number(pendingResumeTime.value);
+  const vidDuration = Number(el.duration || duration.value || 0);
+  if (!Number.isFinite(target) || target < 5 || (vidDuration > 0 && target >= vidDuration * 0.92)) {
+    pendingResumeTime.value = null;
+    return;
+  }
+  try {
+    el.currentTime = target;
+    currentTime.value = target;
+    resumedFromSeconds.value = target;
+    showResumeToast.value = true;
+    if (resumeToastTimer) clearTimeout(resumeToastTimer);
+    resumeToastTimer = setTimeout(() => {
+      showResumeToast.value = false;
+    }, 6500);
+    if (Math.abs(Number(el.currentTime || 0) - target) <= 2) {
+      pendingResumeTime.value = null;
+    }
+  } catch {
+    // Will retry on canplay
+  }
+};
+
 const onLoadedMetadata = () => {
   releaseTheaterThumbnailPriority();
   const el = videoRef.value;
@@ -246,38 +295,53 @@ const onLoadedMetadata = () => {
     height: vidHeight,
   });
 
-  // Apply default playback rate
   const desiredRate = Number(mediaPhotoStore.preferences.defaultPlaybackRate || 1.0);
   el.playbackRate = desiredRate;
   playbackRate.value = desiredRate;
 
-  // Check if we should resume from saved watch history
   const savedPos = Number(currentItem.value.positionSeconds || 0);
   if (
     mediaPhotoStore.preferences.enableContinueWatching &&
     savedPos >= 5 &&
     (!vidDuration || savedPos < vidDuration * 0.92)
   ) {
-    try {
-      el.currentTime = savedPos;
-      currentTime.value = savedPos;
-      resumedFromSeconds.value = savedPos;
-      showResumeToast.value = true;
-      if (resumeToastTimer) clearTimeout(resumeToastTimer);
-      resumeToastTimer = setTimeout(() => {
-        showResumeToast.value = false;
-      }, 6500);
-    } catch {
-      // Ignore seek error
-    }
+    pendingResumeTime.value = savedPos;
+    tryApplyPendingResume(el);
+  } else {
+    pendingResumeTime.value = null;
   }
 
-  el.play().catch(() => {});
+  playSafely(el);
   void loadQueueThumbnails();
+};
+
+const onCanPlay = () => {
+  releaseTheaterThumbnailPriority();
+  isBuffering.value = false;
+  if (videoRef.value && pendingResumeTime.value != null) {
+    tryApplyPendingResume(videoRef.value);
+  }
+};
+
+const onWaiting = () => {
+  if (!playbackError.value) {
+    isBuffering.value = true;
+  }
+};
+
+const onPlaying = () => {
+  isBuffering.value = false;
+  isPlaying.value = true;
+  playbackError.value = "";
+};
+
+const onEmptied = () => {
+  isPlaying.value = false;
 };
 
 const restartFromBeginning = () => {
   const el = videoRef.value;
+  pendingResumeTime.value = null;
   showResumeToast.value = false;
   if (!el) return;
   el.currentTime = 0;
@@ -285,7 +349,7 @@ const restartFromBeginning = () => {
   if (currentItem.value) {
     mediaPhotoStore.recordWatchProgress(currentItem.value.id, 0, duration.value);
   }
-  el.play().catch(() => {});
+  playSafely(el);
   void loadQueueThumbnails();
 };
 
@@ -313,6 +377,7 @@ const onTimeUpdate = () => {
 
 const onPlay = () => {
   isPlaying.value = true;
+  isBuffering.value = false;
 };
 
 const onPause = () => {
@@ -328,13 +393,14 @@ const onPause = () => {
 
 const onEnded = () => {
   isPlaying.value = false;
+  isBuffering.value = false;
   if (currentItem.value) {
     mediaPhotoStore.markVideoCompleted(currentItem.value.id);
   }
 
   if (isRepeat.value && videoRef.value) {
     videoRef.value.currentTime = 0;
-    videoRef.value.play().catch(() => {});
+    playSafely(videoRef.value);
     return;
   }
 
@@ -343,7 +409,14 @@ const onEnded = () => {
   }
 };
 
-const onVideoError = async () => {
+const onVideoError = async (event) => {
+  const errCode = Number(event?.target?.error?.code || 0);
+  if (errCode === 1) {
+    return;
+  }
+  isPlaying.value = false;
+  isBuffering.value = false;
+  releaseTheaterThumbnailPriority();
   if (isEncryptedVaultFile(currentItem.value) && !hasRetriedStreamToken.value) {
     hasRetriedStreamToken.value = true;
     try {
@@ -351,20 +424,42 @@ const onVideoError = async () => {
       if (freshUrl) {
         refreshedStreamUrl.value = freshUrl;
         playbackError.value = "";
+        isBuffering.value = true;
         return;
       }
     } catch {
       // Fall through to generic playback error banner
     }
   }
-  playbackError.value = "이 영상 코덱 또는 컨테이너 형식은 현재 브라우저에서 직접 스트리밍을 지원하지 않습니다. 원본 파일을 다운로드하여 로컬 미디어 플레이어에서 재생해 주세요.";
+  playbackError.value = isImageItem.value
+    ? "이미지를 불러오지 못했습니다. 네트워크 연결을 확인하거나 다시 시도해 주세요."
+    : "이 영상 코덱 또는 컨테이너 형식은 현재 브라우저에서 직접 스트리밍을 지원하지 않습니다. 다시 시도하거나 원본 파일을 다운로드해 주세요.";
+};
+
+const retryVideoPlayback = async () => {
+  if (!currentItem.value) return;
+  playbackError.value = "";
+  isBuffering.value = true;
+  isPlaying.value = false;
+  if (isEncryptedVaultFile(currentItem.value)) {
+    hasRetriedStreamToken.value = true;
+    try {
+      const freshUrl = await refreshEncryptedStreamUrl(currentItem.value);
+      if (freshUrl) {
+        refreshedStreamUrl.value = freshUrl;
+      }
+    } catch {
+      // Fall through to key bump retry
+    }
+  }
+  streamRetryCount.value += 1;
 };
 
 const togglePlayPause = () => {
   const el = videoRef.value;
   if (!el) return;
   if (el.paused) {
-    el.play().catch(() => {});
+    playSafely(el);
   } else {
     el.pause();
   }
@@ -420,7 +515,32 @@ const playPlaylistIndex = (index) => {
   mediaPhotoStore.openTheater(target.id, {
     playlistIds: props.playlistIds,
     collectionId: props.collectionId,
+    file: target,
+    files: playlistItems.value,
   });
+};
+
+const onImageStageTouchStart = (event) => {
+  if (!isImageItem.value || playlistItems.value.length <= 1) return;
+  if (event?.touches?.length === 1) {
+    stageTouchStartX = event.touches[0].clientX;
+    stageTouchStartY = event.touches[0].clientY;
+  }
+};
+
+const onImageStageTouchEnd = (event) => {
+  if (!isImageItem.value || playlistItems.value.length <= 1) return;
+  if (event?.changedTouches?.length === 1) {
+    const deltaX = event.changedTouches[0].clientX - stageTouchStartX;
+    const deltaY = event.changedTouches[0].clientY - stageTouchStartY;
+    if (Math.abs(deltaX) > 48 && Math.abs(deltaX) > Math.abs(deltaY) * 1.4) {
+      if (deltaX > 0 && hasPrevItem.value) {
+        playPlaylistIndex(currentIndex.value - 1);
+      } else if (deltaX < 0 && hasNextItem.value) {
+        playPlaylistIndex(currentIndex.value + 1);
+      }
+    }
+  }
 };
 
 const onBeforeCloseTeardown = () => {
@@ -441,7 +561,9 @@ const historyManager = new ModalBackHistoryManager({
   modalId: "media-theater",
   onBeforeClose: onBeforeCloseTeardown,
   onClose: () => {
-    mediaPhotoStore.closeTheater();
+    if (!isClosingToMiniPlayer) {
+      mediaPhotoStore.closeTheater();
+    }
     emit("close");
   },
 });
@@ -450,13 +572,15 @@ const handleMinimizeToMiniPlayer = () => {
   if (!currentItem.value || isImageItem.value) return;
   const pos = videoRef.value ? videoRef.value.currentTime : currentTime.value;
   mediaPhotoStore.recordWatchProgress(currentItem.value.id, pos, duration.value);
+  isClosingToMiniPlayer = true;
   mediaPhotoStore.minimizeToMiniPlayer({
     positionSeconds: pos,
     isPlaying: isPlaying.value,
     playbackRate: playbackRate.value,
     muted: isMuted.value,
   });
-  historyManager.requestClose();
+  historyManager.closeForNavigation();
+  isClosingToMiniPlayer = false;
 };
 
 const handleClose = () => {
@@ -478,7 +602,7 @@ const handleDownload = async () => {
 const handleGoToOriginalFolder = async () => {
   if (!currentItem.value) return;
   const target = currentItem.value;
-  historyManager.requestClose();
+  historyManager.closeForNavigation();
   await mediaPhotoStore.navigateToOriginalFolder(target, router);
 };
 
@@ -546,23 +670,53 @@ const handleKeydown = (event) => {
   }
 };
 
+let previousBodyOverflow = null;
+const lockBodyScroll = () => {
+  if (typeof document === "undefined" || previousBodyOverflow !== null) return;
+  previousBodyOverflow = document.body.style.overflow || "";
+  document.body.style.overflow = "hidden";
+};
+const unlockBodyScroll = () => {
+  if (typeof document === "undefined" || previousBodyOverflow === null) return;
+  document.body.style.overflow = previousBodyOverflow;
+  previousBodyOverflow = null;
+};
+
 watch(
   () => props.videoId,
   async (newId, oldId) => {
+    if (oldId != null && String(oldId) !== String(newId ?? "")) {
+      if (videoRef.value) {
+        mediaPhotoStore.recordWatchProgress(
+          oldId,
+          videoRef.value.currentTime,
+          videoRef.value.duration || duration.value,
+        );
+        safePauseMedia(videoRef.value);
+      }
+    }
+
+    isPlaying.value = false;
+    isBuffering.value = false;
+    pendingResumeTime.value = null;
     refreshedStreamUrl.value = "";
     hasRetriedStreamToken.value = false;
+    streamRetryCount.value = 0;
     playbackError.value = "";
     showResumeToast.value = false;
     currentTime.value = 0;
     duration.value = Number(currentItem.value?.durationSeconds || 0);
 
-    if (newId != null) {
+    if (newId != null && currentItem.value) {
+      lockBodyScroll();
+      isBuffering.value = !isImageItem.value;
       if (oldId != null) {
         historyManager.updateItem(newId);
       } else {
         historyManager.open(newId);
       }
     } else {
+      unlockBodyScroll();
       historyManager.destroy();
     }
 
@@ -570,6 +724,7 @@ watch(
     if (currentItem.value && !isImageItem.value) {
       holdTheaterThumbnailPriority();
       void loadMatchingSubtitles(currentItem.value);
+      void loadQueueThumbnails();
     } else {
       releaseTheaterThumbnailPriority();
     }
@@ -583,6 +738,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   releaseTheaterThumbnailPriority();
+  unlockBodyScroll();
   window.removeEventListener("keydown", handleKeydown);
   if (progressThrottleTimer) clearTimeout(progressThrottleTimer);
   if (resumeToastTimer) clearTimeout(resumeToastTimer);
@@ -595,34 +751,40 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <div
       v-if="currentItem"
-      class="fixed inset-0 z-[290] flex flex-col bg-slate-950/95 text-slate-100 backdrop-blur-md"
+      class="fixed inset-0 z-[290] flex h-[100dvh] flex-col bg-slate-950/95 text-slate-100 backdrop-blur-md"
       @click.self="handleClose"
     >
       <!-- Top Bar -->
-      <header class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 bg-slate-900/90 px-3 py-2 sm:px-6 sm:py-3 shrink-0">
+      <header class="flex items-center justify-between gap-2 border-b border-slate-800/80 bg-slate-900/90 px-3 py-2 sm:px-6 sm:py-3 shrink-0">
         <div class="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
           <button
             type="button"
-            class="inline-flex h-9 min-w-[36px] sm:h-9 sm:w-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/90 px-2 sm:px-0 text-slate-200 transition hover:bg-slate-700 active:scale-95"
+            class="inline-flex h-8 sm:h-9 shrink-0 items-center justify-center gap-1 rounded-xl border border-slate-700 bg-slate-800/90 px-2 sm:w-9 sm:px-0 text-slate-200 transition hover:bg-slate-700 active:scale-95"
             title="시어터 닫기 (Esc)"
             aria-label="뒤로가기"
             @click="handleClose"
           >
-            <i class="fa-solid fa-arrow-left text-sm"></i>
+            <i class="fa-solid fa-arrow-left text-xs sm:text-sm"></i>
             <span class="text-xs font-bold sm:hidden">뒤로</span>
           </button>
 
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-1.5 sm:gap-2">
               <span
+                v-if="playlistItems.length > 1 && currentIndex >= 0"
+                class="rounded-md bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-slate-300 shrink-0"
+              >
+                {{ currentIndex + 1 }} / {{ playlistItems.length }}
+              </span>
+              <span
                 v-if="currentItem.resolutionLabel"
-                class="rounded-md bg-blue-500/20 px-1.5 py-0.5 text-[10px] sm:text-[11px] font-extrabold text-blue-300 ring-1 ring-blue-400/30 shrink-0"
+                class="hidden sm:inline-block rounded-md bg-blue-500/20 px-1.5 py-0.5 text-[11px] font-extrabold text-blue-300 ring-1 ring-blue-400/30 shrink-0"
               >
                 {{ currentItem.resolutionLabel }}
               </span>
               <span
                 v-if="currentItem.completed"
-                class="rounded-md bg-emerald-500/20 px-1.5 py-0.5 text-[10px] sm:text-[11px] font-bold text-emerald-300 shrink-0"
+                class="hidden sm:inline-block rounded-md bg-emerald-500/20 px-1.5 py-0.5 text-[11px] font-bold text-emerald-300 shrink-0"
               >
                 시청 완료
               </span>
@@ -630,7 +792,7 @@ onBeforeUnmount(() => {
                 {{ currentItem.name }}
               </h2>
             </div>
-            <p class="mt-0.5 truncate text-[11px] sm:text-xs text-slate-400">
+            <p class="mt-0.5 hidden truncate text-xs text-slate-400 sm:block">
               {{ currentItem.folderPathLabel }} · {{ currentItem.sizeLabel }}
             </p>
           </div>
@@ -640,7 +802,7 @@ onBeforeUnmount(() => {
           <!-- Favorite toggle -->
           <button
             type="button"
-            class="inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 sm:px-3 text-xs font-bold transition"
+            class="inline-flex h-8 sm:h-9 items-center gap-1.5 rounded-xl border px-2 sm:px-3 text-xs font-bold transition"
             :class="currentItem.isFavorite
               ? 'border-amber-400/50 bg-amber-500/20 text-amber-300'
               : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'"
@@ -655,7 +817,7 @@ onBeforeUnmount(() => {
           <button
             v-if="!isImageItem && !playbackError"
             type="button"
-            class="inline-flex items-center gap-1.5 rounded-xl border border-indigo-500/40 bg-indigo-500/15 px-2.5 py-1.5 sm:px-3 text-xs font-bold text-indigo-300 transition hover:bg-indigo-500/25"
+            class="inline-flex h-8 sm:h-9 items-center gap-1.5 rounded-xl border border-indigo-500/40 bg-indigo-500/15 px-2 sm:px-3 text-xs font-bold text-indigo-300 transition hover:bg-indigo-500/25"
             title="미니 플레이어로 축소"
             @click="handleMinimizeToMiniPlayer"
           >
@@ -663,10 +825,25 @@ onBeforeUnmount(() => {
             <span class="hidden sm:inline">미니 플레이어</span>
           </button>
 
+          <!-- Mobile Queue/Info Sidebar Toggle -->
+          <button
+            type="button"
+            data-testid="theater-mobile-sidebar-toggle"
+            class="inline-flex h-8 items-center gap-1 rounded-xl border px-2 text-xs font-bold transition lg:hidden"
+            :class="isMobileSidebarOpen
+              ? 'border-blue-400/50 bg-blue-500/20 text-blue-300'
+              : 'border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700'"
+            title="재생목록 · 정보 보기"
+            @click="isMobileSidebarOpen = !isMobileSidebarOpen"
+          >
+            <i class="fa-solid fa-list-ul text-xs"></i>
+            <span>{{ playlistItems.length }}</span>
+          </button>
+
           <!-- Go to Original Folder -->
           <button
             type="button"
-            class="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-2.5 py-1.5 sm:px-3 text-xs font-bold text-slate-200 transition hover:bg-slate-700"
+            class="inline-flex h-8 sm:h-9 items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-2 sm:px-3 text-xs font-bold text-slate-200 transition hover:bg-slate-700"
             title="원본 폴더로 이동"
             @click="handleGoToOriginalFolder"
           >
@@ -677,7 +854,7 @@ onBeforeUnmount(() => {
           <!-- Download -->
           <button
             type="button"
-            class="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-2.5 py-1.5 sm:px-3.5 text-xs font-bold text-white transition hover:bg-blue-500 disabled:opacity-50"
+            class="inline-flex h-8 sm:h-9 items-center gap-1.5 rounded-xl bg-blue-600 px-2 sm:px-3.5 text-xs font-bold text-white transition hover:bg-blue-500 disabled:opacity-50"
             :disabled="isDownloading"
             title="다운로드"
             @click="handleDownload"
@@ -689,7 +866,7 @@ onBeforeUnmount(() => {
           <!-- Close button -->
           <button
             type="button"
-            class="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700 bg-slate-800 text-slate-300 transition hover:bg-rose-500/20 hover:text-rose-300 active:scale-95"
+            class="inline-flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl border border-slate-700 bg-slate-800 text-slate-300 transition hover:bg-rose-500/20 hover:text-rose-300 active:scale-95"
             title="닫기"
             aria-label="닫기"
             @click="handleClose"
@@ -702,11 +879,16 @@ onBeforeUnmount(() => {
       <!-- Main Body -->
       <div class="flex min-h-0 flex-1 flex-col lg:flex-row">
         <!-- Left/Center: Video / Image Stage -->
-        <section class="relative flex w-full shrink-0 flex-col items-center justify-center bg-black p-2 sm:p-4 lg:min-h-0 lg:flex-1">
+        <section
+          class="relative flex min-h-0 w-full flex-col items-center justify-center bg-black p-2 sm:p-4 lg:flex-1"
+          :class="isMobileSidebarOpen ? 'max-h-[45dvh] shrink-0 lg:max-h-none' : 'flex-1'"
+          @touchstart.passive="onImageStageTouchStart"
+          @touchend.passive="onImageStageTouchEnd"
+        >
           <!-- Resume Toast Banner -->
           <div
             v-if="showResumeToast"
-            class="absolute left-4 top-4 z-20 flex flex-wrap items-center gap-3 rounded-2xl border border-blue-400/40 bg-slate-900/90 px-4 py-2.5 text-xs font-semibold text-blue-100 shadow-2xl backdrop-blur-md"
+            class="absolute left-3 right-3 sm:left-4 sm:right-auto top-3 z-20 flex flex-wrap items-center gap-2 sm:gap-3 rounded-2xl border border-blue-400/40 bg-slate-900/90 px-3.5 py-2 text-xs font-semibold text-blue-100 shadow-2xl backdrop-blur-md"
           >
             <i class="fa-solid fa-rotate-right text-blue-400"></i>
             <span>이전에 시청하던 <strong>{{ formatDurationClock(resumedFromSeconds) }}</strong> 위치부터 이어서 재생합니다.</span>
@@ -719,7 +901,7 @@ onBeforeUnmount(() => {
             </button>
             <button
               type="button"
-              class="text-slate-400 hover:text-white"
+              class="ml-auto text-slate-400 hover:text-white"
               @click="showResumeToast = false"
             >
               <i class="fa-solid fa-xmark"></i>
@@ -729,23 +911,33 @@ onBeforeUnmount(() => {
           <!-- Codec / Playback Error Fallback -->
           <div
             v-if="playbackError"
-            class="flex max-w-lg flex-col items-center justify-center rounded-3xl border border-amber-400/30 bg-slate-900/90 p-8 text-center shadow-2xl"
+            data-testid="theater-playback-error"
+            class="flex max-w-lg flex-col items-center justify-center rounded-3xl border border-amber-400/30 bg-slate-900/90 p-6 sm:p-8 text-center shadow-2xl"
           >
-            <div class="flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/20 text-amber-300">
-              <i class="fa-solid fa-triangle-exclamation text-2xl"></i>
+            <div class="flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/20 text-amber-300">
+              <i class="fa-solid fa-triangle-exclamation text-xl"></i>
             </div>
-            <h3 class="mt-4 text-base font-extrabold text-white">브라우저 직접 재생 안내</h3>
+            <h3 class="mt-3 text-base font-extrabold text-white">재생 안내</h3>
             <p class="mt-2 text-xs leading-5 text-slate-300">
               {{ playbackError }}
             </p>
-            <div class="mt-5 flex flex-wrap items-center justify-center gap-3">
+            <div class="mt-5 flex flex-wrap items-center justify-center gap-2.5">
               <button
                 type="button"
-                class="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-blue-500"
+                data-testid="theater-retry-btn"
+                class="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-emerald-500"
+                @click="retryVideoPlayback"
+              >
+                <i class="fa-solid fa-rotate-right"></i>
+                <span>다시 시도</span>
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-blue-500"
                 @click="handleDownload"
               >
                 <i class="fa-solid fa-download"></i>
-                <span>원본 파일 다운로드 ({{ currentItem.sizeLabel }})</span>
+                <span>원본 다운로드 ({{ currentItem.sizeLabel }})</span>
               </button>
               <button
                 type="button"
@@ -761,52 +953,91 @@ onBeforeUnmount(() => {
           <!-- Image Item in Collection -->
           <div
             v-else-if="isImageItem"
-            class="flex h-full w-full flex-col items-center justify-center"
+            class="relative flex min-h-0 flex-1 w-full flex-col items-center justify-center"
           >
+            <button
+              v-if="hasPrevItem"
+              type="button"
+              data-testid="theater-image-prev"
+              class="absolute left-2 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-slate-900/75 text-white shadow-xl backdrop-blur transition hover:bg-blue-600 sm:left-4"
+              title="이전 항목 (←)"
+              aria-label="이전 항목"
+              @click.stop="playPlaylistIndex(currentIndex - 1)"
+            >
+              <i class="fa-solid fa-chevron-left"></i>
+            </button>
             <img
+              :key="`${currentItem.id}:${streamUrl}:${streamRetryCount}`"
               :src="streamUrl"
               :alt="currentItem.name"
-              class="max-h-[70vh] max-w-full rounded-2xl object-contain shadow-2xl"
+              class="max-h-full max-w-full rounded-2xl object-contain shadow-2xl"
               @error="onVideoError"
             />
+            <button
+              v-if="hasNextItem"
+              type="button"
+              data-testid="theater-image-next"
+              class="absolute right-2 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-slate-900/75 text-white shadow-xl backdrop-blur transition hover:bg-blue-600 sm:right-4"
+              title="다음 항목 (→)"
+              aria-label="다음 항목"
+              @click.stop="playPlaylistIndex(currentIndex + 1)"
+            >
+              <i class="fa-solid fa-chevron-right"></i>
+            </button>
           </div>
 
           <!-- Video Streaming Element -->
-          <video
+          <div
             v-else-if="streamUrl"
-            ref="videoRef"
-            :key="`${currentItem.id}:${streamUrl}`"
-            :src="streamUrl"
-            controls
-            playsinline
-            preload="auto"
-            crossorigin="anonymous"
-            class="max-h-[36vh] sm:max-h-[48vh] w-full max-w-6xl rounded-2xl bg-black object-contain shadow-2xl lg:max-h-[74vh]"
-            @loadedmetadata="onLoadedMetadata"
-            @loadeddata="releaseTheaterThumbnailPriority"
-            @canplay="releaseTheaterThumbnailPriority"
-            @timeupdate="onTimeUpdate"
-            @play="onPlay"
-            @pause="onPause"
-            @ended="onEnded"
-            @error="(e) => { releaseTheaterThumbnailPriority(); onVideoError(e); }"
+            class="relative flex min-h-0 flex-1 w-full max-w-6xl items-center justify-center overflow-hidden rounded-2xl bg-black"
           >
-            <track
-              v-for="track in availableSubtitleTracks"
-              :key="track.id"
-              kind="subtitles"
-              :label="track.label"
-              :src="track.blobUrl"
-              :default="activeSubtitleId === track.id"
-            />
-          </video>
+            <video
+              ref="videoRef"
+              :key="`${currentItem.id}:${streamUrl}:${streamRetryCount}`"
+              :src="streamUrl"
+              controls
+              playsinline
+              webkit-playsinline
+              preload="auto"
+              class="max-h-full max-w-full w-full h-full bg-black object-contain shadow-2xl"
+              @loadedmetadata="onLoadedMetadata"
+              @loadeddata="onCanPlay"
+              @canplay="onCanPlay"
+              @waiting="onWaiting"
+              @playing="onPlaying"
+              @emptied="onEmptied"
+              @timeupdate="onTimeUpdate"
+              @play="onPlay"
+              @pause="onPause"
+              @ended="onEnded"
+              @error="onVideoError"
+            >
+              <track
+                v-for="track in availableSubtitleTracks"
+                :key="track.id"
+                kind="subtitles"
+                :label="track.label"
+                :src="track.blobUrl"
+                :default="activeSubtitleId === track.id"
+              />
+            </video>
+
+            <div
+              v-if="isBuffering && !playbackError"
+              class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/25"
+            >
+              <div class="flex h-12 w-12 items-center justify-center rounded-full bg-slate-900/80 text-blue-400 shadow-lg backdrop-blur">
+                <i class="fa-solid fa-spinner fa-spin text-lg"></i>
+              </div>
+            </div>
+          </div>
 
           <!-- Custom Quick Controls Bar Under Player -->
           <div
             v-if="!playbackError && !isImageItem"
-            class="mt-2 sm:mt-3 flex w-full max-w-6xl flex-wrap items-center justify-between gap-1.5 sm:gap-2 rounded-2xl border border-slate-800 bg-slate-900/90 px-2.5 py-1.5 sm:px-3.5 sm:py-2 text-xs"
+            class="mt-2 flex w-full max-w-6xl shrink-0 items-center justify-between gap-2 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/90 px-2.5 py-1.5 sm:px-3.5 sm:py-2 text-xs sm:flex-wrap"
           >
-            <div class="flex flex-wrap items-center gap-1.5">
+            <div class="flex shrink-0 items-center gap-1.5">
               <button
                 type="button"
                 class="inline-flex items-center gap-1 rounded-xl bg-slate-800 px-2.5 py-1.5 font-bold text-slate-200 transition hover:bg-slate-700 disabled:opacity-40"
@@ -820,7 +1051,7 @@ onBeforeUnmount(() => {
 
               <button
                 type="button"
-                class="inline-flex items-center gap-1 rounded-xl bg-slate-800 px-2.5 py-1.5 font-bold text-slate-200 transition hover:bg-slate-700"
+                class="inline-flex items-center gap-1 rounded-xl bg-slate-800 px-2 sm:px-2.5 py-1.5 font-bold text-slate-200 transition hover:bg-slate-700"
                 title="10초 뒤로 (← / J)"
                 @click="seekBy(-10)"
               >
@@ -830,7 +1061,7 @@ onBeforeUnmount(() => {
 
               <button
                 type="button"
-                class="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-1.5 font-extrabold text-white transition hover:bg-blue-500"
+                class="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 sm:px-3.5 py-1.5 font-extrabold text-white transition hover:bg-blue-500"
                 title="재생/일시정지 (Space / K)"
                 @click="togglePlayPause"
               >
@@ -840,7 +1071,7 @@ onBeforeUnmount(() => {
 
               <button
                 type="button"
-                class="inline-flex items-center gap-1 rounded-xl bg-slate-800 px-2.5 py-1.5 font-bold text-slate-200 transition hover:bg-slate-700"
+                class="inline-flex items-center gap-1 rounded-xl bg-slate-800 px-2 sm:px-2.5 py-1.5 font-bold text-slate-200 transition hover:bg-slate-700"
                 title="10초 앞으로 (→ / L)"
                 @click="seekBy(10)"
               >
@@ -859,15 +1090,15 @@ onBeforeUnmount(() => {
                 <i class="fa-solid fa-forward-step"></i>
               </button>
 
-              <span class="ml-2 font-mono text-[11px] font-bold text-slate-300">
+              <span class="ml-1 whitespace-nowrap font-mono text-[11px] font-bold text-slate-300">
                 {{ formatDurationClock(currentTime) }} / {{ formatDurationClock(duration || currentItem.durationSeconds) }}
               </span>
             </div>
 
-            <div class="flex flex-wrap items-center gap-2">
+            <div class="flex shrink-0 items-center gap-1.5 sm:gap-2">
               <!-- Playback Speed -->
               <div class="flex items-center gap-1 rounded-xl border border-slate-700 bg-slate-800 px-2 py-1">
-                <span class="text-[11px] text-slate-400">배속</span>
+                <span class="hidden sm:inline text-[11px] text-slate-400">배속</span>
                 <select
                   :value="playbackRate"
                   class="bg-transparent text-xs font-extrabold text-white focus:outline-none"
@@ -887,7 +1118,7 @@ onBeforeUnmount(() => {
               <!-- Repeat Toggle -->
               <button
                 type="button"
-                class="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1.5 font-bold transition"
+                class="inline-flex items-center gap-1 rounded-xl border px-2 sm:px-2.5 py-1.5 font-bold transition"
                 :class="isRepeat
                   ? 'border-blue-500/50 bg-blue-500/20 text-blue-300'
                   : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'"
@@ -901,7 +1132,7 @@ onBeforeUnmount(() => {
               <!-- Auto-Next Toggle -->
               <button
                 type="button"
-                class="inline-flex items-center gap-1 rounded-xl border px-2.5 py-1.5 font-bold transition"
+                class="inline-flex items-center gap-1 rounded-xl border px-2 sm:px-2.5 py-1.5 font-bold transition"
                 :class="mediaPhotoStore.preferences.autoPlayNext
                   ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300'
                   : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'"
@@ -922,7 +1153,7 @@ onBeforeUnmount(() => {
               />
               <button
                 type="button"
-                class="inline-flex items-center gap-1 rounded-xl border border-slate-700 bg-slate-800 px-2.5 py-1.5 font-bold text-slate-200 transition hover:bg-slate-700"
+                class="inline-flex items-center gap-1 rounded-xl border border-slate-700 bg-slate-800 px-2 sm:px-2.5 py-1.5 font-bold text-slate-200 transition hover:bg-slate-700"
                 title="자막 파일(.srt, .vtt) 불러오기"
                 @click="subtitleInputRef?.click()"
               >
@@ -933,10 +1164,41 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </div>
+
+          <!-- Image Item Prev/Next Quick Bar on Mobile & Desktop -->
+          <div
+            v-else-if="!playbackError && isImageItem && playlistItems.length > 1"
+            class="mt-2 flex shrink-0 items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900/90 px-3 py-1.5 text-xs"
+          >
+            <button
+              type="button"
+              class="inline-flex items-center gap-1 rounded-xl bg-slate-800 px-3 py-1.5 font-bold text-slate-200 transition hover:bg-slate-700 disabled:opacity-40"
+              :disabled="!hasPrevItem"
+              @click="playPlaylistIndex(currentIndex - 1)"
+            >
+              <i class="fa-solid fa-backward-step"></i>
+              <span>이전</span>
+            </button>
+            <span class="font-mono text-[11px] font-bold text-slate-300">
+              {{ currentIndex + 1 }} / {{ playlistItems.length }}
+            </span>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1 rounded-xl bg-slate-800 px-3 py-1.5 font-bold text-slate-200 transition hover:bg-slate-700 disabled:opacity-40"
+              :disabled="!hasNextItem"
+              @click="playPlaylistIndex(currentIndex + 1)"
+            >
+              <span>다음</span>
+              <i class="fa-solid fa-forward-step"></i>
+            </button>
+          </div>
         </section>
 
         <!-- Right Sidebar: Playlist Queue / File Info / Collections -->
-        <aside class="flex w-full min-h-0 flex-1 flex-col border-t border-slate-800 bg-slate-900/95 lg:w-[360px] lg:flex-none lg:border-l lg:border-t-0">
+        <aside
+          class="w-full min-h-0 flex-1 flex-col border-t border-slate-800 bg-slate-900/95 lg:w-[360px] lg:flex-none lg:border-l lg:border-t-0"
+          :class="isMobileSidebarOpen ? 'flex max-h-[48dvh] lg:max-h-none' : 'hidden lg:flex'"
+        >
           <!-- Sidebar Tabs -->
           <div class="grid grid-cols-3 border-b border-slate-800 p-1.5 text-xs font-bold shrink-0">
             <button

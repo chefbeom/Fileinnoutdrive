@@ -371,6 +371,12 @@ const timelineGroups = computed(() => {
   }));
 });
 
+const displayedPhotos = computed(() =>
+  timelineGroups.value.flatMap((monthGroup) =>
+    monthGroup.days.flatMap((dayGroup) => dayGroup.photos || []),
+  ),
+);
+
 const gridColumnsClass = computed(() => {
   switch (gridDensity.value) {
     case "compact":
@@ -458,7 +464,7 @@ const toggleSelectGroup = (ids = []) => {
 const toggleSelectPhoto = (photo, event = null) => {
   if (!photo) return;
   const targetId = String(photo.id);
-  const currentList = visiblePhotos.value;
+  const currentList = displayedPhotos.value;
 
   if (event?.shiftKey && lastSelectedAnchorId.value) {
     const anchorIdx = currentList.findIndex((p) => String(p.id) === String(lastSelectedAnchorId.value));
@@ -480,7 +486,7 @@ const toggleSelectPhoto = (photo, event = null) => {
 };
 
 const selectAllVisible = () => {
-  const allIds = visiblePhotos.value.map((p) => String(p.id));
+  const allIds = displayedPhotos.value.map((p) => String(p.id));
   if (isGroupAllSelected(allIds)) {
     selectedIds.value = [];
   } else {
@@ -492,18 +498,21 @@ const clearSelection = () => {
   selectedIds.value = [];
 };
 
-const handleOpenPhoto = (photo, slideshow = false) => {
+const handleOpenPhoto = (photo, slideshow = false, customPool = null) => {
   if (!photo) return;
-  const poolIds = visiblePhotos.value.map((p) => String(p.id));
+  const targetPool = Array.isArray(customPool) && customPool.length > 0 ? customPool : displayedPhotos.value;
+  const poolIds = targetPool.map((p) => String(p.id));
   mediaPhotoStore.openPhotoLightbox(photo.id, {
     poolIds,
     slideshow,
+    file: photo,
+    files: targetPool,
   });
 };
 
 const handleStartSlideshow = () => {
-  if (!visiblePhotos.value.length) return;
-  handleOpenPhoto(visiblePhotos.value[0], true);
+  if (!displayedPhotos.value.length) return;
+  handleOpenPhoto(displayedPhotos.value[0], true);
 };
 
 // Prime cached thumbnails synchronously; defer remote loads to IntersectionObserver when available
@@ -1582,7 +1591,7 @@ onBeforeUnmount(() => {
           :key="'fav-photo-shelf-' + photo.id"
           :ref="(el) => observePhotoThumbnailEl(el, photo)"
           class="group relative aspect-square cursor-pointer overflow-hidden rounded-xl bg-slate-900"
-          @click="openPhotoLightbox(photo, mediaPhotoStore.favoritePhotos)"
+          @click="handleOpenPhoto(photo, false, mediaPhotoStore.favoritePhotos)"
         >
           <img
             v-if="thumbnailMap[String(photo.id)]"
@@ -2129,7 +2138,12 @@ onBeforeUnmount(() => {
     <Teleport to="body">
       <div
         v-if="photoContextMenu.visible && photoContextMenu.photo"
-        class="fixed z-[290] w-52 overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-elevated)] py-1.5 text-xs shadow-2xl"
+        class="fixed inset-0 z-[285] bg-slate-950/35 backdrop-blur-[1px] sm:hidden"
+        @click="photoContextMenu.visible = false"
+      ></div>
+      <div
+        v-if="photoContextMenu.visible && photoContextMenu.photo"
+        class="fixed z-[290] w-52 overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-elevated)] py-1.5 text-xs shadow-2xl max-sm:!bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] max-sm:!left-3 max-sm:!right-3 max-sm:!top-auto max-sm:!w-auto max-sm:max-h-[75dvh] max-sm:overflow-y-auto max-sm:rounded-3xl max-sm:py-2.5"
         :style="{ left: `${photoContextMenu.x}px`, top: `${photoContextMenu.y}px` }"
         @click.stop
         @contextmenu.prevent.stop

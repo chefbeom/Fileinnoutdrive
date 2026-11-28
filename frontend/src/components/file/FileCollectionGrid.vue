@@ -218,7 +218,7 @@ const {
         <button
           v-else-if="viewMode === 'icon' && canToggleFavorite(file)"
           type="button"
-          class="absolute right-1.5 top-1.5 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/85 text-gray-400 opacity-0 shadow-xs transition group-hover:opacity-100 hover:text-amber-500 dark:bg-slate-900/80 dark:text-slate-400"
+          class="absolute right-1.5 top-1.5 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/85 text-gray-400 opacity-0 shadow-xs transition group-hover:opacity-100 max-md:opacity-80 hover:text-amber-500 dark:bg-slate-900/80 dark:text-slate-400"
           title="즐겨찾기 추가"
           aria-label="즐겨찾기 추가"
           @click.stop="onClickToggleFavorite(file, $event)"

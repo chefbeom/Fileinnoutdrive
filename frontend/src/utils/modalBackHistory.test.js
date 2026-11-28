@@ -179,4 +179,28 @@ describe("modalBackHistory", () => {
     safePauseMedia(mediaEl);
     expect(pauseFn).toHaveBeenCalledTimes(1);
   });
+
+  it("closeForNavigation strips modal history keys via replaceState without calling history.back()", () => {
+    const onClose = vi.fn();
+    const onBeforeClose = vi.fn();
+    const manager = new ModalBackHistoryManager({
+      modalId: "media-theater",
+      onClose,
+      onBeforeClose,
+    });
+
+    manager.open("video-999");
+    expect(mockHistory.state[MODAL_HISTORY_KEY]).toBe("media-theater");
+    mockHistory.replaceState.mockClear();
+
+    manager.closeForNavigation();
+
+    expect(onBeforeClose).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledWith({ fromPopState: false });
+    expect(mockHistory.back).not.toHaveBeenCalled();
+    expect(mockHistory.replaceState).toHaveBeenCalledTimes(1);
+    expect(mockHistory.state[MODAL_HISTORY_KEY]).toBeUndefined();
+    expect(mockHistory.state[MODAL_ITEM_KEY]).toBeUndefined();
+    expect(manager.isPushed).toBe(false);
+  });
 });

@@ -181,10 +181,13 @@ export class ModalBackHistoryManager {
   /**
    * UI 버튼(← 뒤로, X 닫기, Esc 키, 배경 클릭)에 의해 모달을 닫을 때 호출합니다.
    * 히스토리가 푸시되어 있다면 history.back()으로 정리합니다.
+   * @param {{ skipHistoryBack?: boolean }} [options]
    */
-  requestClose() {
+  requestClose(options = {}) {
     if (this.isClosing) return;
     this.isClosing = true;
+
+    const skipHistoryBack = Boolean(options?.skipHistoryBack);
 
     if (this.onBeforeClose) {
       try {
@@ -201,6 +204,20 @@ export class ModalBackHistoryManager {
     this.onClose({ fromPopState: false });
     this.destroy();
 
+    if (skipHistoryBack) {
+      if (isTopState && typeof window !== "undefined" && window.history?.replaceState) {
+        try {
+          const nextState = { ...(window.history.state || {}) };
+          delete nextState[MODAL_HISTORY_KEY];
+          delete nextState[MODAL_ITEM_KEY];
+          window.history.replaceState(nextState, "", window.location.href);
+        } catch {
+          // ignore
+        }
+      }
+      return;
+    }
+
     // 사용자가 UI 버튼을 눌러 닫았고 히스토리가 정상적으로 푸시되어 있었다면 히스토리 1회 팝
     if (wasPushed && isTopState && typeof window !== "undefined" && window.history?.back) {
       try {
@@ -209,6 +226,14 @@ export class ModalBackHistoryManager {
         // ignore
       }
     }
+  }
+
+  /**
+   * 모달을 닫고 즉시 다른 라우트/위치로 이동하거나 미니 플레이어로 전환할 때 호출합니다.
+   * 비동기 window.history.back()과 router.push() 간의 경합을 막기 위해 replaceState로 모달 키만 제거합니다.
+   */
+  closeForNavigation() {
+    this.requestClose({ skipHistoryBack: true });
   }
 
   /**

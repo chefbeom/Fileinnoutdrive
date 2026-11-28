@@ -127,6 +127,13 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  if (miniVideoRef.value && typeof miniVideoRef.value.pause === "function") {
+    try {
+      miniVideoRef.value.pause();
+    } catch {
+      // ignore
+    }
+  }
   if (progressTimer) {
     clearTimeout(progressTimer);
   }
@@ -142,8 +149,10 @@ onBeforeUnmount(() => {
       <div class="relative aspect-video w-full bg-black">
         <video
           ref="miniVideoRef"
+          :key="`${activeFile.id}:${streamUrl}`"
           :src="streamUrl"
           playsinline
+          webkit-playsinline
           preload="metadata"
           class="h-full w-full object-contain"
           @loadedmetadata="onLoadedMetadata"
